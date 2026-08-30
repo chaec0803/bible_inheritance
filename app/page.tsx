@@ -401,6 +401,7 @@ export default function HomePage() {
   const [wordCardFlipped, setWordCardFlipped] = useState(false);
   const [wordCardExpanded, setWordCardExpanded] = useState(false);
   const [kstToday, setKstToday] = useState(() => getKstDateKey());
+  const [viewedProjectDay, setViewedProjectDay] = useState<number | null>(null);
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -678,9 +679,10 @@ export default function HomePage() {
     [activeProject, libraryRecordings],
   );
   const currentProjectDay = activeProject ? getProjectDay(activeProject, kstToday) : 1;
-  const currentProjectDayIndex = Math.max(0, currentProjectDay - 1);
-  const currentProjectTask = activeProject?.tasks[currentProjectDayIndex]
-    ?? (activeProject && currentProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
+  const displayedProjectDay = viewedProjectDay ?? currentProjectDay;
+  const displayedProjectDayIndex = Math.max(0, displayedProjectDay - 1);
+  const displayedProjectTask = activeProject?.tasks[displayedProjectDayIndex]
+    ?? (activeProject && displayedProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
   const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
   const completedProjectTaskIndexes = useMemo(() => {
     const completed = new Set<number>();
@@ -818,7 +820,7 @@ export default function HomePage() {
     if (!completedToday) return;
 
     const storageKey = 'verse-legacy-word-card-awards';
-    const awardKey = `${activeProject.id}:day-${currentProjectDay}`;
+    const awardKey = `${activeProject.id}:day-${displayedProjectDay}`;
     let awards: { key: string; cardId: string }[] = [];
     try {
       awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string }[];
@@ -1333,13 +1335,14 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeProject) return;
     const project = activeProject;
-    const taskIndex = currentProjectDayIndex;
+    const taskIndex = displayedProjectDayIndex;
     queueMicrotask(() => void loadProjectPassage(project, taskIndex));
-  }, [activeProject, currentProjectDayIndex]);
+  }, [activeProject, displayedProjectDayIndex]);
 
   const activateProject = (project: ActiveProject) => {
     const existingProject = activeProjects.find((item) => item.id === project.id);
     const activatedProject = { ...project, startedOn: project.startedOn ?? existingProject?.startedOn ?? getKstDateKey() };
+    setViewedProjectDay(null);
     setActiveProject(activatedProject);
     setActiveProjects((current) => {
       const withoutPreviousFree = activatedProject.kind === 'free' ? current.filter((item) => item.kind !== 'free') : current;
@@ -1656,17 +1659,18 @@ export default function HomePage() {
           <div>
             <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 프로젝트' : `${activeProject.duration}일 완성 프로젝트`) : '우리 가족 첫 번째 낭독'}</p>
             <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
-            <p className="muted">{activeProject?.tasks[0] ? `오늘 · ${currentProjectDay}일차: ${currentProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
+            <p className="muted">{activeProject?.tasks[0] ? `${displayedProjectDay === currentProjectDay ? '오늘' : '지난 과제'} · ${displayedProjectDay}일차: ${displayedProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
           {activeProject && activeProject.kind !== 'free' && <div className="project-day-progress" aria-label={`${activeProject.duration}일 프로젝트 진행 상황`}>
-            <div><strong>{currentProjectDay}일차 진행 중</strong><span>{completedProjectTaskIndexes.size}/{activeProject.duration}일 완료</span></div>
+            <div><strong>{displayedProjectDay === currentProjectDay ? `${currentProjectDay}일차 진행 중` : `${displayedProjectDay}일차 다시 보기`}</strong><span>{completedProjectTaskIndexes.size}/{activeProject.duration}일 완료</span></div>
             <div className="project-day-badges">
               {Array.from({ length: activeProject.duration }, (_, index) => {
                 const day = index + 1;
                 const completed = completedProjectTaskIndexes.has(index);
-                const current = day === currentProjectDay;
+                const today = day === currentProjectDay;
+                const selected = day === displayedProjectDay;
                 const future = day > currentProjectDay;
-                return <span className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${future ? 'future' : ''}`} aria-label={completed ? `${day}일차 완료` : current ? `${day}일차 진행 중` : future ? `${day}일차 아직 시작 전` : `${day}일차 미완료`} key={day}>{completed ? <Check size={12} /> : day}</span>;
+                return <button className={`${completed ? 'completed' : ''} ${today ? 'today' : ''} ${selected ? 'selected' : ''} ${future ? 'future' : ''}`} type="button" disabled={future} onClick={() => setViewedProjectDay(today ? null : day)} aria-label={completed ? `${day}일차 완료, 다시 보기` : today ? `${day}일차 진행 중` : future ? `${day}일차 아직 시작 전` : `${day}일차 다시 보기`} key={day}>{completed ? <Check size={12} /> : day}</button>;
               })}
             </div>
           </div>}
