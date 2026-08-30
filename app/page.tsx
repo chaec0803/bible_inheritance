@@ -388,6 +388,7 @@ export default function HomePage() {
   const activeLibraryRef = useRef<string | null>(null);
   const chapterPlayingRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
+  const bibleVersePaneRef = useRef<HTMLElement | null>(null);
 
   const currentTake = takes[verseIndex];
   const hasTake = Boolean(currentTake);
@@ -543,14 +544,14 @@ export default function HomePage() {
     return () => {
       disposed = true;
       if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
-      youtubePlayerRef.current?.destroy();
+      if (typeof youtubePlayerRef.current?.destroy === 'function') youtubePlayerRef.current.destroy();
       youtubePlayerRef.current = null;
       window.onYouTubeIframeAPIReady = previousReadyHandler;
     };
   }, []);
 
   useEffect(() => {
-    youtubePlayerRef.current?.setVolume(volume);
+    if (typeof youtubePlayerRef.current?.setVolume === 'function') youtubePlayerRef.current.setVolume(volume);
   }, [volume]);
 
   useEffect(() => {
@@ -985,6 +986,7 @@ export default function HomePage() {
       if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
       const chapters = await response.json() as string[][];
       setSelectedBibleVerses(chapters[chapter - 1] ?? []);
+      window.requestAnimationFrame(() => bibleVersePaneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     } catch {
       setSelectedBibleVerses([]);
       setNotice('성경 본문을 불러오지 못했어요. 다시 시도해 주세요.');
@@ -1119,7 +1121,7 @@ export default function HomePage() {
                     {selectedBibleBook.chapters.map((verseCount, index) => <button className={selectedBibleChapter === index + 1 && selectedBibleVerses.length ? 'selected' : ''} type="button" onClick={() => void chooseBibleChapter(index + 1)} key={index}><strong>{index + 1}</strong><small>{verseCount}절</small></button>)}
                   </div>
                 </section>
-                <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절">
+                <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절" ref={bibleVersePaneRef}>
                   <div className="pane-heading"><span>3</span><div><strong>본문 확인</strong><small>{selectedBibleBook.name} {selectedBibleChapter}장</small></div></div>
                   {bibleLoading ? <div className="bible-empty"><LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요</div> : selectedBibleVerses.length ? <div className="bible-verse-preview">{selectedBibleVerses.map((text, index) => <p key={index}><span>{index + 1}</span>{text}</p>)}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
                   <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}장 녹음 시작 <ArrowRight size={16} /></button>
