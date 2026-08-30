@@ -63,9 +63,23 @@ type ActiveProject = {
   totalVerses?: number;
   kind?: 'guided' | 'free';
   passage?: ProjectPassage;
+  startedOn?: string;
 };
 
 type ProjectPassage = { code: string; name: string; chapter: number; startVerse: number; endVerse: number };
+
+function getKstDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function getProjectDay(project: ActiveProject, today: string) {
+  if (!project.startedOn || project.kind === 'free' || project.duration < 1) return 1;
+  const startTime = Date.parse(`${project.startedOn}T00:00:00Z`);
+  const todayTime = Date.parse(`${today}T00:00:00Z`);
+  return Math.min(project.duration, Math.max(1, Math.floor((todayTime - startTime) / 86_400_000) + 1));
+}
 
 const projectTemplates: ProjectTemplate[] = [
   {
@@ -386,6 +400,7 @@ export default function HomePage() {
   const [earnedCard, setEarnedCard] = useState<WordCard | null>(null);
   const [wordCardFlipped, setWordCardFlipped] = useState(false);
   const [wordCardExpanded, setWordCardExpanded] = useState(false);
+  const [kstToday, setKstToday] = useState(() => getKstDateKey());
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -449,7 +464,7 @@ export default function HomePage() {
       let restoredProjects: ActiveProject[] = [];
       if (savedActiveProjects) {
         try {
-          const parsedProjects = JSON.parse(savedActiveProjects) as ActiveProject[];
+          const parsedProjects = (JSON.parse(savedActiveProjects) as ActiveProject[]).map((project) => ({ ...project, startedOn: project.startedOn ?? getKstDateKey() }));
           const latestFreeProject = [...parsedProjects].reverse().find((project) => project.kind === 'free');
           restoredProjects = [
             ...parsedProjects.filter((project) => project.kind !== 'free'),
@@ -474,7 +489,8 @@ export default function HomePage() {
           const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
           if (savedCustomProject) {
             try {
-              const customProject = JSON.parse(savedCustomProject) as ActiveProject;
+              const parsedCustomProject = JSON.parse(savedCustomProject) as ActiveProject;
+              const customProject = { ...parsedCustomProject, startedOn: parsedCustomProject.startedOn ?? getKstDateKey() };
               setActiveProject(customProject);
               setActiveProjects([customProject]);
             } catch {
@@ -482,7 +498,7 @@ export default function HomePage() {
             }
           }
         } else if (template) {
-          const restoredProject = { id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks };
+          const restoredProject = { id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks, startedOn: getKstDateKey() };
           setActiveProject(restoredProject);
           setActiveProjects((current) => current.length ? current : [restoredProject]);
         }
@@ -522,6 +538,18 @@ export default function HomePage() {
     const timeout = window.setTimeout(() => setNotice(''), 3000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
+
+  useEffect(() => {
+    const updateKstDate = () => setKstToday(getKstDateKey());
+    const interval = window.setInterval(updateKstDate, 60_000);
+    window.addEventListener('focus', updateKstDate);
+    document.addEventListener('visibilitychange', updateKstDate);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', updateKstDate);
+      document.removeEventListener('visibilitychange', updateKstDate);
+    };
+  }, []);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem('verse-legacy-theme');
@@ -649,6 +677,10 @@ export default function HomePage() {
     () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
     [activeProject, libraryRecordings],
   );
+  const currentProjectDay = activeProject ? getProjectDay(activeProject, kstToday) : 1;
+  const currentProjectDayIndex = Math.max(0, currentProjectDay - 1);
+  const currentProjectTask = activeProject?.tasks[currentProjectDayIndex]
+    ?? (activeProject && currentProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
   const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
   const completedProjectTaskIndexes = useMemo(() => {
     const completed = new Set<number>();
@@ -786,7 +818,7 @@ export default function HomePage() {
     if (!completedToday) return;
 
     const storageKey = 'verse-legacy-word-card-awards';
-    const awardKey = `${activeProject.id}:day-1`;
+    const awardKey = `${activeProject.id}:day-${currentProjectDay}`;
     let awards: { key: string; cardId: string }[] = [];
     try {
       awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string }[];
@@ -1248,15 +1280,25 @@ export default function HomePage() {
     }
   };
 
-  function resolveProjectPassage(project: ActiveProject): ProjectPassage {
+  function resolveProjectPassage(project: ActiveProject, taskIndex: number): ProjectPassage {
     if (project.passage) return project.passage;
-    const task = project.tasks[0]?.replace('편', '장') ?? '';
-    const match = task.match(/^(.+?)\s+(\d+)장(?:\s+(\d+)(?:–(\d+))?절)?/);
-    if (match) {
-      const book = bibleBooks.find((item) => item.name === match[1]);
-      if (book) {
-        const startVerse = Number(match[3] ?? 1);
-        return { code: book.code, name: book.name, chapter: Number(match[2]), startVerse, endVerse: Number(match[4] ?? startVerse) };
+    let contextBook = '';
+    let contextChapter = 0;
+    for (let index = 0; index <= taskIndex; index += 1) {
+      const task = project.tasks[index]?.replace('편', '장') ?? '';
+      const full = task.match(/^(.+?)\s+(\d+)장\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)장\s+(\d+)절)?/);
+      const short = task.match(/^(\d+)(?:–(\d+))절/);
+      if (full) {
+        contextBook = full[1];
+        contextChapter = Number(full[2]);
+      }
+      if (index !== taskIndex || (!full && !short)) continue;
+      const book = bibleBooks.find((item) => item.name === contextBook);
+      if (book && contextChapter) {
+        const startVerse = Number(full?.[3] ?? short?.[1] ?? 1);
+        const crossesChapter = Boolean(full?.[5]);
+        const endVerse = crossesChapter ? book.chapters[contextChapter - 1] : Number(full?.[4] ?? short?.[2] ?? startVerse);
+        return { code: book.code, name: book.name, chapter: contextChapter, startVerse, endVerse };
       }
     }
     const fallback: Record<string, ProjectPassage> = {
@@ -1267,8 +1309,8 @@ export default function HomePage() {
     return fallback[project.id] ?? { code: '시', name: '시편', chapter: 23, startVerse: 1, endVerse: 1 };
   }
 
-  async function loadProjectPassage(project: ActiveProject) {
-    const target = resolveProjectPassage(project);
+  async function loadProjectPassage(project: ActiveProject, taskIndex: number) {
+    const target = resolveProjectPassage(project, taskIndex);
     try {
       const response = await fetch(`/data/bible/${encodeURIComponent(target.code)}.json`);
       if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
@@ -1291,20 +1333,23 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeProject) return;
     const project = activeProject;
-    queueMicrotask(() => void loadProjectPassage(project));
-  }, [activeProject]);
+    const taskIndex = currentProjectDayIndex;
+    queueMicrotask(() => void loadProjectPassage(project, taskIndex));
+  }, [activeProject, currentProjectDayIndex]);
 
   const activateProject = (project: ActiveProject) => {
-    setActiveProject(project);
+    const existingProject = activeProjects.find((item) => item.id === project.id);
+    const activatedProject = { ...project, startedOn: project.startedOn ?? existingProject?.startedOn ?? getKstDateKey() };
+    setActiveProject(activatedProject);
     setActiveProjects((current) => {
-      const withoutPreviousFree = project.kind === 'free' ? current.filter((item) => item.kind !== 'free') : current;
-      const next = withoutPreviousFree.some((item) => item.id === project.id)
-        ? withoutPreviousFree.map((item) => item.id === project.id ? project : item)
-        : [...withoutPreviousFree, project];
+      const withoutPreviousFree = activatedProject.kind === 'free' ? current.filter((item) => item.kind !== 'free') : current;
+      const next = withoutPreviousFree.some((item) => item.id === activatedProject.id)
+        ? withoutPreviousFree.map((item) => item.id === activatedProject.id ? activatedProject : item)
+        : [...withoutPreviousFree, activatedProject];
       window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
       return next;
     });
-    window.localStorage.setItem('verse-legacy-project', project.id);
+    window.localStorage.setItem('verse-legacy-project', activatedProject.id);
     window.localStorage.removeItem('verse-legacy-free-passage');
   };
 
@@ -1611,9 +1656,20 @@ export default function HomePage() {
           <div>
             <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 프로젝트' : `${activeProject.duration}일 완성 프로젝트`) : '우리 가족 첫 번째 낭독'}</p>
             <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
-            <p className="muted">{activeProject?.tasks[0] ? `오늘: ${activeProject.tasks[0]}` : '엄마의 목소리로 남기는 말씀'}</p>
-            {activeProject?.kind !== 'free' && completedProjectTaskIndexes.has(0) && <span className="project-day-complete"><Check size={13} /> 1일차 완료</span>}
+            <p className="muted">{activeProject?.tasks[0] ? `오늘 · ${currentProjectDay}일차: ${currentProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
+          {activeProject && activeProject.kind !== 'free' && <div className="project-day-progress" aria-label={`${activeProject.duration}일 프로젝트 진행 상황`}>
+            <div><strong>{currentProjectDay}일차 진행 중</strong><span>{completedProjectTaskIndexes.size}/{activeProject.duration}일 완료</span></div>
+            <div className="project-day-badges">
+              {Array.from({ length: activeProject.duration }, (_, index) => {
+                const day = index + 1;
+                const completed = completedProjectTaskIndexes.has(index);
+                const current = day === currentProjectDay;
+                const future = day > currentProjectDay;
+                return <span className={`${completed ? 'completed' : ''} ${current ? 'current' : ''} ${future ? 'future' : ''}`} aria-label={completed ? `${day}일차 완료` : current ? `${day}일차 진행 중` : future ? `${day}일차 아직 시작 전` : `${day}일차 미완료`} key={day}>{completed ? <Check size={12} /> : day}</span>;
+              })}
+            </div>
+          </div>}
           {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => setOnboardingStep('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
           <div className="verse-list" aria-label="구절 목록">
             {passageVerses.map((_, index) => (

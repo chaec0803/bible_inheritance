@@ -298,7 +298,16 @@ button { color: inherit; }
 h1, h2, p { margin-top: 0; }
 .chapter-panel h2, .sound-panel h2 { margin-bottom: 5px; font-size: 21px; letter-spacing: -.035em; }
 .muted { color: var(--muted); font-size: 12px; line-height: 1.55; }
-.project-day-complete { width: fit-content; margin-top: 8px; padding: 6px 9px; display: inline-flex; align-items: center; gap: 5px; color: var(--sage); background: var(--paper); border: 1px solid var(--sage); border-radius: 999px; font-size: 9px; font-weight: 900; }
+.project-day-progress { margin-top: 15px; padding: 12px; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 13px; }
+.project-day-progress > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.project-day-progress > div:first-child strong { font-size: 10px; }
+.project-day-progress > div:first-child span { color: var(--muted); font-size: 8px; font-weight: 800; }
+.project-day-badges { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+.project-day-badges > span { width: 27px; height: 27px; display: grid; place-items: center; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; font-size: 8px; font-weight: 900; }
+.project-day-badges > span.completed { color: white; background: var(--sage); border-color: var(--sage); }
+.project-day-badges > span.current { color: var(--ink); background: var(--paper); border: 2px solid var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 18%, transparent); }
+.project-day-badges > span.completed.current { color: white; background: var(--sage); }
+.project-day-badges > span.future { color: color-mix(in srgb, var(--muted) 45%, transparent); background: color-mix(in srgb, var(--surface-subtle) 70%, var(--paper)); border-style: dashed; opacity: .58; }
 .chapter-schedule-button { width: 100%; margin-top: 14px; padding: 10px 12px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--sage); background: var(--paper); border: 1px solid color-mix(in srgb, var(--sage) 55%, var(--line)); border-radius: 11px; font-size: 10px; font-weight: 900; cursor: pointer; }
 .chapter-schedule-button:hover { background: var(--sage-soft); }
 .verse-list { display: grid; gap: 5px; margin-top: 26px; }
