@@ -15,6 +15,7 @@ import {
   Download,
   Headphones,
   Home,
+  List,
   LoaderCircle,
   Mic,
   Moon,
@@ -29,6 +30,7 @@ import {
   Target,
   Users,
   Volume2,
+  X,
 } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
 
@@ -364,6 +366,7 @@ export default function HomePage() {
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
+  const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
@@ -615,6 +618,47 @@ export default function HomePage() {
     });
     return [...groups.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   }, [activeLibraryRecordings]);
+  const projectChapterOptions = useMemo(() => {
+    const references = new Map<string, { key: string; book: string; chapter: number }>();
+    const addReference = (book: string, chapter: number) => {
+      const key = `${book}-${chapter}`;
+      references.set(key, { key, book, chapter });
+    };
+
+    if (activeProject?.passage) addReference(activeProject.passage.name, activeProject.passage.chapter);
+    activeProject?.tasks.forEach((task) => {
+      const matches = task.matchAll(/([가-힣]+)\s+(\d+)(?:장|편)/g);
+      for (const match of matches) addReference(match[1], Number(match[2]));
+    });
+
+    if (activeProject?.id.startsWith('custom-')) {
+      const grouped = new Map<string, number[]>();
+      references.forEach((reference) => grouped.set(reference.book, [...(grouped.get(reference.book) ?? []), reference.chapter]));
+      grouped.forEach((chapters, book) => {
+        for (let chapter = Math.min(...chapters); chapter <= Math.max(...chapters); chapter += 1) addReference(book, chapter);
+      });
+    }
+
+    if (activeProject?.id === 'philippians-advanced') {
+      for (let chapter = 1; chapter <= 4; chapter += 1) addReference('빌립보서', chapter);
+    }
+
+    libraryChapterGroups.forEach((group) => addReference(group.book, group.chapter));
+    if (!references.size && activeProject) {
+      const fallbacks: Record<string, { name: string; chapter: number }> = {
+        'comfort-14-beginner': { name: '시편', chapter: 34 },
+        'sermon-medium': { name: '마태복음', chapter: 5 },
+        'philippians-advanced': { name: '빌립보서', chapter: 1 },
+      };
+      const fallback = fallbacks[activeProject.id] ?? { name: '시편', chapter: 23 };
+      addReference(fallback.name, fallback.chapter);
+    }
+
+    const bibleOrder = new Map(bibleBooks.map((book, index) => [book.name, index]));
+    return [...references.values()]
+      .map((reference) => ({ ...reference, hasRecording: libraryChapterGroups.some((group) => group.key === reference.key) }))
+      .sort((a, b) => (bibleOrder.get(a.book) ?? 999) - (bibleOrder.get(b.book) ?? 999) || a.chapter - b.chapter);
+  }, [activeProject, libraryChapterGroups]);
   const selectedLibraryGroup = libraryChapterGroups.find((group) => group.key === selectedLibraryChapter) ?? libraryChapterGroups[0] ?? null;
   const chapterQueue = useMemo(() => {
     const latestByVerse = new Map<number, SavedRecording>();
@@ -1575,14 +1619,6 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="library-browser">
-            <aside className="saved-chapter-list" aria-label="저장된 말씀 목록">
-              <div className="saved-chapter-heading"><small>SAVED BIBLE</small><strong>저장된 말씀</strong></div>
-              {libraryChapterGroups.map((group) => {
-                const uniqueVerses = new Set(group.recordings.map((item) => item.verse)).size;
-                const selected = selectedLibraryGroup?.key === group.key;
-                return <button className={selected ? 'selected' : ''} type="button" onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(group.key); }} key={group.key}><span><BookOpen size={16} /></span><div><strong>{group.book} {group.chapter}{group.book === '시편' ? '편' : '장'}</strong><small>{uniqueVerses}개 절 저장</small></div><ChevronRight size={15} /></button>;
-              })}
-            </aside>
             {selectedLibraryGroup && <div className="library-listen-detail">
               <div className="chapter-player">
                 <div className="chapter-player-copy">
@@ -1593,7 +1629,9 @@ export default function HomePage() {
                     <small>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
                   </div>
                 </div>
-                <div className="chapter-player-actions">
+                <div className="chapter-player-controls">
+                  <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
+                  <div className="chapter-player-actions">
                   <label>
                     <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
                     <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
@@ -1602,6 +1640,7 @@ export default function HomePage() {
                     {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
                     {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
                   </button>
+                  </div>
                 </div>
               </div>
               <div className="listen-track-section">
@@ -1657,6 +1696,20 @@ export default function HomePage() {
           </div>
               </div>
             </div>}
+          </div>
+        )}
+
+        {libraryChapterMenuOpen && (
+          <div className="chapter-menu-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setLibraryChapterMenuOpen(false); }}>
+            <dialog className="chapter-menu-sheet" open aria-labelledby="chapter-menu-title">
+              <div className="chapter-menu-heading"><div><h3 id="chapter-menu-title">{activeProject?.title ?? selectedLibraryGroup?.book ?? '저장된 말씀'}</h3><p>{projectChapterOptions.filter((option) => option.hasRecording).length}개 장 녹음됨</p></div><button type="button" onClick={() => setLibraryChapterMenuOpen(false)} aria-label="목록 닫기"><X size={22} /></button></div>
+              <div className="chapter-menu-list">
+                {projectChapterOptions.map((option) => {
+                  const selected = selectedLibraryGroup?.key === option.key;
+                  return <button className={selected ? 'selected' : ''} type="button" disabled={!option.hasRecording} onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(option.key); setLibraryChapterMenuOpen(false); }} key={option.key}><span>{option.book}</span><strong>{option.chapter}{option.book === '시편' ? '편' : '장'}</strong><small>{option.hasRecording ? selected ? '재생 중인 장' : '녹음됨' : '아직 녹음하지 않음'}</small></button>;
+                })}
+              </div>
+            </dialog>
           </div>
         )}
 
