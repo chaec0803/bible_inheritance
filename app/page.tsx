@@ -63,6 +63,8 @@ type ActiveProject = {
   totalVerses?: number;
 };
 
+type ProjectPassage = { code: string; name: string; chapter: number; startVerse: number; endVerse: number };
+
 const projectTemplates: ProjectTemplate[] = [
   {
     id: 'psalm-23-beginner', duration: 7, level: '초보자', title: '시편 23편 완성하기', scope: '총 6절 · 하루 한 절', minutes: '하루 1–2분',
@@ -335,6 +337,7 @@ export default function HomePage() {
   const [verseIndex, setVerseIndex] = useState(0);
   const [passageBook, setPassageBook] = useState({ code: '시', name: '시편' });
   const [passageChapter, setPassageChapter] = useState(23);
+  const [passageStartVerse, setPassageStartVerse] = useState(1);
   const [passageVerses, setPassageVerses] = useState(defaultVerses);
   const [recording, setRecording] = useState(false);
   const [requestingMic, setRequestingMic] = useState(false);
@@ -366,6 +369,7 @@ export default function HomePage() {
   const [customEndChapter, setCustomEndChapter] = useState(1);
   const [customEndVerse, setCustomEndVerse] = useState(6);
   const [activeProject, setActiveProject] = useState<ActiveProject | null>(null);
+  const [activeProjects, setActiveProjects] = useState<ActiveProject[]>([]);
   const [bibleTestament, setBibleTestament] = useState<'old' | 'new'>('old');
   const [bibleSearch, setBibleSearch] = useState('');
   const [selectedBibleBook, setSelectedBibleBook] = useState<BibleBook>(bibleBooks[0]);
@@ -391,27 +395,46 @@ export default function HomePage() {
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
 
   const currentTake = takes[verseIndex];
+  const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
 
   useEffect(() => {
     const completed = window.localStorage.getItem('verse-legacy-onboarding-complete') === 'true';
     const savedProjectId = window.localStorage.getItem('verse-legacy-project');
     const savedFreePassage = window.localStorage.getItem('verse-legacy-free-passage');
+    const savedActiveProjects = window.localStorage.getItem('verse-legacy-active-projects');
     const frame = window.requestAnimationFrame(() => {
-      if (savedProjectId && projectTemplates.some((item) => item.id === savedProjectId)) {
+      let restoredProjects: ActiveProject[] = [];
+      if (savedActiveProjects) {
+        try {
+          restoredProjects = JSON.parse(savedActiveProjects) as ActiveProject[];
+          setActiveProjects(restoredProjects);
+        } catch {
+          window.localStorage.removeItem('verse-legacy-active-projects');
+        }
+      }
+      if (savedProjectId) {
         setSelectedTemplateId(savedProjectId);
         const template = projectTemplates.find((item) => item.id === savedProjectId);
+        const restoredActiveProject = restoredProjects.find((item) => item.id === savedProjectId);
+        if (restoredActiveProject) {
+          setActiveProject(restoredActiveProject);
+        } else
         if (template?.custom) {
           const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
           if (savedCustomProject) {
             try {
-              setActiveProject(JSON.parse(savedCustomProject) as ActiveProject);
+              const customProject = JSON.parse(savedCustomProject) as ActiveProject;
+              setActiveProject(customProject);
+              setActiveProjects([customProject]);
             } catch {
               window.localStorage.removeItem('verse-legacy-custom-project');
             }
           }
         } else if (template) {
-          setActiveProject({ id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks });
+          const restoredProject = { id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks };
+          setActiveProject(restoredProject);
+          setActiveProjects((current) => current.length ? current : [restoredProject]);
         }
       }
       if (!savedProjectId && savedFreePassage) {
@@ -479,7 +502,7 @@ export default function HomePage() {
       .then((recordings) => {
         if (cancelled) return;
         setLibraryRecordings(recordings);
-        setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === index + 1)));
+        setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
       })
       .catch(() => {
         if (!cancelled) setNotice('보관함 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요.');
@@ -491,7 +514,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [passageBook.name, passageChapter, passageVerses]);
+  }, [passageBook.name, passageChapter, passageStartVerse, passageVerses]);
 
   useEffect(() => {
     let disposed = false;
@@ -581,7 +604,7 @@ export default function HomePage() {
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
-    setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === index + 1)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
   };
 
   const stopLibraryPlayback = (recordingId?: string) => {
@@ -919,19 +942,19 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append(
         'audio',
-        new File([currentTake.blob], `${passageBook.name}${passageChapter}장_${verseIndex + 1}절.${extension}`, {
+        new File([currentTake.blob], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${extension}`, {
           type: currentTake.mimeType,
         }),
       );
       formData.append('book', passageBook.name);
       formData.append('chapter', String(passageChapter));
-      formData.append('verse', String(verseIndex + 1));
+      formData.append('verse', String(currentVerseNumber));
       formData.append('verseText', passageVerses[verseIndex]);
       formData.append('bgmId', bgm);
       formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
 
-      const isReplacingCurrentVerse = replacingRecording?.verse === verseIndex + 1;
+      const isReplacingCurrentVerse = replacingRecording?.book === passageBook.name && replacingRecording.chapter === passageChapter && replacingRecording.verse === currentVerseNumber;
       const response = await fetch(
         isReplacingCurrentVerse ? `/api/recordings/${replacingRecording.id}/audio` : '/api/recordings',
         {
@@ -948,9 +971,9 @@ export default function HomePage() {
       await refreshLibrary();
       if (isReplacingCurrentVerse) {
         setReplacingRecording(null);
-        setNotice(`${verseIndex + 1}절을 새 녹음으로 안전하게 교체했어요.`);
+        setNotice(`${currentVerseNumber}절을 새 녹음으로 안전하게 교체했어요.`);
       } else {
-        setNotice(`${verseIndex + 1}절을 실제 보관함에 저장했어요. 나중에도 다시 들을 수 있어요.`);
+        setNotice(`${currentVerseNumber}절을 실제 보관함에 저장했어요. 나중에도 다시 들을 수 있어요.`);
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
@@ -968,7 +991,7 @@ export default function HomePage() {
         : 'webm';
     const anchor = document.createElement('a');
     anchor.href = currentTake.url;
-    anchor.download = `말씀유산_${passageBook.name}${passageChapter}장_${verseIndex + 1}절.${extension}`;
+    anchor.download = `말씀유산_${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${extension}`;
     anchor.click();
   };
 
@@ -995,10 +1018,67 @@ export default function HomePage() {
     }
   };
 
+  function resolveProjectPassage(project: ActiveProject): ProjectPassage {
+    const task = project.tasks[0]?.replace('편', '장') ?? '';
+    const match = task.match(/^(.+?)\s+(\d+)장(?:\s+(\d+)(?:–(\d+))?절)?/);
+    if (match) {
+      const book = bibleBooks.find((item) => item.name === match[1]);
+      if (book) {
+        const startVerse = Number(match[3] ?? 1);
+        return { code: book.code, name: book.name, chapter: Number(match[2]), startVerse, endVerse: Number(match[4] ?? startVerse) };
+      }
+    }
+    const fallback: Record<string, ProjectPassage> = {
+      'comfort-14-beginner': { code: '시', name: '시편', chapter: 34, startVerse: 18, endVerse: 18 },
+      'sermon-medium': { code: '마', name: '마태복음', chapter: 5, startVerse: 1, endVerse: 4 },
+      'philippians-advanced': { code: '빌', name: '빌립보서', chapter: 1, startVerse: 1, endVerse: 8 },
+    };
+    return fallback[project.id] ?? { code: '시', name: '시편', chapter: 23, startVerse: 1, endVerse: 1 };
+  }
+
+  async function loadProjectPassage(project: ActiveProject) {
+    const target = resolveProjectPassage(project);
+    try {
+      const response = await fetch(`/data/bible/${encodeURIComponent(target.code)}.json`);
+      if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
+      const chapters = await response.json() as string[][];
+      const selectedVerses = (chapters[target.chapter - 1] ?? []).slice(target.startVerse - 1, target.endVerse);
+      if (!selectedVerses.length) throw new Error('오늘의 본문이 비어 있어요.');
+      setPassageBook({ code: target.code, name: target.name });
+      setPassageChapter(target.chapter);
+      setPassageStartVerse(target.startVerse);
+      setPassageVerses(selectedVerses);
+      setVerseIndex(0);
+      setTakes(selectedVerses.map(() => null));
+      setSaved(selectedVerses.map(() => false));
+      setReplacingRecording(null);
+    } catch {
+      setNotice('프로젝트 본문을 불러오지 못했어요. 다시 선택해 주세요.');
+    }
+  }
+
+  useEffect(() => {
+    if (!activeProject) return;
+    const project = activeProject;
+    queueMicrotask(() => void loadProjectPassage(project));
+  }, [activeProject]);
+
+  const activateProject = (project: ActiveProject) => {
+    setActiveProject(project);
+    setActiveProjects((current) => {
+      const next = current.some((item) => item.id === project.id) ? current : [...current, project];
+      window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
+      return next;
+    });
+    window.localStorage.setItem('verse-legacy-project', project.id);
+    window.localStorage.removeItem('verse-legacy-free-passage');
+  };
+
   const startFreeChapter = () => {
     if (!selectedBibleVerses.length) return;
     setPassageBook({ code: selectedBibleBook.code, name: selectedBibleBook.name });
     setPassageChapter(selectedBibleChapter);
+    setPassageStartVerse(1);
     setPassageVerses(selectedBibleVerses);
     setVerseIndex(0);
     setTakes(selectedBibleVerses.map(() => null));
@@ -1010,15 +1090,13 @@ export default function HomePage() {
   const finishOnboarding = (projectId?: string) => {
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
     if (projectId) {
-      window.localStorage.removeItem('verse-legacy-free-passage');
-      window.localStorage.setItem('verse-legacy-project', projectId);
       setSelectedTemplateId(projectId);
       const project = projectTemplates.find((item) => item.id === projectId);
       if (project?.custom) {
         const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
-        if (savedCustomProject) setActiveProject(JSON.parse(savedCustomProject) as ActiveProject);
+        if (savedCustomProject) activateProject(JSON.parse(savedCustomProject) as ActiveProject);
       } else if (project) {
-        setActiveProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks });
+        activateProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks });
       }
       setNotice(project?.custom ? '직접 프로젝트를 만들 준비가 됐어요.' : `‘${project?.title}’ 프로젝트를 시작했어요.`);
     } else {
@@ -1221,6 +1299,20 @@ export default function HomePage() {
 
       <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>
 
+      {activeProjects.length > 0 && (
+        <section className="project-switcher" aria-label="진행 중인 프로젝트 전환">
+          <div className="project-switcher-heading"><div><small>MY PROJECTS</small><strong>진행 중인 프로젝트</strong></div><span>{activeProjects.length}개</span></div>
+          <div className="project-tabs">
+            {activeProjects.map((project) => (
+              <button className={activeProject?.id === project.id ? 'selected' : ''} type="button" onClick={() => activateProject(project)} key={project.id}>
+                <Target size={15} /><span><strong>{project.title}</strong><small>{project.duration}일 · {project.tasks[0] ?? project.scope}</small></span>
+              </button>
+            ))}
+            <button className="add-project-tab" type="button" onClick={() => setOnboardingStep('projects')}><span>＋</span><strong>새 프로젝트 시작</strong></button>
+          </div>
+        </section>
+      )}
+
       {activeProject && (
         <section className="active-project-banner" aria-label="현재 진행 중인 프로젝트">
           <span><Target size={20} /></span>
@@ -1252,7 +1344,7 @@ export default function HomePage() {
                 onClick={() => moveVerse(index)}
                 type="button"
               >
-                <span>{index + 1}절</span>
+                <span>{passageStartVerse + index}절</span>
                 {saved[index] ? <Check size={15} aria-label="저장 완료" /> : takes[index] ? <AudioLines size={15} aria-label="녹음 완료" /> : <span className="empty-dot" />}
               </button>
             ))}
@@ -1266,7 +1358,7 @@ export default function HomePage() {
         <section className="recording-card" aria-label="성경 녹음 화면">
           <div className="recording-heading">
             <div>
-              <p className="eyebrow">{passageBook.name} {passageChapter}장 · {verseIndex + 1}절</p>
+              <p className="eyebrow">{passageBook.name} {passageChapter}장 · {currentVerseNumber}절</p>
               <h1>천천히, 평소 목소리로 읽어 주세요.</h1>
             </div>
             <span className={`status-pill ${recording ? 'live' : hasTake ? 'ready' : ''}`}>
@@ -1274,16 +1366,16 @@ export default function HomePage() {
             </span>
           </div>
 
-          {replacingRecording && replacingRecording.verse === verseIndex + 1 && (
+          {replacingRecording && replacingRecording.book === passageBook.name && replacingRecording.chapter === passageChapter && replacingRecording.verse === currentVerseNumber && (
             <div className="retake-banner">
               <RotateCcw size={18} />
-              <p><strong>{verseIndex + 1}절을 다시 녹음하고 있어요.</strong><small>새 녹음을 저장하기 전까지 기존 보관함 음성은 그대로 유지됩니다.</small></p>
+              <p><strong>{currentVerseNumber}절을 다시 녹음하고 있어요.</strong><small>새 녹음을 저장하기 전까지 기존 보관함 음성은 그대로 유지됩니다.</small></p>
               <button type="button" onClick={() => setReplacingRecording(null)}>취소</button>
             </div>
           )}
 
           <article className="verse-paper">
-            <span className="verse-number">{verseIndex + 1}</span>
+            <span className="verse-number">{currentVerseNumber}</span>
             <p>{passageVerses[verseIndex]}</p>
           </article>
 
@@ -1308,7 +1400,7 @@ export default function HomePage() {
             <div className="take-preview">
               <div className="take-preview-heading">
                 <span><AudioLines size={18} /></span>
-                <p><strong>{verseIndex + 1}절 녹음 완료</strong><small>{formatTime(currentTake.duration)} · 지금 바로 재생할 수 있어요.</small></p>
+                <p><strong>{currentVerseNumber}절 녹음 완료</strong><small>{formatTime(currentTake.duration)} · 지금 바로 재생할 수 있어요.</small></p>
               </div>
               {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
               <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>녹음 재생을 지원하지 않는 브라우저입니다.</audio>
@@ -1321,7 +1413,7 @@ export default function HomePage() {
 
           <div className="verse-navigation">
             <button onClick={() => moveVerse(verseIndex - 1)} disabled={verseIndex === 0 || recording || requestingMic} type="button"><ChevronLeft size={18} /> 이전 구절</button>
-            <span>{verseIndex + 1} / {passageVerses.length}</span>
+            <span>{currentVerseNumber}절 · {verseIndex + 1} / {passageVerses.length}</span>
             <button onClick={() => moveVerse(verseIndex + 1)} disabled={verseIndex === passageVerses.length - 1 || recording || requestingMic} type="button">다음 구절 <ChevronRight size={18} /></button>
           </div>
         </section>
