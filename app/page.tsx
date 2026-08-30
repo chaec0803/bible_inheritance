@@ -611,6 +611,7 @@ export default function HomePage() {
     () => Math.round((completedCount / passageVerses.length) * 100),
     [completedCount, passageVerses.length],
   );
+  const currentPassageComplete = passageVerses.length > 0 && saved.length === passageVerses.length && saved.every(Boolean);
   const activeLibraryRecordings = useMemo(
     () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
     [activeProject, libraryRecordings],
@@ -654,8 +655,10 @@ export default function HomePage() {
       if (required.length > 0 && required.every((reference) => recorded.has(reference))) completed.add(index);
     });
 
+    if (currentPassageComplete) completed.add(0);
+
     return completed;
-  }, [activeLibraryRecordings, activeProject]);
+  }, [activeLibraryRecordings, activeProject, currentPassageComplete]);
   const freeRecordingChapterKeys = useMemo(() => new Set(
     libraryRecordings
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
@@ -1526,6 +1529,7 @@ export default function HomePage() {
             <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 프로젝트' : `${activeProject.duration}일 완성 프로젝트`) : '우리 가족 첫 번째 낭독'}</p>
             <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
             <p className="muted">{activeProject?.tasks[0] ? `오늘: ${activeProject.tasks[0]}` : '엄마의 목소리로 남기는 말씀'}</p>
+            {activeProject?.kind !== 'free' && completedProjectTaskIndexes.has(0) && <span className="project-day-complete"><Check size={13} /> 1일차 완료</span>}
           </div>
           {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => setOnboardingStep('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
           <div className="verse-list" aria-label="구절 목록">

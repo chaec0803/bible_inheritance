@@ -298,6 +298,7 @@ button { color: inherit; }
 h1, h2, p { margin-top: 0; }
 .chapter-panel h2, .sound-panel h2 { margin-bottom: 5px; font-size: 21px; letter-spacing: -.035em; }
 .muted { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.project-day-complete { width: fit-content; margin-top: 8px; padding: 6px 9px; display: inline-flex; align-items: center; gap: 5px; color: var(--sage); background: var(--paper); border: 1px solid var(--sage); border-radius: 999px; font-size: 9px; font-weight: 900; }
 .chapter-schedule-button { width: 100%; margin-top: 14px; padding: 10px 12px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--sage); background: var(--paper); border: 1px solid color-mix(in srgb, var(--sage) 55%, var(--line)); border-radius: 11px; font-size: 10px; font-weight: 900; cursor: pointer; }
 .chapter-schedule-button:hover { background: var(--sage-soft); }
 .verse-list { display: grid; gap: 5px; margin-top: 26px; }
