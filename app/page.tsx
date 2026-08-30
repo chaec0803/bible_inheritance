@@ -684,6 +684,8 @@ export default function HomePage() {
   const displayedProjectTask = activeProject?.tasks[displayedProjectDayIndex]
     ?? (activeProject && displayedProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
   const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
+  const savedPassageVerseNumbers = new Set(activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter).map((item) => item.verse));
+  const currentVerseSaved = Boolean(currentSavedRecording);
   const completedProjectTaskIndexes = useMemo(() => {
     const completed = new Set<number>();
     if (!activeProject || activeProject.kind === 'free') return completed;
@@ -1684,7 +1686,7 @@ export default function HomePage() {
                 type="button"
               >
                 <span>{passageStartVerse + index}절</span>
-                {saved[index] ? <Check size={15} aria-label="저장 완료" /> : takes[index] ? <AudioLines size={15} aria-label="녹음 완료" /> : <span className="empty-dot" />}
+                {savedPassageVerseNumbers.has(passageStartVerse + index) ? <Check size={15} aria-label="저장 완료" /> : takes[index] ? <AudioLines size={15} aria-label="녹음 완료" /> : <span className="empty-dot" />}
               </button>
             ))}
           </div>
@@ -1700,8 +1702,8 @@ export default function HomePage() {
               <p className="eyebrow">{passageBook.name} {passageChapter}장 · {currentVerseNumber}절</p>
               <h1>천천히, 평소 목소리로 읽어 주세요.</h1>
             </div>
-            <span className={`status-pill ${recording ? 'live' : hasTake || saved[verseIndex] ? 'ready' : ''}`}>
-              {recording ? '녹음 중' : hasTake ? '재생 가능' : saved[verseIndex] ? '저장 완료' : replacingRecording ? '다시 녹음' : '녹음 전'}
+            <span className={`status-pill ${recording ? 'live' : hasTake || currentVerseSaved ? 'ready' : ''}`}>
+              {recording ? '녹음 중' : hasTake ? '재생 가능' : currentVerseSaved ? '저장 완료' : replacingRecording ? '다시 녹음' : '녹음 전'}
             </span>
           </div>
 
@@ -1724,13 +1726,13 @@ export default function HomePage() {
             ))}
           </div>
 
-          <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : saved[verseIndex] ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
+          <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : currentVerseSaved ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
 
-          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${saved[verseIndex] && currentSavedRecording ? 'saved-recording-actions' : ''}`}>
+          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${currentVerseSaved ? 'saved-recording-actions' : ''}`}>
             {hasTake && !recording ? <>
               <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
               <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
-            </> : saved[verseIndex] && currentSavedRecording ? <>
+            </> : currentSavedRecording ? <>
               <button className="record-complete-button saved-listen" onClick={() => {
                 const audio = savedRecordingAudioRef.current;
                 if (!audio) return;
@@ -1750,7 +1752,7 @@ export default function HomePage() {
             </button>}
           </div>
 
-          {currentSavedRecording && saved[verseIndex] && (
+          {currentSavedRecording && (
             // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
             <audio ref={savedRecordingAudioRef} preload="metadata" src={ownerKey ? `/api/recordings/${currentSavedRecording.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={() => setSavedRecordingPlaying(false)} />
           )}
