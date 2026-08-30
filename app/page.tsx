@@ -1560,7 +1560,7 @@ export default function HomePage() {
           {onboardingStep === 'welcome' ? (
             <div className="onboarding-card welcome-card">
               <p className="eyebrow">{returningHome ? '말씀유산 홈' : '소중한 목소리를 오래 간직해요'}</p>
-              <h1>{returningHome ? '무엇을 이어서 할까요?' : '어떤 방식으로 시작할까요?'}</h1>
+              <h1>{returningHome ? '무엇을 선택할까요?' : '어떤 방식으로 시작할까요?'}</h1>
               <p className="onboarding-lead">{returningHome ? '진행 중인 프로젝트를 열거나, 원하는 말씀을 골라 자유롭게 녹음하세요.' : '지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.'}</p>
               <div className="start-choice-grid">
                 <button type="button" onClick={() => { setBibleBackTarget('welcome'); setOnboardingStep('bible'); }}>
