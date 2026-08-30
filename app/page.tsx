@@ -93,7 +93,7 @@ type SupportedBibleBook = {
 };
 
 const supportedBibleBooks: SupportedBibleBook[] = [
-  { id: 'psalm-23', name: '시편 23편', chapterOffset: 22, verseCounts: [6] },
+  { id: 'psalms', name: '시편', verseCounts: [6, 12, 8, 8, 12, 10, 17, 9, 20, 18, 7, 8, 6, 7, 5, 11, 15, 50, 14, 9, 13, 31, 6, 10, 22, 12, 14, 9, 11, 12, 24, 11, 22, 22, 28, 12, 40, 22, 13, 17, 13, 11, 5, 26, 17, 11, 9, 14, 20, 23, 19, 9, 6, 7, 23, 13, 11, 11, 17, 12, 8, 12, 11, 10, 13, 20, 7, 35, 36, 5, 24, 20, 28, 23, 10, 12, 20, 72, 13, 19, 16, 8, 18, 12, 13, 17, 7, 18, 52, 17, 16, 15, 5, 23, 11, 13, 12, 9, 9, 5, 8, 28, 22, 35, 45, 48, 43, 13, 31, 7, 10, 10, 9, 8, 18, 19, 2, 29, 176, 7, 8, 9, 4, 8, 5, 6, 5, 6, 8, 8, 3, 18, 3, 3, 21, 26, 9, 8, 24, 13, 10, 7, 12, 15, 21, 10, 20, 14, 9, 6] },
   { id: 'matthew', name: '마태복음', verseCounts: [25, 23, 17, 25, 48, 34, 29, 34, 38, 42, 30, 50, 58, 36, 39, 28, 27, 35, 30, 34, 46, 46, 39, 51, 46, 75, 66, 20] },
   { id: 'john', name: '요한복음', verseCounts: [51, 25, 36, 54, 47, 71, 53, 59, 41, 42, 57, 50, 38, 31, 27, 33, 26, 40, 42, 31, 25] },
   { id: 'philippians', name: '빌립보서', verseCounts: [30, 30, 21, 23] },
@@ -346,7 +346,7 @@ export default function HomePage() {
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
-  const [customBookId, setCustomBookId] = useState('psalm-23');
+  const [customBookId, setCustomBookId] = useState('psalms');
   const [customStartChapter, setCustomStartChapter] = useState(1);
   const [customStartVerse, setCustomStartVerse] = useState(1);
   const [customEndChapter, setCustomEndChapter] = useState(1);
