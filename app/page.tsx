@@ -620,6 +620,11 @@ export default function HomePage() {
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
       .map((item) => `${item.book}-${item.chapter}`),
   ), [libraryRecordings]);
+  const freeRecordingBookNames = useMemo(() => new Set(
+    libraryRecordings
+      .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
+      .map((item) => item.book),
+  ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const guidedProjects = activeProjects.filter((project) => project.kind !== 'free');
   const libraryChapterGroups = useMemo(() => {
@@ -1319,7 +1324,10 @@ export default function HomePage() {
                 <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
                   <div className="pane-heading"><span>1</span><div><strong>성경책</strong><small>{bibleTestament === 'old' ? '구약 39권' : '신약 27권'}</small></div></div>
                   <div className="bible-book-grid">
-                    {visibleBibleBooks.map((book) => <button className={selectedBibleBook.code === book.code ? 'selected' : ''} type="button" onClick={() => chooseBibleBook(book)} key={book.code}><strong>{book.name}</strong><small>{book.chapters.length}장</small></button>)}
+                    {visibleBibleBooks.map((book) => {
+                      const inProgress = freeRecordingBookNames.has(book.name);
+                      return <button className={`${selectedBibleBook.code === book.code ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => chooseBibleBook(book)} key={book.code}><strong>{book.name}</strong><small>{inProgress ? `진행 중 · ${book.chapters.length}장` : `${book.chapters.length}장`}</small></button>;
+                    })}
                   </div>
                 </section>
                 <section className="bible-chapter-pane" aria-label={`${selectedBibleBook.name} 장 선택`}>
