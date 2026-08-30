@@ -173,8 +173,9 @@ button { color: inherit; }
 .bible-book-grid strong, .bible-book-grid small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bible-book-grid strong { font-size: 10px; }
 .bible-book-grid small { margin-top: 3px; color: var(--muted); font-size: 7px; }
-.bible-book-grid button:hover, .bible-book-grid button.selected { border-color: var(--sage); background: var(--sage-soft); }
-.bible-book-grid button.selected strong { color: var(--sage); }
+.bible-book-grid button:hover { border-color: var(--sage); background: var(--sage-soft); }
+.bible-book-grid button.selected { border-color: var(--sage); background: var(--paper); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sage) 55%, transparent); }
+.bible-book-grid button.selected strong { color: var(--ink); }
 .bible-chapter-grid { max-height: 390px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; overflow-y: auto; }
 .bible-chapter-grid button { padding: 8px 3px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
 .bible-chapter-grid strong, .bible-chapter-grid small { display: block; }
