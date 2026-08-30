@@ -85,6 +85,47 @@ const projectTemplates: ProjectTemplate[] = [
   },
 ];
 
+type SupportedBibleBook = {
+  id: string;
+  name: string;
+  chapterOffset?: number;
+  verseCounts: number[];
+};
+
+const supportedBibleBooks: SupportedBibleBook[] = [
+  { id: 'psalm-23', name: '시편 23편', chapterOffset: 22, verseCounts: [6] },
+  { id: 'matthew', name: '마태복음', verseCounts: [25, 23, 17, 25, 48, 34, 29, 34, 38, 42, 30, 50, 58, 36, 39, 28, 27, 35, 30, 34, 46, 46, 39, 51, 46, 75, 66, 20] },
+  { id: 'john', name: '요한복음', verseCounts: [51, 25, 36, 54, 47, 71, 53, 59, 41, 42, 57, 50, 38, 31, 27, 33, 26, 40, 42, 31, 25] },
+  { id: 'philippians', name: '빌립보서', verseCounts: [30, 30, 21, 23] },
+  { id: 'james', name: '야고보서', verseCounts: [27, 26, 18, 17, 20] },
+];
+
+type VersePointer = { chapter: number; verse: number };
+
+function makeDailyTasks(book: SupportedBibleBook, start: VersePointer, end: VersePointer, days: number) {
+  const verses: VersePointer[] = [];
+  for (let chapter = start.chapter; chapter <= end.chapter; chapter += 1) {
+    const firstVerse = chapter === start.chapter ? start.verse : 1;
+    const lastVerse = chapter === end.chapter ? end.verse : book.verseCounts[chapter - 1];
+    for (let verse = firstVerse; verse <= lastVerse; verse += 1) verses.push({ chapter, verse });
+  }
+
+  const taskCount = Math.min(days, verses.length);
+  let cursor = 0;
+  return Array.from({ length: taskCount }, (_, index) => {
+    const size = Math.floor(verses.length / taskCount) + (index < verses.length % taskCount ? 1 : 0);
+    const portion = verses.slice(cursor, cursor + size);
+    cursor += size;
+    const first = portion[0];
+    const last = portion[portion.length - 1];
+    const chapterNumber = (chapter: number) => chapter + (book.chapterOffset ?? 0);
+    const reference = first.chapter === last.chapter
+      ? `${book.name} ${chapterNumber(first.chapter)}장 ${first.verse}–${last.verse}절`
+      : `${book.name} ${chapterNumber(first.chapter)}장 ${first.verse}절 ~ ${chapterNumber(last.chapter)}장 ${last.verse}절`;
+    return { reference, count: portion.length };
+  });
+}
+
 type BgmOption = {
   id: string;
   name: string;
@@ -304,6 +345,12 @@ export default function HomePage() {
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
+  const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
+  const [customBookId, setCustomBookId] = useState('psalm-23');
+  const [customStartChapter, setCustomStartChapter] = useState(1);
+  const [customStartVerse, setCustomStartVerse] = useState(1);
+  const [customEndChapter, setCustomEndChapter] = useState(1);
+  const [customEndVerse, setCustomEndVerse] = useState(6);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -886,6 +933,42 @@ export default function HomePage() {
 
   const selectedTemplate = projectTemplates.find((item) => item.id === selectedTemplateId) ?? projectTemplates[0];
   const visibleTemplates = projectTemplates.filter((item) => item.duration === projectDuration);
+  const customBook = supportedBibleBooks.find((item) => item.id === customBookId) ?? supportedBibleBooks[0];
+  const customRecordingDays = projectDuration === 7 ? 6 : 12;
+  const customDailyTasks = useMemo(
+    () => makeDailyTasks(
+      customBook,
+      { chapter: customStartChapter, verse: customStartVerse },
+      { chapter: customEndChapter, verse: customEndVerse },
+      customRecordingDays,
+    ),
+    [customBook, customEndChapter, customEndVerse, customRecordingDays, customStartChapter, customStartVerse],
+  );
+  const customTotalVerses = customDailyTasks.reduce((total, task) => total + task.count, 0);
+
+  const changeCustomBook = (bookId: string) => {
+    const book = supportedBibleBooks.find((item) => item.id === bookId) ?? supportedBibleBooks[0];
+    setCustomBookId(book.id);
+    setCustomStartChapter(1);
+    setCustomStartVerse(1);
+    setCustomEndChapter(book.verseCounts.length);
+    setCustomEndVerse(book.verseCounts[book.verseCounts.length - 1]);
+    setCustomProjectName(`${book.name} 목소리 프로젝트`);
+  };
+
+  const saveCustomProject = () => {
+    const project = {
+      id: `custom-${crypto.randomUUID()}`,
+      title: customProjectName.trim() || `${customBook.name} 프로젝트`,
+      duration: projectDuration,
+      bookId: customBook.id,
+      totalVerses: customTotalVerses,
+      tasks: customDailyTasks.map((task) => task.reference),
+    };
+    window.localStorage.setItem('verse-legacy-custom-project', JSON.stringify(project));
+    finishOnboarding(selectedTemplate.id);
+    setNotice(`‘${project.title}’ 일정을 만들었어요. 하루 분량을 확인해 보세요.`);
+  };
 
   return (
     <main className="app-shell">
@@ -937,7 +1020,44 @@ export default function HomePage() {
                   <p className="eyebrow">자동으로 만든 일정</p>
                   <h2>{selectedTemplate.title}</h2>
                   {selectedTemplate.custom ? (
-                    <div className="custom-project-preview"><Target size={28} /><strong>원하는 말씀을 직접 골라요</strong><p>범위를 선택하면 말씀 길이와 문단을 살펴 하루 분량을 자동으로 나눠드려요.</p></div>
+                    <div className="custom-project-builder">
+                      <label><span>프로젝트 이름</span><input value={customProjectName} onChange={(event) => setCustomProjectName(event.target.value)} maxLength={50} /></label>
+                      <label><span>성경 선택</span><select value={customBookId} onChange={(event) => changeCustomBook(event.target.value)}>{supportedBibleBooks.map((book) => <option value={book.id} key={book.id}>{book.name}</option>)}</select></label>
+                      <div className="range-row">
+                        <label><span>시작 장</span><select value={customStartChapter} onChange={(event) => {
+                          const chapter = Number(event.target.value);
+                          setCustomStartChapter(chapter);
+                          setCustomStartVerse(1);
+                          if (chapter > customEndChapter) {
+                            setCustomEndChapter(chapter);
+                            setCustomEndVerse(customBook.verseCounts[chapter - 1]);
+                          }
+                        }}>{customBook.verseCounts.map((_, index) => <option value={index + 1} key={index}>{index + 1 + (customBook.chapterOffset ?? 0)}장</option>)}</select></label>
+                        <label><span>시작 절</span><select value={customStartVerse} onChange={(event) => {
+                          const verse = Number(event.target.value);
+                          setCustomStartVerse(verse);
+                          if (customStartChapter === customEndChapter && verse > customEndVerse) setCustomEndVerse(verse);
+                        }}>{Array.from({ length: customBook.verseCounts[customStartChapter - 1] }, (_, index) => <option value={index + 1} key={index}>{index + 1}절</option>)}</select></label>
+                      </div>
+                      <div className="range-row">
+                        <label><span>마지막 장</span><select value={customEndChapter} onChange={(event) => {
+                          const chapter = Number(event.target.value);
+                          setCustomEndChapter(chapter);
+                          setCustomEndVerse(customBook.verseCounts[chapter - 1]);
+                          if (chapter < customStartChapter) {
+                            setCustomStartChapter(chapter);
+                            setCustomStartVerse(1);
+                          }
+                        }}>{customBook.verseCounts.map((_, index) => <option value={index + 1} key={index}>{index + 1 + (customBook.chapterOffset ?? 0)}장</option>)}</select></label>
+                        <label><span>마지막 절</span><select value={customEndVerse} onChange={(event) => {
+                          const verse = Number(event.target.value);
+                          setCustomEndVerse(verse);
+                          if (customStartChapter === customEndChapter && verse < customStartVerse) setCustomStartVerse(verse);
+                        }}>{Array.from({ length: customBook.verseCounts[customEndChapter - 1] }, (_, index) => <option value={index + 1} key={index}>{index + 1}절</option>)}</select></label>
+                      </div>
+                      <div className="custom-project-summary"><strong>총 {customTotalVerses}절</strong><span>{customRecordingDays}일 동안 하루 평균 {Math.ceil(customTotalVerses / Math.max(customRecordingDays, 1))}절</span></div>
+                      <ol>{customDailyTasks.map((task, index) => <li key={task.reference}><span>{index + 1}일</span><strong>{task.reference}</strong><small>{task.count}절</small></li>)}</ol>
+                    </div>
                   ) : (
                     <ol>
                       {selectedTemplate.tasks.map((task, index) => (
@@ -946,7 +1066,7 @@ export default function HomePage() {
                       {selectedTemplate.duration === 14 && <><li><span>13일</span><strong>밀린 녹음과 다시 녹음</strong></li><li><span>14일</span><strong>전체 확인하고 완성하기</strong></li></>}
                     </ol>
                   )}
-                  <button className="start-project-button" type="button" onClick={() => finishOnboarding(selectedTemplate.id)}>{selectedTemplate.custom ? '직접 프로젝트 만들기' : '이 프로젝트 시작하기'} <ArrowRight size={16} /></button>
+                  <button className="start-project-button" type="button" onClick={selectedTemplate.custom ? saveCustomProject : () => finishOnboarding(selectedTemplate.id)} disabled={selectedTemplate.custom && customTotalVerses === 0}>{selectedTemplate.custom ? '이 일정으로 프로젝트 만들기' : '이 프로젝트 시작하기'} <ArrowRight size={16} /></button>
                 </aside>
               </div>
             </div>

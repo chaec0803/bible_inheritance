@@ -101,6 +101,18 @@ button { color: inherit; }
 .custom-project-preview svg { color: var(--sage); }
 .custom-project-preview strong { color: var(--ink); font-size: 13px; }
 .custom-project-preview p { max-width: 300px; margin: 0; font-size: 10px; line-height: 1.6; }
+.custom-project-builder { display: grid; gap: 10px; }
+.custom-project-builder > label, .custom-project-builder .range-row label { display: grid; gap: 5px; }
+.custom-project-builder label > span { color: var(--muted); font-size: 8px; font-weight: 900; }
+.custom-project-builder input, .custom-project-builder select { width: 100%; min-height: 38px; padding: 8px 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; outline: none; }
+.custom-project-builder input:focus, .custom-project-builder select:focus { border-color: var(--sage); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sage) 14%, transparent); }
+.range-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.custom-project-summary { padding: 10px 11px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--sage); background: var(--sage-soft); border-radius: 10px; }
+.custom-project-summary strong { font-size: 11px; }
+.custom-project-summary span { color: var(--muted); font-size: 8px; }
+.custom-project-builder ol { max-height: 190px; }
+.custom-project-builder li { grid-template-columns: 38px 1fr auto; }
+.custom-project-builder li small { color: var(--muted); font-size: 8px; }
 .start-project-button { width: 100%; margin-top: 15px; padding: 12px 16px; display: flex; align-items: center; justify-content: center; gap: 6px; color: white; background: var(--ink); border: 0; border-radius: 12px; font-size: 10px; font-weight: 900; cursor: pointer; }
 
 .app-shell { min-height: 100vh; padding-bottom: 32px; }
