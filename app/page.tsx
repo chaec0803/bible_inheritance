@@ -1612,19 +1612,25 @@ export default function HomePage() {
 
           <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : saved[verseIndex] ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
 
-          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''}`}>
+          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${saved[verseIndex] && currentSavedRecording ? 'saved-recording-actions' : ''}`}>
             {hasTake && !recording ? <>
               <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
               <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
-            </> : saved[verseIndex] && currentSavedRecording ? <button className="record-button saved-listen" onClick={() => {
-              const audio = savedRecordingAudioRef.current;
-              if (!audio) return;
-              if (savedRecordingPlaying) audio.pause();
-              else void audio.play();
-            }} type="button">
-              <span>{savedRecordingPlaying ? <Pause size={27} /> : <Headphones size={27} />}</span>
-              {savedRecordingPlaying ? '듣기 멈춤' : '녹음 듣기'}
-            </button> : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
+            </> : saved[verseIndex] && currentSavedRecording ? <>
+              <button className="record-complete-button saved-listen" onClick={() => {
+                const audio = savedRecordingAudioRef.current;
+                if (!audio) return;
+                if (savedRecordingPlaying) audio.pause();
+                else void audio.play();
+              }} type="button">
+                {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
+                <span>{savedRecordingPlaying ? '듣기 멈춤' : '녹음 듣기'}</span>
+              </button>
+              <button className="record-complete-button restart" type="button" disabled={deletingRecordingId === currentSavedRecording.id} onClick={() => void startRetake(currentSavedRecording)}>
+                {deletingRecordingId === currentSavedRecording.id ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
+                <span>{deletingRecordingId === currentSavedRecording.id ? '삭제 중' : '다시 녹음'}</span>
+              </button>
+            </> : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
               {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
             </button>}
