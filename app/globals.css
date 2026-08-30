@@ -523,6 +523,27 @@ html[data-theme='dark'] .toast { color: #17221f; }
 .headphone-modal-actions button { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--sage); background: var(--paper); border: 1px solid var(--line); border-radius: 12px; font-size: 10px; font-weight: 900; cursor: pointer; }
 .headphone-modal-actions button.confirm { color: var(--action-ink); background: var(--action-bg); border-color: transparent; }
 .headphone-modal-actions button.cancel { color: var(--muted); background: transparent; border-color: transparent; }
+.word-card-modal-backdrop { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 18px; background: rgba(12, 20, 17, .76); backdrop-filter: blur(8px); }
+.word-card-modal { position: relative; width: min(470px, 100%); max-height: calc(100vh - 36px); margin: 0; padding: 26px 28px 24px; overflow-y: auto; color: var(--ink); background: #f8ead4; border: 1px solid rgba(111, 79, 44, .24); border-radius: 28px; box-shadow: 0 30px 100px rgba(5, 12, 10, .42); text-align: center; }
+.word-card-modal h2 { margin: 0; color: #173f50; font-size: 23px; letter-spacing: -.04em; }
+.word-card-instruction { margin: 7px 0 17px; color: #776b5e; font-size: 10px; }
+.word-card-close { position: absolute; top: 16px; right: 16px; width: 38px; height: 38px; display: grid; place-items: center; color: #f9efe0; background: rgba(47, 43, 38, .72); border: 0; border-radius: 50%; cursor: pointer; }
+.word-card-scene { position: relative; width: min(310px, 78vw); height: 430px; margin: 0 auto; perspective: 1200px; }
+.word-card { position: relative; width: 100%; height: 100%; padding: 0; transform-style: preserve-3d; transition: transform .65s cubic-bezier(.2,.72,.25,1); color: inherit; background: transparent; border: 0; cursor: pointer; }
+.word-card-scene.flipped .word-card { transform: rotateY(180deg); }
+.word-card-face { position: absolute; inset: 0; padding: 18px; display: flex; align-items: center; flex-direction: column; backface-visibility: hidden; overflow: hidden; background: #fff1dd; border: 1px solid rgba(103, 73, 40, .23); border-radius: 23px; box-shadow: 0 20px 42px rgba(79, 52, 25, .18); }
+.word-card-front { justify-content: flex-end; }
+.word-card-art { width: calc(100% + 36px); height: 285px; margin: -18px -18px 17px; flex: 0 0 auto; background-repeat: no-repeat; background-size: 400% 400%; border-bottom: 1px solid rgba(103, 73, 40, .18); }
+.word-card-face > small { color: #1b5268; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.word-card-front > strong { margin-top: 2px; color: #123f52; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 37px; line-height: 1.2; }
+.word-card-front > span { margin-top: 12px; padding: 7px 10px; display: inline-flex; align-items: center; gap: 5px; color: #765b35; background: #f1dcae; border-radius: 999px; font-size: 9px; font-weight: 900; }
+.word-card-back { justify-content: center; transform: rotateY(180deg); }
+.word-card-back > strong { margin-top: 5px; color: #123f52; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 32px; }
+.word-card-back h3 { margin: 24px 0 10px; max-width: 240px; color: #5d422c; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 19px; line-height: 1.55; text-wrap: balance; }
+.word-card-back p { margin: 0 0 14px; color: #665c50; font-size: 10px; line-height: 1.75; }
+.word-card-back > span { margin-top: 14px; color: #988b7d; font-size: 8px; }
+.word-card-detail-toggle { position: absolute; left: 50%; bottom: 46px; z-index: 5; padding: 9px 13px; transform: translateX(-50%); color: #173f50; background: #fff1dd; border: 1px solid #7c9aa3; border-radius: 999px; font-size: 9px; font-weight: 900; cursor: pointer; }
+.word-card-keep { width: min(310px, 78vw); margin-top: 14px; padding: 13px; color: var(--action-ink); background: var(--action-bg); border: 0; border-radius: 13px; font-size: 10px; font-weight: 900; cursor: pointer; }
 html[data-theme='dark'] .status-pill.live { color: #ffb4ae; background: #492927; }
 html[data-theme='dark'] .status-pill.ready { color: #b9d8ca; background: var(--sage-soft); }
 html[data-theme='dark'] .avatar-stack span { border-color: var(--paper); }

@@ -182,6 +182,30 @@ const bgmOptions: readonly BgmOption[] = [
   },
 ];
 
+type WordCard = {
+  id: string;
+  name: string;
+  heading: string;
+  detail: string;
+  spriteIndex: number;
+};
+
+const wordCards: readonly WordCard[] = [
+  { id: 'jacob', name: '야곱', heading: '붙들고 씨름하며 새 이름을 받은 사람', detail: '야곱은 부족함과 실수 속에서도 하나님의 약속을 놓지 않았어요. 하나님은 그에게 이스라엘이라는 새 이름을 주시고, 한 민족의 시작이 되게 하셨어요.', spriteIndex: 0 },
+  { id: 'jesus', name: '예수님', heading: '사랑으로 우리에게 가장 가까이 오신 구원자', detail: '예수님은 하나님의 사랑을 삶으로 보여 주시고, 아픈 사람을 고치며 소외된 이들을 품으셨어요. 십자가와 부활을 통해 모든 사람에게 구원의 길을 열어 주셨어요.', spriteIndex: 1 },
+  { id: 'peter', name: '베드로', heading: '넘어져도 다시 부르심을 따라간 제자', detail: '베드로는 성급하고 두려움도 많았지만 예수님의 용서와 격려로 다시 일어났어요. 이후 복음을 담대하게 전하며 초대 교회를 든든히 세웠어요.', spriteIndex: 2 },
+  { id: 'god', name: '하나님', heading: '세상을 지으시고 끝까지 사랑하시는 분', detail: '하나님은 모든 생명의 창조자이며 약속을 지키시는 분이에요. 성경 전체를 통해 사람을 찾고 회복시키며 선한 길로 이끄시는 사랑을 보여 주세요.', spriteIndex: 3 },
+  { id: 'holy-spirit', name: '성령님', heading: '우리와 함께하며 힘과 지혜를 주시는 분', detail: '성령님은 믿는 사람 안에 함께하시며 예수님의 말씀을 기억하게 하세요. 두려울 때 용기를 주고, 사랑과 기쁨과 평화의 열매를 맺도록 도와주세요.', spriteIndex: 4 },
+  { id: 'david', name: '다윗', heading: '하나님의 마음을 노래한 목동이자 왕', detail: '다윗은 작은 목동이었지만 하나님을 신뢰하며 골리앗 앞에 섰어요. 왕이 된 뒤에도 기쁨과 슬픔, 회개와 소망을 시편의 노래로 남겼어요.', spriteIndex: 5 },
+  { id: 'goliath', name: '골리앗', heading: '크기보다 믿음이 더 강하다는 것을 보여 준 거인', detail: '골리앗은 강한 무기와 큰 몸을 자랑했지만, 하나님을 의지한 다윗 앞에서 무너졌어요. 이 이야기는 눈앞의 크기보다 믿음의 방향이 중요하다는 것을 보여 줘요.', spriteIndex: 6 },
+  { id: 'samson', name: '삼손', heading: '큰 힘과 함께 책임도 배워야 했던 사사', detail: '삼손은 이스라엘을 돕도록 특별한 힘을 받았지만 자신의 선택 때문에 어려움을 겪었어요. 마지막 순간 하나님을 다시 찾으며 맡겨진 힘의 의미를 깨달았어요.', spriteIndex: 7 },
+  { id: 'mary', name: '마리아', heading: '두려움 속에서도 믿음으로 응답한 사람', detail: '마리아는 놀라운 소식을 들었을 때 모든 것을 다 알 수 없었지만 하나님을 믿고 순종했어요. 예수님의 어머니로서 약속을 마음에 간직하며 길을 걸었어요.', spriteIndex: 8 },
+  { id: 'magi', name: '동방박사들', heading: '별을 따라 먼 길을 걸어온 예배자들', detail: '동방박사들은 새 왕의 탄생을 알리는 별을 보고 먼 길을 떠났어요. 아기 예수님을 만나 기뻐하며 귀한 예물을 드리고 경배했어요.', spriteIndex: 9 },
+  { id: 'magi-1', name: '동방박사 1', heading: '왕을 위한 황금을 준비한 지혜로운 여행자', detail: '황금은 왕에게 드리는 귀한 예물이었어요. 이 박사는 긴 여정 끝에 예수님을 참된 왕으로 높이며 자신의 가장 귀한 것을 기쁨으로 드렸어요.', spriteIndex: 10 },
+  { id: 'magi-2', name: '동방박사 2', heading: '예배의 향기인 유향을 들고 온 여행자', detail: '유향은 하나님께 예배할 때 사용하던 향이었어요. 이 박사의 선물은 아기 예수님께 드리는 경배와 존경을 담고 있어요.', spriteIndex: 11 },
+  { id: 'magi-3', name: '동방박사 3', heading: '깊은 의미를 품은 몰약을 준비한 여행자', detail: '몰약은 매우 귀한 향품이었어요. 이 선물은 예수님의 삶과 희생을 미리 떠올리게 하며, 동방박사들의 진심 어린 경배를 보여 줘요.', spriteIndex: 12 },
+];
+
 type RecordingTake = {
   url: string;
   blob: Blob;
@@ -359,6 +383,9 @@ export default function HomePage() {
   const [activePreview, setActivePreview] = useState<string | null>(null);
   const [bgmPaused, setBgmPaused] = useState(false);
   const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
+  const [earnedCard, setEarnedCard] = useState<WordCard | null>(null);
+  const [wordCardFlipped, setWordCardFlipped] = useState(false);
+  const [wordCardExpanded, setWordCardExpanded] = useState(false);
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -750,6 +777,32 @@ export default function HomePage() {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
     setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+    return recordings;
+  };
+
+  const awardDailyWordCard = (recordings: SavedRecording[]) => {
+    if (!activeProject || activeProject.kind === 'free') return;
+    const completedToday = passageVerses.every((_, index) => recordings.some((item) => item.projectId === activeProject.id && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
+    if (!completedToday) return;
+
+    const storageKey = 'verse-legacy-word-card-awards';
+    const awardKey = `${activeProject.id}:day-1`;
+    let awards: { key: string; cardId: string }[] = [];
+    try {
+      awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string }[];
+    } catch {
+      awards = [];
+    }
+    if (awards.some((award) => award.key === awardKey)) return;
+
+    const ownedIds = new Set(awards.map((award) => award.cardId));
+    const availableCards = wordCards.filter((card) => !ownedIds.has(card.id));
+    const pool = availableCards.length ? availableCards : wordCards;
+    const card = pool[Math.floor(Math.random() * pool.length)];
+    window.localStorage.setItem(storageKey, JSON.stringify([...awards, { key: awardKey, cardId: card.id }]));
+    setWordCardFlipped(false);
+    setWordCardExpanded(false);
+    setEarnedCard(card);
   };
 
   const stopLibraryPlayback = (recordingId?: string) => {
@@ -1154,7 +1207,7 @@ export default function HomePage() {
         throw new Error(payload?.error || '보관함에 저장하지 못했어요.');
       }
 
-      await refreshLibrary();
+      const updatedRecordings = await refreshLibrary();
       setReplacingRecording(null);
       setTakes((current) => current.map((take, index) => {
         if (index !== verseIndex || !take) return take;
@@ -1164,6 +1217,7 @@ export default function HomePage() {
       }));
       setSeconds(0);
       setNotice('보관함에 저장되었어요.');
+      awardDailyWordCard(updatedRecordings);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -1899,6 +1953,40 @@ export default function HomePage() {
           </dialog>
         </div>
       )}
+
+      {earnedCard && (() => {
+        const column = earnedCard.spriteIndex % 4;
+        const row = Math.floor(earnedCard.spriteIndex / 4);
+        return (
+          <div className="word-card-modal-backdrop" role="presentation">
+            <dialog className="word-card-modal" open aria-labelledby="word-card-modal-title">
+              <button className="word-card-close" type="button" onClick={() => setEarnedCard(null)} aria-label="말씀 카드 닫기"><X size={21} /></button>
+              <p className="eyebrow">TODAY&apos;S WORD CARD</p>
+              <h2 id="word-card-modal-title">오늘의 말씀 카드를 뽑았어요!</h2>
+              <p className="word-card-instruction">카드를 눌러 뒤집어 보세요.</p>
+              <div className={`word-card-scene ${wordCardFlipped ? 'flipped' : ''}`}>
+                <button className="word-card" type="button" aria-label={`${earnedCard.name} 말씀 카드 뒤집기`} onClick={() => setWordCardFlipped((current) => !current)}>
+                  <section className="word-card-face word-card-front">
+                    <div className="word-card-art" style={{ backgroundImage: 'url(/cards/bible-character-sprite.png)', backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
+                    <small>성경 속 말씀 인물</small>
+                    <strong>{earnedCard.name}</strong>
+                    <span><Sparkles size={13} /> 오늘의 카드</span>
+                  </section>
+                  <section className="word-card-face word-card-back">
+                    <small>성경 속 말씀 인물</small>
+                    <strong>{earnedCard.name}</strong>
+                    <h3>{earnedCard.heading}</h3>
+                    {wordCardExpanded && <p>{earnedCard.detail}</p>}
+                    <span>카드를 누르면 앞면으로 돌아가요</span>
+                  </section>
+                </button>
+                {wordCardFlipped && <button className="word-card-detail-toggle" type="button" onClick={() => setWordCardExpanded((current) => !current)}>{wordCardExpanded ? '간단히 보기' : '더 자세히'}</button>}
+              </div>
+              <button className="word-card-keep" type="button" onClick={() => setEarnedCard(null)}>내 카드로 간직하기</button>
+            </dialog>
+          </div>
+        );
+      })()}
 
       {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
     </main>
