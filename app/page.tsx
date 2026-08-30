@@ -213,6 +213,8 @@ type YouTubePlayer = {
     endSeconds?: number;
   }) => void;
   setVolume: (volume: number) => void;
+  playVideo: () => void;
+  pauseVideo: () => void;
   stopVideo: () => void;
 };
 
@@ -355,7 +357,7 @@ export default function HomePage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [playerReady, setPlayerReady] = useState(false);
   const [activePreview, setActivePreview] = useState<string | null>(null);
-  const [previewRemaining, setPreviewRemaining] = useState(0);
+  const [bgmPaused, setBgmPaused] = useState(false);
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -396,7 +398,6 @@ export default function HomePage() {
   const objectUrlsRef = useRef(new Set<string>());
   const youtubeContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
   const ownerKeyRef = useRef('');
   const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
   const activeLibraryRef = useRef<string | null>(null);
@@ -560,8 +561,10 @@ export default function HomePage() {
           onStateChange: (event) => {
             if (event.data === 0) {
               setActivePreview(null);
-              setPreviewRemaining(0);
+              setBgmPaused(false);
             }
+            if (event.data === 1) setBgmPaused(false);
+            if (event.data === 2) setBgmPaused(true);
           },
         },
       });
@@ -584,7 +587,6 @@ export default function HomePage() {
 
     return () => {
       disposed = true;
-      if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
       if (typeof youtubePlayerRef.current?.destroy === 'function') youtubePlayerRef.current.destroy();
       youtubePlayerRef.current = null;
       window.onYouTubeIframeAPIReady = previousReadyHandler;
@@ -751,7 +753,7 @@ export default function HomePage() {
     activeLibraryRef.current = null;
     setActiveLibraryId(null);
     setActivePreview(null);
-    setPreviewRemaining(0);
+    setBgmPaused(false);
   };
 
   const stopChapterPlayback = () => {
@@ -784,17 +786,12 @@ export default function HomePage() {
   };
 
   const stopPreview = () => {
-    if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
-    previewTimerRef.current = null;
     youtubePlayerRef.current?.stopVideo();
     setActivePreview(null);
-    setPreviewRemaining(0);
+    setBgmPaused(false);
   };
 
   const playLibraryBgm = (recording: SavedRecording) => {
-    if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
-    previewTimerRef.current = null;
-
     activeLibraryRef.current = recording.id;
     setActiveLibraryId(recording.id);
     libraryAudioRefs.current.forEach((audio, id) => {
@@ -827,7 +824,7 @@ export default function HomePage() {
       startSeconds: option.startSeconds,
     });
     setActivePreview(chapterPlayingRef.current ? `chapter-${playbackBgmId}` : `library-${recording.id}`);
-    setPreviewRemaining(0);
+    setBgmPaused(false);
   };
 
   const startChapterPlayback = () => {
@@ -839,7 +836,7 @@ export default function HomePage() {
     stopPreview();
     const first = chapterQueue[0];
     chapterPlayingRef.current = true;
-    chapterBgmIdRef.current = first.bgmId;
+    chapterBgmIdRef.current = bgm;
     setChapterPlaying(true);
     playLibraryBgm(first);
     window.setTimeout(() => {
@@ -870,11 +867,7 @@ export default function HomePage() {
     void nextAudio.play();
   };
 
-  const startPreview = (option: BgmOption) => {
-    if (recording) {
-      setNotice('녹음 중에는 배경음악이 나오지 않아요. 녹음이 끝난 뒤 미리 들어보세요.');
-      return;
-    }
+  const playSelectedBgm = (option: BgmOption) => {
     if (activeLibraryRef.current) {
       libraryAudioRefs.current.get(activeLibraryRef.current)?.pause();
       stopLibraryPlayback();
@@ -883,37 +876,30 @@ export default function HomePage() {
       stopPreview();
       return;
     }
-    if (activePreview === option.id) {
-      stopPreview();
-      return;
-    }
     if (!playerReady || !youtubePlayerRef.current) {
-      setNotice('유튜브 미리듣기를 준비하고 있어요. 잠시 후 다시 눌러 주세요.');
+      setNotice('배경음악을 준비하고 있어요. 잠시 후 다시 눌러 주세요.');
       return;
     }
 
-    if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
     youtubePlayerRef.current.setVolume(volume);
-    youtubePlayerRef.current.loadVideoById({
-      videoId: option.videoId,
-      startSeconds: option.startSeconds,
-      endSeconds: option.startSeconds + 10,
-    });
+    if (activePreview === option.id) youtubePlayerRef.current.playVideo();
+    else youtubePlayerRef.current.loadVideoById({ videoId: option.videoId, startSeconds: option.startSeconds });
     setBgm(option.id);
     setActivePreview(option.id);
-    setPreviewRemaining(10);
-    previewTimerRef.current = window.setInterval(() => {
-      setPreviewRemaining((remaining) => {
-        if (remaining <= 1) {
-          if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
-          previewTimerRef.current = null;
-          youtubePlayerRef.current?.stopVideo();
-          setActivePreview(null);
-          return 0;
-        }
-        return remaining - 1;
-      });
-    }, 1000);
+    setBgmPaused(false);
+  };
+
+  const pauseSelectedBgm = () => {
+    youtubePlayerRef.current?.pauseVideo();
+    setBgmPaused(true);
+  };
+
+  const selectLibraryBgm = (option: BgmOption) => {
+    setBgm(option.id);
+    chapterBgmIdRef.current = option.id;
+    if (!chapterPlayingRef.current) return;
+    const current = chapterQueue.find((item) => item.id === activeLibraryRef.current) ?? chapterQueue[0];
+    if (current) playLibraryBgm(current);
   };
 
   const moveVerse = (nextIndex: number) => {
@@ -960,7 +946,6 @@ export default function HomePage() {
     setChapterPlaying(false);
     activeLibraryRef.current = null;
     setActiveLibraryId(null);
-    stopPreview();
     setRequestingMic(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1626,7 +1611,7 @@ export default function HomePage() {
 
           <fieldset className="setting-group">
             <legend><Music2 size={17} /> 배경음악</legend>
-            <p>선택만 해두세요. 녹음 중에는 조용하고, 보관함에서 다시 들을 때 함께 재생돼요.</p>
+            <p>곡을 고른 뒤 녹음하면서 재생하거나 잠시 멈출 수 있어요. 선택한 곡은 저장된 말씀에도 연결돼요.</p>
             <div className="music-list">
               {bgmOptions.map((option) => (
                 <div className={`music-option ${bgm === option.id ? 'selected' : ''}`} key={option.id}>
@@ -1642,30 +1627,28 @@ export default function HomePage() {
                     <span><strong>{option.name}</strong><small>{option.description}</small></span>
                     <span className="radio-dot" />
                   </button>
-                  {option.videoId && (
-                    <button className="preview-button" onClick={() => startPreview(option)} disabled={!playerReady} type="button" aria-label={`${option.name} 10초 미리듣기`}>
-                      {activePreview === option.id ? <Pause size={13} /> : <Play size={13} />}
-                      {activePreview === option.id ? `${previewRemaining}초` : playerReady ? '10초 듣기' : '준비 중'}
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
           </fieldset>
 
-          <div className={`youtube-preview-shell ${activePreview ? 'active' : ''}`} aria-label="유튜브 배경음악 미리듣기">
-            {!activePreview && <div className="youtube-placeholder"><Play size={18} /><span>{playerReady ? '음악을 골라 10초 들어보세요' : '미리듣기를 준비하고 있어요'}</span></div>}
-            {activePreview && <div className="youtube-placeholder"><AudioLines size={20} /><span>{previewRemaining ? `${previewRemaining}초 미리듣는 중` : '이어듣기 BGM 재생 중'}</span></div>}
+          <div className="bgm-transport" aria-label="배경음악 재생 조작">
+            <button type="button" onClick={() => {
+              const option = bgmOptions.find((item) => item.id === bgm);
+              if (option) playSelectedBgm(option);
+            }} disabled={!playerReady || bgm === 'none'} aria-label="배경음악 재생"><Play size={16} /><span>재생</span></button>
+            <button type="button" onClick={pauseSelectedBgm} disabled={!activePreview || bgmPaused} aria-label="배경음악 일시정지"><Pause size={16} /><span>일시정지</span></button>
+            <button type="button" onClick={stopPreview} disabled={!activePreview} aria-label="배경음악 정지"><CircleStop size={16} /><span>정지</span></button>
           </div>
 
           <label className="volume-control">
-            <span><Volume2 size={17} /> 미리듣기·이어듣기 BGM 음량 <strong>{volume}%</strong></span>
+            <span><Volume2 size={17} /> 배경음악 음량 <strong>{volume}%</strong></span>
             <input type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
           </label>
 
           <div className="sound-summary">
             <Sparkles size={18} />
-            <p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>새 녹음에는 음량 보정과 선택한 리버브가 적용되고, BGM은 전체 이어듣기에서만 작게 재생돼요.</small></p>
+            <p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>녹음 중에는 BGM을 들으며 읽을 수 있고, 저장 후에는 이어듣기 전체에 같은 음악을 적용할 수 있어요.</small></p>
           </div>
         </aside>
       </section>}
@@ -1708,6 +1691,10 @@ export default function HomePage() {
                       <small>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
                     </div>
                   )}
+                </div>
+                <div className="library-bgm-picker" aria-label="이어듣기 배경음악 선택">
+                  <span><Music2 size={14} /> 이어듣기 BGM</span>
+                  <div>{bgmOptions.map((option) => <button className={bgm === option.id ? 'selected' : ''} type="button" onClick={() => selectLibraryBgm(option)} key={option.id}>{option.name}</button>)}</div>
                 </div>
                 <div className="chapter-player-controls">
                   <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
