@@ -1332,7 +1332,7 @@ export default function HomePage() {
                 <Target size={15} /><span><strong>{project.title}</strong><small>{project.kind === 'free' ? '자유 녹음' : `${project.duration}일`} · {project.tasks[0] ?? project.scope}</small></span>
               </button>
             ))}
-            <button className="add-project-tab" type="button" onClick={() => setOnboardingStep('projects')}><span>＋</span><strong>새 프로젝트 시작</strong></button>
+            <button className="add-project-tab" type="button" onClick={() => setOnboardingStep('welcome')}><span>＋</span><strong>새 프로젝트 시작</strong></button>
           </div>
         </section>
       )}
