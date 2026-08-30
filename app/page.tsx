@@ -362,6 +362,7 @@ export default function HomePage() {
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
+  const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
@@ -633,6 +634,17 @@ export default function HomePage() {
       if (!audio.paused) audio.pause();
     });
     stopLibraryPlayback();
+  };
+
+  const openRecordingTab = () => {
+    stopChapterPlayback();
+    setAppTab('recording');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openLibraryTab = () => {
+    setAppTab('library');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const stopPreview = () => {
@@ -1343,10 +1355,13 @@ export default function HomePage() {
           <div><span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span><strong>{activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong></div>
           <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         </div>
-        <a className="icon-button" href="#library" aria-label="보관함으로 이동"><Archive size={20} /></a>
+        <nav className="desktop-tabs" aria-label="주요 화면">
+          <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={16} /> 녹음</button>
+          <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={16} /> 듣기</button>
+        </nav>
       </header>
 
-      <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>
+      {appTab === 'recording' && <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>}
 
       {activeProjects.length > 0 && (
         <section className="project-switcher" aria-label="진행 중인 프로젝트 전환">
@@ -1362,7 +1377,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {activeProject && (
+      {appTab === 'recording' && activeProject && (
         <section className="active-project-banner" aria-label="현재 진행 중인 프로젝트">
           <span><Target size={20} /></span>
           <div>
@@ -1378,7 +1393,7 @@ export default function HomePage() {
         </section>
       )}
 
-      <section className="workspace" id="recording">
+      {appTab === 'recording' && <section className="workspace" id="recording">
         <aside className="chapter-panel" aria-label="프로젝트 정보">
           <div>
             <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 프로젝트' : `${activeProject.duration}일 완성 프로젝트`) : '우리 가족 첫 번째 낭독'}</p>
@@ -1524,9 +1539,9 @@ export default function HomePage() {
             <p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>새 녹음에는 음량 보정과 선택한 리버브가 적용되고, BGM은 전체 이어듣기에서만 작게 재생돼요.</small></p>
           </div>
         </aside>
-      </section>
+      </section>}
 
-      <section className="library-section" id="library" aria-labelledby="library-title">
+      {appTab === 'library' && <section className="library-section" id="library" aria-labelledby="library-title">
         <div className="library-heading">
           <div>
             <p className="eyebrow">나중에도 다시 듣기</p>
@@ -1541,7 +1556,8 @@ export default function HomePage() {
             <div className="chapter-player-copy">
               <span><BookOpen size={20} /></span>
               <div>
-                <strong>{passageBook.name} {passageChapter}장 전체 이어듣기</strong>
+                <small className="now-playing-label">NOW PLAYING</small>
+                <strong>{passageBook.name} {passageChapter}장 이어듣기</strong>
                 <small>{chapterQueue.length === passageVerses.length ? `1절부터 ${passageVerses.length}절까지` : `완성률과 관계없이 저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
               </div>
             </div>
@@ -1565,9 +1581,11 @@ export default function HomePage() {
             <span><Archive size={28} /></span>
             <strong>{activeProject ? `‘${activeProject.title}’에 저장된 녹음이 없어요` : '아직 저장된 녹음이 없어요'}</strong>
             <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요. 다른 프로젝트의 녹음과 섞이지 않아요.</p>
-            <a href="#recording">첫 녹음 시작하기</a>
+            <button className="library-empty-action" type="button" onClick={openRecordingTab}>첫 녹음 시작하기</button>
           </div>
         ) : (
+          <div className="listen-track-section">
+            <div className="listen-track-heading"><div><small>PLAYLIST</small><strong>저장된 말씀</strong></div><span>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')}</span></div>
           <div className="library-grid">
             {activeLibraryRecordings.map((item) => {
               const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
@@ -1617,10 +1635,11 @@ export default function HomePage() {
               );
             })}
           </div>
+          </div>
         )}
 
         <p className="library-privacy"><Cloud size={14} /> 현재는 이 브라우저에서 저장한 녹음만 보여요. 다른 기기와 공유하는 가족 계정은 다음 단계에서 연결할 수 있어요.</p>
-      </section>
+      </section>}
 
       <footer className="page-footer">
         <button className="theme-toggle" onClick={() => setOnboardingStep('welcome')} type="button" aria-label="시작 방식과 프로젝트 다시 선택"><Target size={18} /><span>프로젝트 선택</span></button>
@@ -1632,9 +1651,9 @@ export default function HomePage() {
       </footer>
 
       <nav className="mobile-nav" aria-label="주요 메뉴">
-        <a className="active" href="#recording"><Home size={19} /><span>녹음</span></a>
-        <a href="#library"><Headphones size={19} /><span>보관함</span></a>
-        <a href="#family"><Users size={19} /><span>가족</span></a>
+        <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Home size={19} /><span>녹음</span></button>
+        <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
+        <button type="button"><Users size={19} /><span>가족</span></button>
       </nav>
 
       {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
