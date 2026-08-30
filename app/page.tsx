@@ -369,6 +369,7 @@ export default function HomePage() {
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'app'>('welcome');
+  const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
@@ -1272,9 +1273,9 @@ export default function HomePage() {
           <div className="onboarding-brand"><span className="brand-mark"><BookOpen size={20} /></span><strong>말씀유산</strong></div>
           {onboardingStep === 'welcome' ? (
             <div className="onboarding-card welcome-card">
-              <p className="eyebrow">소중한 목소리를 오래 간직해요</p>
-              <h1>어떤 방식으로 시작할까요?</h1>
-              <p className="onboarding-lead">지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.</p>
+              <p className="eyebrow">{returningHome ? '말씀유산 홈' : '소중한 목소리를 오래 간직해요'}</p>
+              <h1>{returningHome ? '무엇을 이어서 할까요?' : '어떤 방식으로 시작할까요?'}</h1>
+              <p className="onboarding-lead">{returningHome ? '진행 중인 프로젝트를 열거나, 원하는 말씀을 골라 자유롭게 녹음하세요.' : '지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.'}</p>
               <div className="start-choice-grid">
                 <button type="button" onClick={() => { setBibleBackTarget('welcome'); setOnboardingStep('bible'); }}>
                   <span><Sparkles size={22} /></span>
@@ -1763,7 +1764,7 @@ export default function HomePage() {
         <button type="button"><Users size={19} /><span>가족</span></button>
       </nav>
 
-      <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="프로젝트와 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+      <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="프로젝트와 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
 
       {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
     </main>
