@@ -187,6 +187,7 @@ export default function HomePage() {
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
+  const [chapterPlaying, setChapterPlaying] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -200,6 +201,8 @@ export default function HomePage() {
   const ownerKeyRef = useRef('');
   const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
   const activeLibraryRef = useRef<string | null>(null);
+  const chapterPlayingRef = useRef(false);
+  const chapterBgmIdRef = useRef<string | null>(null);
 
   const currentTake = takes[verseIndex];
   const hasTake = Boolean(currentTake);
@@ -335,6 +338,13 @@ export default function HomePage() {
     () => Math.round((completedCount / verses.length) * 100),
     [completedCount],
   );
+  const chapterQueue = useMemo(() => {
+    const latestByVerse = new Map<number, SavedRecording>();
+    libraryRecordings.forEach((item) => {
+      if (!latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
+    });
+    return [...latestByVerse.values()].sort((a, b) => a.verse - b.verse);
+  }, [libraryRecordings]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
@@ -349,6 +359,16 @@ export default function HomePage() {
     setActiveLibraryId(null);
     setActivePreview(null);
     setPreviewRemaining(0);
+  };
+
+  const stopChapterPlayback = () => {
+    chapterPlayingRef.current = false;
+    chapterBgmIdRef.current = null;
+    setChapterPlaying(false);
+    libraryAudioRefs.current.forEach((audio) => {
+      if (!audio.paused) audio.pause();
+    });
+    stopLibraryPlayback();
   };
 
   const stopPreview = () => {
@@ -369,7 +389,10 @@ export default function HomePage() {
       if (id !== recording.id && !audio.paused) audio.pause();
     });
 
-    const option = bgmOptions.find((item) => item.id === recording.bgmId);
+    const playbackBgmId = chapterPlayingRef.current
+      ? (chapterBgmIdRef.current ?? recording.bgmId)
+      : recording.bgmId;
+    const option = bgmOptions.find((item) => item.id === playbackBgmId);
     if (!option?.videoId) {
       youtubePlayerRef.current?.stopVideo();
       setActivePreview(null);
@@ -380,14 +403,55 @@ export default function HomePage() {
       return;
     }
 
+    if (chapterPlayingRef.current && activePreview === `chapter-${playbackBgmId}`) return;
+
     youtubePlayerRef.current.setVolume(volume);
     youtubePlayerRef.current.loadVideoById({
       videoId: option.videoId,
       startSeconds: option.startSeconds,
       endSeconds: option.startSeconds + Math.max(recording.durationSeconds + 2, 10),
     });
-    setActivePreview(`library-${recording.id}`);
+    setActivePreview(chapterPlayingRef.current ? `chapter-${playbackBgmId}` : `library-${recording.id}`);
     setPreviewRemaining(0);
+  };
+
+  const startChapterPlayback = () => {
+    if (chapterQueue.length === 0) return;
+    libraryAudioRefs.current.forEach((audio) => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    stopPreview();
+    const first = chapterQueue[0];
+    chapterPlayingRef.current = true;
+    chapterBgmIdRef.current = first.bgmId;
+    setChapterPlaying(true);
+    window.setTimeout(() => {
+      void libraryAudioRefs.current.get(first.id)?.play();
+    }, 0);
+  };
+
+  const handleLibraryEnded = (recordingId: string) => {
+    if (!chapterPlayingRef.current) {
+      stopLibraryPlayback(recordingId);
+      return;
+    }
+
+    const currentIndex = chapterQueue.findIndex((item) => item.id === recordingId);
+    const next = chapterQueue[currentIndex + 1];
+    if (!next) {
+      stopChapterPlayback();
+      setNotice('시편 23편 이어듣기를 모두 마쳤어요.');
+      return;
+    }
+
+    const nextAudio = libraryAudioRefs.current.get(next.id);
+    if (!nextAudio) {
+      stopChapterPlayback();
+      return;
+    }
+    nextAudio.currentTime = 0;
+    void nextAudio.play();
   };
 
   const startPreview = (option: BgmOption) => {
@@ -450,6 +514,9 @@ export default function HomePage() {
     }
 
     libraryAudioRefs.current.forEach((audio) => audio.pause());
+    chapterPlayingRef.current = false;
+    chapterBgmIdRef.current = null;
+    setChapterPlaying(false);
     activeLibraryRef.current = null;
     setActiveLibraryId(null);
     stopPreview();
@@ -796,6 +863,22 @@ export default function HomePage() {
           <span className="library-count"><Archive size={15} /> {libraryRecordings.length}개 보관</span>
         </div>
 
+        {chapterQueue.length > 0 && (
+          <div className="chapter-player">
+            <div className="chapter-player-copy">
+              <span><BookOpen size={20} /></span>
+              <div>
+                <strong>시편 23편 전체 이어듣기</strong>
+                <small>{chapterQueue.length === verses.length ? '1절부터 6절까지' : `저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
+              </div>
+            </div>
+            <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
+              {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
+              {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
+            </button>
+          </div>
+        )}
+
         {libraryLoading ? (
           <div className="library-state"><LoaderCircle className="spin" size={28} /><strong>보관함을 불러오고 있어요</strong></div>
         ) : libraryRecordings.length === 0 ? (
@@ -834,8 +917,13 @@ export default function HomePage() {
                       else libraryAudioRefs.current.delete(item.id);
                     }}
                     onPlay={() => playLibraryBgm(item)}
-                    onPause={() => stopLibraryPlayback(item.id)}
-                    onEnded={() => stopLibraryPlayback(item.id)}
+                    onPause={(event) => {
+                      if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
+                        if (chapterPlayingRef.current) stopChapterPlayback();
+                        else stopLibraryPlayback(item.id);
+                      }
+                    }}
+                    onEnded={() => handleLibraryEnded(item.id)}
                   >저장된 녹음 재생을 지원하지 않는 브라우저입니다.</audio>
                   <p className="library-playback-note">
                     {isPlaying
