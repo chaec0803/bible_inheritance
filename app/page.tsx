@@ -52,6 +52,15 @@ type ProjectTemplate = {
   custom?: boolean;
 };
 
+type ActiveProject = {
+  id: string;
+  title: string;
+  duration: number;
+  scope: string;
+  tasks: string[];
+  totalVerses?: number;
+};
+
 const projectTemplates: ProjectTemplate[] = [
   {
     id: 'psalm-23-beginner', duration: 7, level: '초보자', title: '시편 23편 완성하기', scope: '총 6절 · 하루 한 절', minutes: '하루 1–2분',
@@ -351,6 +360,7 @@ export default function HomePage() {
   const [customStartVerse, setCustomStartVerse] = useState(1);
   const [customEndChapter, setCustomEndChapter] = useState(1);
   const [customEndVerse, setCustomEndVerse] = useState(6);
+  const [activeProject, setActiveProject] = useState<ActiveProject | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -377,6 +387,19 @@ export default function HomePage() {
     const frame = window.requestAnimationFrame(() => {
       if (savedProjectId && projectTemplates.some((item) => item.id === savedProjectId)) {
         setSelectedTemplateId(savedProjectId);
+        const template = projectTemplates.find((item) => item.id === savedProjectId);
+        if (template?.custom) {
+          const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
+          if (savedCustomProject) {
+            try {
+              setActiveProject(JSON.parse(savedCustomProject) as ActiveProject);
+            } catch {
+              window.localStorage.removeItem('verse-legacy-custom-project');
+            }
+          }
+        } else if (template) {
+          setActiveProject({ id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks });
+        }
       }
       if (completed) setOnboardingStep('app');
     });
@@ -923,9 +946,16 @@ export default function HomePage() {
       window.localStorage.setItem('verse-legacy-project', projectId);
       setSelectedTemplateId(projectId);
       const project = projectTemplates.find((item) => item.id === projectId);
+      if (project?.custom) {
+        const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
+        if (savedCustomProject) setActiveProject(JSON.parse(savedCustomProject) as ActiveProject);
+      } else if (project) {
+        setActiveProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks });
+      }
       setNotice(project?.custom ? '직접 프로젝트를 만들 준비가 됐어요.' : `‘${project?.title}’ 프로젝트를 시작했어요.`);
     } else {
       window.localStorage.removeItem('verse-legacy-project');
+      setActiveProject(null);
       setNotice('원하는 말씀을 자유롭게 녹음할 수 있어요.');
     }
     setOnboardingStep('app');
@@ -962,6 +992,7 @@ export default function HomePage() {
       title: customProjectName.trim() || `${customBook.name} 프로젝트`,
       duration: projectDuration,
       bookId: customBook.id,
+      scope: `${customBook.name} · 총 ${customTotalVerses}절`,
       totalVerses: customTotalVerses,
       tasks: customDailyTasks.map((task) => task.reference),
     };
@@ -1078,8 +1109,8 @@ export default function HomePage() {
           <span className="brand-mark"><BookOpen size={20} /></span>
           <span><strong>말씀유산</strong><small>VERSE LEGACY</small></span>
         </a>
-        <div className="project-progress" aria-label={`시편 23편 ${progress}% 완료`}>
-          <div><span>시편 23편</span><strong>{completedCount}/{verses.length}절</strong></div>
+        <div className="project-progress" aria-label={activeProject ? `${activeProject.title} 진행 중` : `시편 23편 ${progress}% 완료`}>
+          <div><span>{activeProject?.title ?? '자유 녹음 · 시편 23편'}</span><strong>{activeProject ? `${activeProject.duration}일` : `${completedCount}/${verses.length}절`}</strong></div>
           <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         </div>
         <a className="icon-button" href="#library" aria-label="보관함으로 이동"><Archive size={20} /></a>
@@ -1087,12 +1118,28 @@ export default function HomePage() {
 
       <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>
 
+      {activeProject && (
+        <section className="active-project-banner" aria-label="현재 진행 중인 프로젝트">
+          <span><Target size={20} /></span>
+          <div>
+            <small>현재 진행 중인 {activeProject.duration}일 프로젝트</small>
+            <strong>{activeProject.title}</strong>
+            <p>{activeProject.scope}</p>
+          </div>
+          <div className="today-task">
+            <small>오늘의 녹음 분량</small>
+            <strong>{activeProject.tasks[0] ?? '일정을 확인해 주세요'}</strong>
+          </div>
+          <button type="button" onClick={() => setOnboardingStep('projects')}>일정 다시 보기</button>
+        </section>
+      )}
+
       <section className="workspace" id="recording">
         <aside className="chapter-panel" aria-label="프로젝트 정보">
           <div>
-            <p className="eyebrow">우리 가족 첫 번째 낭독</p>
-            <h2>시편 23편</h2>
-            <p className="muted">엄마의 목소리로 남기는 말씀</p>
+            <p className="eyebrow">{activeProject ? `${activeProject.duration}일 완성 프로젝트` : '우리 가족 첫 번째 낭독'}</p>
+            <h2>{activeProject?.title ?? '시편 23편'}</h2>
+            <p className="muted">{activeProject?.tasks[0] ? `오늘: ${activeProject.tasks[0]}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
           <div className="verse-list" aria-label="구절 목록">
             {verses.map((_, index) => (
