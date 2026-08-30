@@ -372,6 +372,17 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .chapter-menu-list button.selected { color: var(--action-ink); background: var(--action-bg); border-color: var(--action-bg); }
 .chapter-menu-list button:disabled { opacity: .38; color: var(--muted); background: var(--surface-subtle); cursor: not-allowed; }
 .chapter-menu-list button:disabled small { color: var(--muted); }
+.verse-menu-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+.verse-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.verse-menu-heading strong { font-size: 14px; }
+.verse-menu-heading span { color: var(--muted); font-size: 9px; font-weight: 800; }
+.verse-menu-list { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.verse-menu-list button { min-height: 58px; padding: 8px 5px; display: grid; place-items: center; align-content: center; gap: 2px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.verse-menu-list button:hover:not(:disabled) { color: var(--action-ink); background: var(--action-bg); border-color: var(--action-bg); }
+.verse-menu-list button strong { font-size: 10px; }
+.verse-menu-list button small { color: var(--sage); font-size: 7px; font-weight: 800; }
+.verse-menu-list button:disabled { opacity: .32; color: var(--muted); background: var(--surface-subtle); cursor: not-allowed; }
+.verse-menu-list button:disabled small { color: var(--muted); }
 .listen-track-section { margin-top: 28px; }
 .listen-track-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 11px; }
 .listen-track-heading small, .listen-track-heading strong { display: block; }
@@ -493,6 +504,7 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
   .chapter-player-actions > button { width: 100%; }
   .chapter-menu-sheet { width: 100%; max-height: 82vh; padding: 22px 18px 30px; border-radius: 24px 24px 0 0; }
   .chapter-menu-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .verse-menu-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .library-grid { grid-template-columns: 1fr; }
   .library-card { padding: 16px; }
   .library-card-top { grid-template-columns: auto minmax(0, 1fr); }

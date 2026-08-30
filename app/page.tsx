@@ -667,6 +667,11 @@ export default function HomePage() {
     });
     return [...latestByVerse.values()].sort((a, b) => a.verse - b.verse);
   }, [selectedLibraryGroup]);
+  const selectedLibraryVerseCount = useMemo(() => {
+    if (!selectedLibraryGroup) return 0;
+    const book = bibleBooks.find((item) => item.name === selectedLibraryGroup.book);
+    return book?.chapters[selectedLibraryGroup.chapter - 1] ?? Math.max(0, ...chapterQueue.map((item) => item.verse));
+  }, [chapterQueue, selectedLibraryGroup]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
@@ -702,6 +707,13 @@ export default function HomePage() {
   const openLibraryTab = () => {
     setAppTab('library');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openLibraryVerse = (recording: SavedRecording) => {
+    stopChapterPlayback();
+    setSelectedLibraryChapter(`${recording.book}-${recording.chapter}`);
+    setLibraryChapterMenuOpen(false);
+    window.setTimeout(() => document.querySelector(`#library-recording-${recording.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   };
 
   const stopPreview = () => {
@@ -1650,7 +1662,7 @@ export default function HomePage() {
               const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
               const isPlaying = activeLibraryId === item.id;
               return (
-                <article className={`library-card ${isPlaying ? 'playing' : ''}`} key={item.id}>
+                <article className={`library-card ${isPlaying ? 'playing' : ''}`} id={`library-recording-${item.id}`} key={item.id}>
                   <div className="library-card-top">
                     <span className="library-verse-number">{item.verse}</span>
                     <div><strong>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</strong><small>{formatSavedDate(item.createdAt)} 저장</small></div>
@@ -1706,9 +1718,19 @@ export default function HomePage() {
               <div className="chapter-menu-list">
                 {projectChapterOptions.map((option) => {
                   const selected = selectedLibraryGroup?.key === option.key;
-                  return <button className={selected ? 'selected' : ''} type="button" disabled={!option.hasRecording} onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(option.key); setLibraryChapterMenuOpen(false); }} key={option.key}><span>{option.book}</span><strong>{option.chapter}{option.book === '시편' ? '편' : '장'}</strong><small>{option.hasRecording ? selected ? '재생 중인 장' : '녹음됨' : '아직 녹음하지 않음'}</small></button>;
+                  return <button className={selected ? 'selected' : ''} type="button" disabled={!option.hasRecording} onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(option.key); }} key={option.key}><span>{option.book}</span><strong>{option.chapter}{option.book === '시편' ? '편' : '장'}</strong><small>{option.hasRecording ? selected ? '선택한 장' : '녹음됨' : '아직 녹음하지 않음'}</small></button>;
                 })}
               </div>
+              {selectedLibraryGroup && <div className="verse-menu-section">
+                <div className="verse-menu-heading"><strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} · 절별 녹음</strong><span>{chapterQueue.length}/{selectedLibraryVerseCount}절</span></div>
+                <div className="verse-menu-list">
+                  {Array.from({ length: selectedLibraryVerseCount }, (_, index) => {
+                    const verse = index + 1;
+                    const recording = chapterQueue.find((item) => item.verse === verse);
+                    return <button type="button" disabled={!recording} onClick={() => recording && openLibraryVerse(recording)} key={verse}><strong>{verse}절</strong><small>{recording ? '녹음 듣기' : '미녹음'}</small></button>;
+                  })}
+                </div>
+              </div>}
             </dialog>
           </div>
         )}
