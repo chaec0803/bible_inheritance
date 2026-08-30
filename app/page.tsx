@@ -363,6 +363,7 @@ export default function HomePage() {
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
+  const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
@@ -603,13 +604,25 @@ export default function HomePage() {
     [activeProject, libraryRecordings],
   );
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
+  const libraryChapterGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
+    activeLibraryRecordings.forEach((item) => {
+      const key = `${item.book}-${item.chapter}`;
+      const group = groups.get(key) ?? { key, book: item.book, chapter: item.chapter, recordings: [], updatedAt: item.createdAt };
+      group.recordings.push(item);
+      group.updatedAt = Math.max(group.updatedAt, item.createdAt);
+      groups.set(key, group);
+    });
+    return [...groups.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [activeLibraryRecordings]);
+  const selectedLibraryGroup = libraryChapterGroups.find((group) => group.key === selectedLibraryChapter) ?? libraryChapterGroups[0] ?? null;
   const chapterQueue = useMemo(() => {
     const latestByVerse = new Map<number, SavedRecording>();
-    activeLibraryRecordings.forEach((item) => {
-      if (item.book === passageBook.name && item.chapter === passageChapter && !latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
+    selectedLibraryGroup?.recordings.forEach((item) => {
+      if (!latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
     });
     return [...latestByVerse.values()].sort((a, b) => a.verse - b.verse);
-  }, [activeLibraryRecordings, passageBook.name, passageChapter]);
+  }, [selectedLibraryGroup]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
@@ -720,7 +733,7 @@ export default function HomePage() {
     const next = chapterQueue[currentIndex + 1];
     if (!next) {
       stopChapterPlayback();
-      setNotice(`${passageBook.name} ${passageChapter}장 이어듣기를 모두 마쳤어요.`);
+      setNotice(`${selectedLibraryGroup?.book ?? passageBook.name} ${selectedLibraryGroup?.chapter ?? passageChapter}${selectedLibraryGroup?.book === '시편' ? '편' : '장'} 이어듣기를 모두 마쳤어요.`);
       return;
     }
 
@@ -1551,29 +1564,6 @@ export default function HomePage() {
           <span className="library-count"><Archive size={15} /> {activeLibraryRecordings.length}개 보관</span>
         </div>
 
-        {chapterQueue.length > 0 && (
-          <div className="chapter-player">
-            <div className="chapter-player-copy">
-              <span><BookOpen size={20} /></span>
-              <div>
-                <small className="now-playing-label">NOW PLAYING</small>
-                <strong>{passageBook.name} {passageChapter}장 이어듣기</strong>
-                <small>{chapterQueue.length === passageVerses.length ? `1절부터 ${passageVerses.length}절까지` : `완성률과 관계없이 저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
-              </div>
-            </div>
-            <div className="chapter-player-actions">
-              <label>
-                <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
-                <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
-              </label>
-              <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
-                {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
-                {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
-              </button>
-            </div>
-          </div>
-        )}
-
         {libraryLoading ? (
           <div className="library-state"><LoaderCircle className="spin" size={28} /><strong>보관함을 불러오고 있어요</strong></div>
         ) : activeLibraryRecordings.length === 0 ? (
@@ -1584,10 +1574,40 @@ export default function HomePage() {
             <button className="library-empty-action" type="button" onClick={openRecordingTab}>첫 녹음 시작하기</button>
           </div>
         ) : (
-          <div className="listen-track-section">
-            <div className="listen-track-heading"><div><small>PLAYLIST</small><strong>저장된 말씀</strong></div><span>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')}</span></div>
+          <div className="library-browser">
+            <aside className="saved-chapter-list" aria-label="저장된 말씀 목록">
+              <div className="saved-chapter-heading"><small>SAVED BIBLE</small><strong>저장된 말씀</strong></div>
+              {libraryChapterGroups.map((group) => {
+                const uniqueVerses = new Set(group.recordings.map((item) => item.verse)).size;
+                const selected = selectedLibraryGroup?.key === group.key;
+                return <button className={selected ? 'selected' : ''} type="button" onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(group.key); }} key={group.key}><span><BookOpen size={16} /></span><div><strong>{group.book} {group.chapter}{group.book === '시편' ? '편' : '장'}</strong><small>{uniqueVerses}개 절 저장</small></div><ChevronRight size={15} /></button>;
+              })}
+            </aside>
+            {selectedLibraryGroup && <div className="library-listen-detail">
+              <div className="chapter-player">
+                <div className="chapter-player-copy">
+                  <span><BookOpen size={20} /></span>
+                  <div>
+                    <small className="now-playing-label">NOW PLAYING</small>
+                    <strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기</strong>
+                    <small>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
+                  </div>
+                </div>
+                <div className="chapter-player-actions">
+                  <label>
+                    <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
+                    <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+                  </label>
+                  <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
+                    {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
+                    {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
+                  </button>
+                </div>
+              </div>
+              <div className="listen-track-section">
+                <div className="listen-track-heading"><div><small>PLAYLIST</small><strong>절별 녹음</strong></div><span>{chapterQueue.length}개</span></div>
           <div className="library-grid">
-            {activeLibraryRecordings.map((item) => {
+            {chapterQueue.map((item) => {
               const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
               const isPlaying = activeLibraryId === item.id;
               return (
@@ -1635,6 +1655,8 @@ export default function HomePage() {
               );
             })}
           </div>
+              </div>
+            </div>}
           </div>
         )}
 
