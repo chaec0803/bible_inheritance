@@ -777,6 +777,7 @@ export default function HomePage() {
     chapterPlayingRef.current = true;
     chapterBgmIdRef.current = first.bgmId;
     setChapterPlaying(true);
+    playLibraryBgm(first);
     window.setTimeout(() => {
       void libraryAudioRefs.current.get(first.id)?.play();
     }, 0);
@@ -1259,6 +1260,7 @@ export default function HomePage() {
 
   return (
     <main className="app-shell">
+      <div className="persistent-youtube-host" aria-hidden="true"><div ref={youtubeContainerRef} /></div>
       {onboardingStep !== 'app' && (
         <section className="onboarding-overlay" aria-label="말씀유산 시작 설정">
           <div className="onboarding-brand"><span className="brand-mark"><BookOpen size={20} /></span><strong>말씀유산</strong></div>
@@ -1597,8 +1599,8 @@ export default function HomePage() {
           </fieldset>
 
           <div className={`youtube-preview-shell ${activePreview ? 'active' : ''}`} aria-label="유튜브 배경음악 미리듣기">
-            <div ref={youtubeContainerRef} />
             {!activePreview && <div className="youtube-placeholder"><Play size={18} /><span>{playerReady ? '음악을 골라 10초 들어보세요' : '미리듣기를 준비하고 있어요'}</span></div>}
+            {activePreview && <div className="youtube-placeholder"><AudioLines size={20} /><span>{previewRemaining ? `${previewRemaining}초 미리듣는 중` : '이어듣기 BGM 재생 중'}</span></div>}
           </div>
 
           <label className="volume-control">

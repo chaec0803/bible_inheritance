@@ -321,6 +321,8 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .preview-button:hover { background: var(--sage-soft); }
 .preview-button:disabled { color: var(--muted); opacity: .55; cursor: wait; }
 .youtube-preview-shell { position: relative; width: 100%; aspect-ratio: 16 / 9; margin-top: 12px; overflow: hidden; background: var(--player-bg); border: 1px solid var(--line); border-radius: 13px; }
+.persistent-youtube-host { position: fixed; left: -10000px; bottom: 0; width: 320px; height: 180px; overflow: hidden; opacity: .01; pointer-events: none; }
+.persistent-youtube-host > div, .persistent-youtube-host iframe { width: 320px !important; height: 180px !important; }
 .youtube-preview-shell iframe { display: block; width: 100% !important; height: 100% !important; }
 .youtube-placeholder { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--muted); background: linear-gradient(135deg, var(--surface-subtle), var(--player-bg)); font-size: 9px; font-weight: 700; pointer-events: none; }
 .youtube-placeholder svg { color: var(--sage); }
