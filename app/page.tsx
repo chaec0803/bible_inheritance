@@ -12,7 +12,6 @@ import {
   ChevronRight,
   CircleStop,
   Cloud,
-  Download,
   Headphones,
   Home,
   List,
@@ -23,7 +22,6 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Save,
   Search,
   Sparkles,
   Sun,
@@ -417,8 +415,14 @@ export default function HomePage() {
       let restoredProjects: ActiveProject[] = [];
       if (savedActiveProjects) {
         try {
-          restoredProjects = JSON.parse(savedActiveProjects) as ActiveProject[];
+          const parsedProjects = JSON.parse(savedActiveProjects) as ActiveProject[];
+          const latestFreeProject = [...parsedProjects].reverse().find((project) => project.kind === 'free');
+          restoredProjects = [
+            ...parsedProjects.filter((project) => project.kind !== 'free'),
+            ...(latestFreeProject ? [{ ...latestFreeProject, id: 'free-recording', title: '자유 녹음' }] : []),
+          ];
           setActiveProjects(restoredProjects);
+          window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(restoredProjects));
         } catch {
           window.localStorage.removeItem('verse-legacy-active-projects');
         }
@@ -426,9 +430,11 @@ export default function HomePage() {
       if (savedProjectId) {
         setSelectedTemplateId(savedProjectId);
         const template = projectTemplates.find((item) => item.id === savedProjectId);
-        const restoredActiveProject = restoredProjects.find((item) => item.id === savedProjectId);
+        const restoredActiveProject = restoredProjects.find((item) => item.id === savedProjectId)
+          ?? (savedProjectId.startsWith('free-') ? restoredProjects.find((item) => item.kind === 'free') : undefined);
         if (restoredActiveProject) {
           setActiveProject(restoredActiveProject);
+          window.localStorage.setItem('verse-legacy-project', restoredActiveProject.id);
         } else
         if (template?.custom) {
           const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
@@ -512,7 +518,7 @@ export default function HomePage() {
       .then((recordings) => {
         if (cancelled) return;
         setLibraryRecordings(recordings);
-        setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+        setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
       })
       .catch(() => {
         if (!cancelled) setNotice('보관함 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요.');
@@ -604,7 +610,7 @@ export default function HomePage() {
     [completedCount, passageVerses.length],
   );
   const activeLibraryRecordings = useMemo(
-    () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id) : libraryRecordings,
+    () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
     [activeProject, libraryRecordings],
   );
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
@@ -679,7 +685,7 @@ export default function HomePage() {
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
-    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
   };
 
   const stopLibraryPlayback = (recordingId?: string) => {
@@ -956,7 +962,7 @@ export default function HomePage() {
           return next;
         });
         setSeconds(duration);
-        setNotice('음량을 고르게 다듬은 녹음이 완료됐어요. 바로 들어보거나 내려받을 수 있어요.');
+        setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
       };
 
       recorder.onerror = () => {
@@ -1045,8 +1051,8 @@ export default function HomePage() {
       formData.append('chapter', String(passageChapter));
       formData.append('verse', String(currentVerseNumber));
       formData.append('verseText', passageVerses[verseIndex]);
-      formData.append('projectId', activeProject?.id ?? `free-${passageBook.code}-${passageChapter}`);
-      formData.append('projectTitle', activeProject?.title ?? `${passageBook.name} ${passageChapter}장 자유 녹음`);
+      formData.append('projectId', activeProject?.id ?? 'free-recording');
+      formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
       formData.append('bgmId', bgm);
       formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
@@ -1077,19 +1083,6 @@ export default function HomePage() {
     } finally {
       setSavingLibrary(false);
     }
-  };
-
-  const downloadTake = () => {
-    if (!currentTake) return;
-    const extension = currentTake.mimeType.includes('mp4')
-      ? 'm4a'
-      : currentTake.mimeType.includes('ogg')
-        ? 'ogg'
-        : 'webm';
-    const anchor = document.createElement('a');
-    anchor.href = currentTake.url;
-    anchor.download = `말씀유산_${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${extension}`;
-    anchor.click();
   };
 
   const chooseBibleBook = (book: BibleBook) => {
@@ -1164,7 +1157,10 @@ export default function HomePage() {
   const activateProject = (project: ActiveProject) => {
     setActiveProject(project);
     setActiveProjects((current) => {
-      const next = current.some((item) => item.id === project.id) ? current : [...current, project];
+      const withoutPreviousFree = project.kind === 'free' ? current.filter((item) => item.kind !== 'free') : current;
+      const next = withoutPreviousFree.some((item) => item.id === project.id)
+        ? withoutPreviousFree.map((item) => item.id === project.id ? project : item)
+        : [...withoutPreviousFree, project];
       window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
       return next;
     });
@@ -1172,11 +1168,21 @@ export default function HomePage() {
     window.localStorage.removeItem('verse-legacy-free-passage');
   };
 
+  const selectActiveProject = (project: ActiveProject) => {
+    if (project.kind === 'free') {
+      setActiveProject(project);
+      window.localStorage.setItem('verse-legacy-project', project.id);
+      setOnboardingStep('bible');
+      return;
+    }
+    activateProject(project);
+  };
+
   const startFreeChapter = () => {
     if (!selectedBibleVerses.length) return;
     const freeProject: ActiveProject = {
-      id: `free-${selectedBibleBook.code}-${selectedBibleChapter}`,
-      title: `${selectedBibleBook.name} ${selectedBibleChapter}장 자유 녹음`,
+      id: 'free-recording',
+      title: '자유 녹음',
       duration: 0,
       scope: `총 ${selectedBibleVerses.length}절 · 일정 없이 자유롭게`,
       tasks: [`${selectedBibleBook.name} ${selectedBibleChapter}장 전체`],
@@ -1194,7 +1200,7 @@ export default function HomePage() {
     window.localStorage.setItem('verse-legacy-free-passage', JSON.stringify({ code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter }));
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
     activateProject(freeProject);
-    setNotice(`‘${freeProject.title}’ 프로젝트를 시작했어요.`);
+    setNotice(`${selectedBibleBook.name} ${selectedBibleChapter}장을 자유 녹음으로 열었어요.`);
     setOnboardingStep('app');
   };
 
@@ -1442,8 +1448,8 @@ export default function HomePage() {
         <section className="project-switcher" aria-label="진행 중인 프로젝트 전환">
           <div className="project-switcher-heading"><div><small>MY PROJECTS</small><strong>진행 중인 프로젝트</strong></div><span>{activeProjects.length}개</span></div>
           <div className="project-tabs">
-            {activeProjects.map((project) => (
-              <button className={activeProject?.id === project.id ? 'selected' : ''} type="button" onClick={() => activateProject(project)} key={project.id}>
+            {activeProjects.map((project, index) => (
+              <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'selected' : ''}`} type="button" onClick={() => selectActiveProject(project)} key={project.id}>
                 <Target size={15} /><span><strong>{project.title}</strong><small>{project.kind === 'free' ? '자유 녹음' : `${project.duration}일`} · {project.tasks[0] ?? project.scope}</small></span>
               </button>
             ))}
@@ -1453,7 +1459,7 @@ export default function HomePage() {
       )}
 
       {appTab === 'recording' && activeProject && (
-        <section className="active-project-banner" aria-label="현재 진행 중인 프로젝트">
+        <section className={`active-project-banner project-color-${Math.max(activeProjects.findIndex((project) => project.id === activeProject.id), 0) % 5}`} aria-label="현재 진행 중인 프로젝트">
           <span><Target size={20} /></span>
           <div>
             <small>현재 진행 중인 {activeProject.kind === 'free' ? '자유 녹음' : `${activeProject.duration}일`} 프로젝트</small>
@@ -1464,7 +1470,7 @@ export default function HomePage() {
             <small>오늘의 녹음 분량</small>
             <strong>{activeProject.tasks[0] ?? '일정을 확인해 주세요'}</strong>
           </div>
-          <button type="button" onClick={() => setOnboardingStep('schedule')}>일정 다시 보기</button>
+          <button type="button" onClick={() => setOnboardingStep(activeProject.kind === 'free' ? 'bible' : 'schedule')}>{activeProject.kind === 'free' ? '말씀 다시 고르기' : '일정 다시 보기'}</button>
         </section>
       )}
 
@@ -1526,13 +1532,14 @@ export default function HomePage() {
 
           <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
 
-          <div className="record-controls">
-            <button className="round-button secondary" onClick={resetTake} disabled={!recording && !hasTake} type="button" aria-label="다시 녹음"><RotateCcw size={20} /></button>
-            <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
+          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''}`}>
+            {hasTake && !recording ? <>
+              <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
+              <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
+            </> : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
               {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
-            </button>
-            <button className="round-button save" onClick={() => void saveVerse()} disabled={!hasTake || recording || savingLibrary} type="button" aria-label={replacingRecording ? '새 녹음으로 교체' : '이 구절을 보관함에 저장'}>{savingLibrary ? <LoaderCircle className="spin" size={20} /> : <Save size={20} />}</button>
+            </button>}
           </div>
 
           {currentTake && !recording && (
@@ -1543,10 +1550,6 @@ export default function HomePage() {
               </div>
               {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
               <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>녹음 재생을 지원하지 않는 브라우저입니다.</audio>
-              <div className="take-actions">
-                <button className="library-save-button" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} {replacingRecording ? '새 녹음으로 교체' : '보관함에 저장'}</button>
-                <button className="download-button" onClick={downloadTake} type="button"><Download size={15} /> 파일 내려받기</button>
-              </div>
             </div>
           )}
 
