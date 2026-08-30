@@ -773,6 +773,7 @@ export default function HomePage() {
   };
 
   const openLibraryTab = () => {
+    stopChapterPlayback();
     setAppTab('library');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
