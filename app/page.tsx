@@ -358,6 +358,7 @@ export default function HomePage() {
   const [playerReady, setPlayerReady] = useState(false);
   const [activePreview, setActivePreview] = useState<string | null>(null);
   const [bgmPaused, setBgmPaused] = useState(false);
+  const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -958,12 +959,17 @@ export default function HomePage() {
     }
   };
 
-  const startRecording = async () => {
+  const startRecording = async (skipHeadphoneWarning = false) => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setNotice('이 브라우저에서는 마이크 녹음을 지원하지 않아요. 최신 Safari나 Chrome을 사용해 주세요.');
       return;
     }
+    if (!skipHeadphoneWarning && bgm !== 'none' && activePreview && !bgmPaused) {
+      setHeadphoneWarningOpen(true);
+      return;
+    }
 
+    setHeadphoneWarningOpen(false);
     libraryAudioRefs.current.forEach((audio) => audio.pause());
     chapterPlayingRef.current = false;
     chapterBgmIdRef.current = null;
@@ -1844,6 +1850,22 @@ export default function HomePage() {
       </nav>
 
       <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="프로젝트와 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+
+      {headphoneWarningOpen && (
+        <div className="headphone-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHeadphoneWarningOpen(false); }}>
+          <dialog className="headphone-modal" open aria-labelledby="headphone-modal-title">
+            <span className="headphone-modal-icon"><Headphones size={28} /></span>
+            <p className="eyebrow">녹음 품질 확인</p>
+            <h2 id="headphone-modal-title">이어폰이 연결되어 있나요?</h2>
+            <p>스피커로 BGM을 재생하면 음악이 마이크에 함께 들어가 목소리 품질이 낮아질 수 있어요. 이어폰을 연결한 뒤 녹음하는 것을 권장해요.</p>
+            <div className="headphone-modal-actions">
+              <button className="confirm" type="button" onClick={() => void startRecording(true)}><Headphones size={16} /> 이어폰 연결했어요</button>
+              <button type="button" onClick={() => { stopPreview(); setHeadphoneWarningOpen(false); window.setTimeout(() => void startRecording(true), 0); }}><CircleStop size={16} /> BGM 끄고 녹음</button>
+              <button className="cancel" type="button" onClick={() => setHeadphoneWarningOpen(false)}>취소</button>
+            </div>
+          </dialog>
+        </div>
+      )}
 
       {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
     </main>
