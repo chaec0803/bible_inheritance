@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ArrowRight,
@@ -460,6 +460,7 @@ export default function HomePage() {
   const chapterPlayingRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
+  const shownWordCardAwardKeysRef = useRef(new Set<string>());
 
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
@@ -751,6 +752,7 @@ export default function HomePage() {
 
     return completed;
   }, [activeLibraryRecordings, activeProject, currentPassageComplete]);
+  const displayedProjectDayComplete = completedProjectTaskIndexes.has(displayedProjectDayIndex);
   const freeRecordingChapterKeys = useMemo(() => new Set(
     libraryRecordings
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
@@ -838,30 +840,57 @@ export default function HomePage() {
     return recordings;
   };
 
-  const awardDailyWordCard = (recordings: SavedRecording[]) => {
+  const awardDailyWordCard = useCallback(() => {
     if (!activeProject || activeProject.kind === 'free') return;
-    const completedToday = passageVerses.every((_, index) => recordings.some((item) => item.projectId === activeProject.id && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
-    if (!completedToday) return;
 
     const storageKey = 'verse-legacy-word-card-awards';
     const awardKey = `${activeProject.id}:day-${displayedProjectDay}`;
-    let awards: { key: string; cardId: string }[] = [];
+    if (shownWordCardAwardKeysRef.current.has(awardKey)) return;
+    const completionSignature = `${passageBook.name}-${passageChapter}-${passageStartVerse}-${passageStartVerse + passageVerses.length - 1}:verified-v2`;
+    let awards: { key: string; cardId: string; completionSignature?: string; claimed?: boolean }[] = [];
     try {
-      awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string }[];
+      awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string; completionSignature?: string; claimed?: boolean }[];
     } catch {
       awards = [];
     }
-    if (awards.some((award) => award.key === awardKey)) return;
+    const existingAward = awards.find((award) => award.key === awardKey && award.completionSignature === completionSignature);
+    if (existingAward) {
+      const existingCard = wordCards.find((card) => card.id === existingAward.cardId);
+      if (existingCard) {
+        shownWordCardAwardKeysRef.current.add(awardKey);
+        setEarnedCard(existingCard);
+      }
+      return;
+    }
 
     const ownedIds = new Set(awards.map((award) => award.cardId));
     const availableCards = wordCards.filter((card) => !ownedIds.has(card.id));
     const pool = availableCards.length ? availableCards : wordCards;
     const card = pool[Math.floor(Math.random() * pool.length)];
-    window.localStorage.setItem(storageKey, JSON.stringify([...awards, { key: awardKey, cardId: card.id }]));
+    window.localStorage.setItem(storageKey, JSON.stringify([...awards.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, claimed: false }]));
+    shownWordCardAwardKeysRef.current.add(awardKey);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
     setEarnedCard(card);
+  }, [activeProject, displayedProjectDay, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
+
+  const claimEarnedWordCard = () => {
+    if (activeProject && earnedCard) {
+      const storageKey = 'verse-legacy-word-card-awards';
+      try {
+        const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string; completionSignature?: string; claimed?: boolean }[];
+        window.localStorage.setItem(storageKey, JSON.stringify(awards.map((award) => award.key === `${activeProject.id}:day-${displayedProjectDay}` && award.cardId === earnedCard.id ? { ...award, claimed: true } : award)));
+      } catch {
+        // 카드 확인 상태 저장에 실패해도 현재 모달은 닫을 수 있어요.
+      }
+    }
+    setEarnedCard(null);
   };
+
+  useEffect(() => {
+    if (!displayedProjectDayComplete || !activeProject || activeProject.kind === 'free') return;
+    queueMicrotask(() => awardDailyWordCard());
+  }, [activeProject, awardDailyWordCard, displayedProjectDayComplete]);
 
   const stopLibraryPlayback = (recordingId?: string) => {
     if (recordingId && activeLibraryRef.current !== recordingId) return;
@@ -1265,7 +1294,7 @@ export default function HomePage() {
         throw new Error(payload?.error || '보관함에 저장하지 못했어요.');
       }
 
-      const updatedRecordings = await refreshLibrary();
+      await refreshLibrary();
       setReplacingRecording(null);
       setTakes((current) => current.map((take, index) => {
         if (index !== verseIndex || !take) return take;
@@ -1275,7 +1304,6 @@ export default function HomePage() {
       }));
       setSeconds(0);
       setNotice('보관함에 저장되었어요.');
-      awardDailyWordCard(updatedRecordings);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -2044,7 +2072,7 @@ export default function HomePage() {
         return (
           <div className="word-card-modal-backdrop" role="presentation">
             <dialog className="word-card-modal" open aria-labelledby="word-card-modal-title">
-              <button className="word-card-close" type="button" onClick={() => setEarnedCard(null)} aria-label="말씀 카드 닫기"><X size={21} /></button>
+              <button className="word-card-close" type="button" onClick={claimEarnedWordCard} aria-label="말씀 카드 닫기"><X size={21} /></button>
               <p className="eyebrow">TODAY&apos;S WORD CARD</p>
               <h2 id="word-card-modal-title">오늘의 말씀 카드를 뽑았어요!</h2>
               <p className="word-card-instruction">카드를 눌러 뒤집어 보세요.</p>
@@ -2066,7 +2094,7 @@ export default function HomePage() {
                 </button>
                 {wordCardFlipped && <button className="word-card-detail-toggle" type="button" onClick={() => setWordCardExpanded((current) => !current)}>{wordCardExpanded ? '간단히 보기' : '더 자세히'}</button>}
               </div>
-              <button className="word-card-keep" type="button" onClick={() => setEarnedCard(null)}>내 카드로 간직하기</button>
+              <button className="word-card-keep" type="button" onClick={claimEarnedWordCard}>내 카드로 간직하기</button>
             </dialog>
           </div>
         );
