@@ -366,6 +366,7 @@ export default function HomePage() {
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
+  const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
@@ -672,6 +673,7 @@ export default function HomePage() {
     const book = bibleBooks.find((item) => item.name === selectedLibraryGroup.book);
     return book?.chapters[selectedLibraryGroup.chapter - 1] ?? Math.max(0, ...chapterQueue.map((item) => item.verse));
   }, [chapterQueue, selectedLibraryGroup]);
+  const selectedLibraryRecording = chapterQueue.find((item) => item.id === selectedLibraryRecordingId) ?? null;
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
@@ -712,6 +714,7 @@ export default function HomePage() {
   const openLibraryVerse = (recording: SavedRecording) => {
     stopChapterPlayback();
     setSelectedLibraryChapter(`${recording.book}-${recording.chapter}`);
+    setSelectedLibraryRecordingId(recording.id);
     setLibraryChapterMenuOpen(false);
     window.setTimeout(() => document.querySelector(`#library-recording-${recording.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   };
@@ -1655,10 +1658,10 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-              <div className="listen-track-section">
-                <div className="listen-track-heading"><div><small>PLAYLIST</small><strong>절별 녹음</strong></div><span>{chapterQueue.length}개</span></div>
+              {selectedLibraryRecording && <div className="listen-track-section">
+                <div className="listen-track-heading"><div><small>SELECTED VERSE</small><strong>{selectedLibraryRecording.verse}절 녹음</strong></div><button type="button" onClick={() => setSelectedLibraryRecordingId(null)}>닫기</button></div>
           <div className="library-grid">
-            {chapterQueue.map((item) => {
+            {[selectedLibraryRecording].map((item) => {
               const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
               const isPlaying = activeLibraryId === item.id;
               return (
@@ -1706,7 +1709,7 @@ export default function HomePage() {
               );
             })}
           </div>
-              </div>
+              </div>}
             </div>}
           </div>
         )}
@@ -1718,7 +1721,7 @@ export default function HomePage() {
               <div className="chapter-menu-list">
                 {projectChapterOptions.map((option) => {
                   const selected = selectedLibraryGroup?.key === option.key;
-                  return <button className={selected ? 'selected' : ''} type="button" disabled={!option.hasRecording} onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(option.key); }} key={option.key}><span>{option.book}</span><strong>{option.chapter}{option.book === '시편' ? '편' : '장'}</strong><small>{option.hasRecording ? selected ? '선택한 장' : '녹음됨' : '아직 녹음하지 않음'}</small></button>;
+                  return <button className={selected ? 'selected' : ''} type="button" disabled={!option.hasRecording} onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(option.key); setSelectedLibraryRecordingId(null); }} key={option.key}><span>{option.book}</span><strong>{option.chapter}{option.book === '시편' ? '편' : '장'}</strong><small>{option.hasRecording ? selected ? '선택한 장' : '녹음됨' : '아직 녹음하지 않음'}</small></button>;
                 })}
               </div>
               {selectedLibraryGroup && <div className="verse-menu-section">
