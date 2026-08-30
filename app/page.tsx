@@ -363,7 +363,7 @@ export default function HomePage() {
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'app'>('welcome');
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
@@ -601,6 +601,7 @@ export default function HomePage() {
     () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id) : libraryRecordings,
     [activeProject, libraryRecordings],
   );
+  const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const chapterQueue = useMemo(() => {
     const latestByVerse = new Map<number, SavedRecording>();
     activeLibraryRecordings.forEach((item) => {
@@ -1231,6 +1232,28 @@ export default function HomePage() {
               </div>
               <p className="bible-credit">본문: PLAY X 번역(플레이엑스) · 번역 김무송 · CC BY 4.0</p>
             </div>
+          ) : onboardingStep === 'schedule' && activeProject ? (
+            <div className="onboarding-card project-schedule-card">
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('app')}><ChevronLeft size={16} /> 프로젝트로 돌아가기</button>
+              <p className="eyebrow">PROJECT SCHEDULE</p>
+              <h1>{activeProject.title}</h1>
+              <p className="onboarding-lead">{activeProject.scope}</p>
+              <div className="project-schedule-only">
+                <div className="schedule-summary">
+                  <span><CalendarDays size={20} /></span>
+                  <div><small>{activeProject.kind === 'free' ? '자유 녹음' : `총 ${activeProject.duration}일`}</small><strong>프로젝트 전체 일정</strong></div>
+                </div>
+                <ol>
+                  {activeProject.tasks.map((task, index) => <li key={`${task}-${index}`}><span>{activeProject.kind === 'free' ? '자유' : `${index + 1}일`}</span><strong>{task}</strong></li>)}
+                  {activeProject.kind !== 'free' && activeProject.tasks.length < activeProject.duration && Array.from({ length: activeProject.duration - activeProject.tasks.length }, (_, index) => {
+                    const day = activeProject.tasks.length + index + 1;
+                    const task = day === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음';
+                    return <li key={`finish-${day}`}><span>{day}일</span><strong>{task}</strong></li>;
+                  })}
+                </ol>
+              </div>
+              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('app')}>이 프로젝트 계속하기 <ArrowRight size={16} /></button>
+            </div>
           ) : (
             <div className="onboarding-card project-picker-card">
               <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 이전</button>
@@ -1243,14 +1266,16 @@ export default function HomePage() {
               </div>
               <div className="project-picker-layout">
                 <div className="project-template-list">
-                  {visibleTemplates.map((project) => (
-                    <button className={selectedTemplateId === project.id ? 'selected' : ''} type="button" onClick={() => setSelectedTemplateId(project.id)} key={project.id}>
-                      <span className={`difficulty difficulty-${project.level}`}>{project.custom ? '직접 구성' : project.level}</span>
+                  {visibleTemplates.map((project) => {
+                    const isActive = activeProjectIds.has(project.id);
+                    return (
+                    <button className={`${selectedTemplateId === project.id ? 'selected' : ''} ${isActive ? 'in-progress' : ''}`} type="button" onClick={() => setSelectedTemplateId(project.id)} disabled={isActive} key={project.id}>
+                      <span className={`difficulty difficulty-${project.level}`}>{isActive ? '진행 중' : project.custom ? '직접 구성' : project.level}</span>
                       <strong>{project.title}</strong>
                       <small>{project.scope}</small>
                       <em><CalendarDays size={13} /> {project.duration}일 · {project.minutes}</em>
                     </button>
-                  ))}
+                  )})}
                 </div>
                 <aside className="project-schedule-preview">
                   <p className="eyebrow">자동으로 만든 일정</p>
@@ -1302,7 +1327,7 @@ export default function HomePage() {
                       {selectedTemplate.duration === 14 && <><li><span>13일</span><strong>밀린 녹음과 다시 녹음</strong></li><li><span>14일</span><strong>전체 확인하고 완성하기</strong></li></>}
                     </ol>
                   )}
-                  <button className="start-project-button" type="button" onClick={selectedTemplate.custom ? saveCustomProject : () => finishOnboarding(selectedTemplate.id)} disabled={selectedTemplate.custom && customTotalVerses === 0}>{selectedTemplate.custom ? '이 일정으로 프로젝트 만들기' : '이 프로젝트 시작하기'} <ArrowRight size={16} /></button>
+                  <button className="start-project-button" type="button" onClick={selectedTemplate.custom ? saveCustomProject : () => finishOnboarding(selectedTemplate.id)} disabled={activeProjectIds.has(selectedTemplate.id) || (selectedTemplate.custom && customTotalVerses === 0)}>{activeProjectIds.has(selectedTemplate.id) ? '이미 진행 중인 프로젝트' : selectedTemplate.custom ? '이 일정으로 프로젝트 만들기' : '이 프로젝트 시작하기'} {!activeProjectIds.has(selectedTemplate.id) && <ArrowRight size={16} />}</button>
                 </aside>
               </div>
             </div>
@@ -1349,7 +1374,7 @@ export default function HomePage() {
             <small>오늘의 녹음 분량</small>
             <strong>{activeProject.tasks[0] ?? '일정을 확인해 주세요'}</strong>
           </div>
-          <button type="button" onClick={() => setOnboardingStep('projects')}>일정 다시 보기</button>
+          <button type="button" onClick={() => setOnboardingStep('schedule')}>일정 다시 보기</button>
         </section>
       )}
 
