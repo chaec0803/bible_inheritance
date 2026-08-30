@@ -615,6 +615,47 @@ export default function HomePage() {
     () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
     [activeProject, libraryRecordings],
   );
+  const completedProjectTaskIndexes = useMemo(() => {
+    const completed = new Set<number>();
+    if (!activeProject || activeProject.kind === 'free') return completed;
+
+    const recorded = new Set(activeLibraryRecordings.map((item) => `${item.book}-${item.chapter}-${item.verse}`));
+    let currentBook = '';
+    let currentChapter = 0;
+
+    activeProject.tasks.forEach((task, index) => {
+      if (task.includes('전체 확인') || task.includes('밀린 녹음')) {
+        if (index > 0 && Array.from({ length: index }, (_, taskIndex) => completed.has(taskIndex)).every(Boolean)) completed.add(index);
+        return;
+      }
+
+      const fullReference = task.match(/^(.+?)\s+(\d+)(?:장|편)\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)장\s+(\d+)절)?/);
+      const shortReference = task.match(/^(\d+)(?:–(\d+))절/);
+      if (fullReference) {
+        currentBook = fullReference[1];
+        currentChapter = Number(fullReference[2]);
+      }
+      if (!fullReference && !shortReference) return;
+
+      const startChapter = fullReference ? Number(fullReference[2]) : currentChapter;
+      const startVerse = Number(fullReference?.[3] ?? shortReference?.[1]);
+      const endChapter = Number(fullReference?.[5] ?? startChapter);
+      const endVerse = Number(fullReference?.[6] ?? fullReference?.[4] ?? shortReference?.[2] ?? startVerse);
+      if (!currentBook || !startChapter || !startVerse) return;
+
+      const bookMetadata = supportedBibleBooks.find((book) => book.name === currentBook);
+      const required: string[] = [];
+      for (let chapter = startChapter; chapter <= endChapter; chapter += 1) {
+        const metadataChapter = chapter - (bookMetadata?.chapterOffset ?? 0);
+        const firstVerse = chapter === startChapter ? startVerse : 1;
+        const lastVerse = chapter === endChapter ? endVerse : bookMetadata?.verseCounts[metadataChapter - 1] ?? 0;
+        for (let verse = firstVerse; verse <= lastVerse; verse += 1) required.push(`${currentBook}-${chapter}-${verse}`);
+      }
+      if (required.length > 0 && required.every((reference) => recorded.has(reference))) completed.add(index);
+    });
+
+    return completed;
+  }, [activeLibraryRecordings, activeProject]);
   const freeRecordingChapterKeys = useMemo(() => new Set(
     libraryRecordings
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
@@ -1369,7 +1410,10 @@ export default function HomePage() {
                   <div><small>{activeProject.kind === 'free' ? '자유 녹음' : `총 ${activeProject.duration}일`}</small><strong>프로젝트 전체 일정</strong></div>
                 </div>
                 <ol>
-                  {activeProject.tasks.map((task, index) => <li key={`${task}-${index}`}><span>{activeProject.kind === 'free' ? '자유' : `${index + 1}일`}</span><strong>{task}</strong></li>)}
+                  {activeProject.tasks.map((task, index) => {
+                    const completed = completedProjectTaskIndexes.has(index);
+                    return <li className={completed ? 'completed' : ''} key={`${task}-${index}`}><span>{completed ? <Check size={14} aria-label="완료" /> : activeProject.kind === 'free' ? '자유' : `${index + 1}일`}</span><strong>{task}</strong>{completed && <small>완료</small>}</li>;
+                  })}
                   {activeProject.kind !== 'free' && activeProject.tasks.length < activeProject.duration && Array.from({ length: activeProject.duration - activeProject.tasks.length }, (_, index) => {
                     const day = activeProject.tasks.length + index + 1;
                     const task = day === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음';
@@ -1483,6 +1527,7 @@ export default function HomePage() {
             <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
             <p className="muted">{activeProject?.tasks[0] ? `오늘: ${activeProject.tasks[0]}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
+          {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => setOnboardingStep('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
           <div className="verse-list" aria-label="구절 목록">
             {passageVerses.map((_, index) => (
               <button
