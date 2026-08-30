@@ -23,14 +23,16 @@ import {
   Play,
   RotateCcw,
   Save,
+  Search,
   Sparkles,
   Sun,
   Target,
   Users,
   Volume2,
 } from 'lucide-react';
+import { bibleBooks, type BibleBook } from './bible-metadata';
 
-const verses = [
+const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
   '그가 나를 푸른 풀밭에 누이시며 쉴 만한 물가로 인도하시는도다.',
   '내 영혼을 소생시키시고 자기 이름을 위하여 의의 길로 인도하시는도다.',
@@ -331,11 +333,14 @@ function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
 
 export default function HomePage() {
   const [verseIndex, setVerseIndex] = useState(0);
+  const [passageBook, setPassageBook] = useState({ code: '시', name: '시편' });
+  const [passageChapter, setPassageChapter] = useState(23);
+  const [passageVerses, setPassageVerses] = useState(defaultVerses);
   const [recording, setRecording] = useState(false);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => verses.map(() => null));
-  const [saved, setSaved] = useState<boolean[]>(() => verses.map(() => false));
+  const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => defaultVerses.map(() => null));
+  const [saved, setSaved] = useState<boolean[]>(() => defaultVerses.map(() => false));
   const [reverb, setReverb] = useState('따뜻하게');
   const [bgm, setBgm] = useState('still-waters');
   const [volume, setVolume] = useState(12);
@@ -351,7 +356,7 @@ export default function HomePage() {
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'app'>('welcome');
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
@@ -361,6 +366,12 @@ export default function HomePage() {
   const [customEndChapter, setCustomEndChapter] = useState(1);
   const [customEndVerse, setCustomEndVerse] = useState(6);
   const [activeProject, setActiveProject] = useState<ActiveProject | null>(null);
+  const [bibleTestament, setBibleTestament] = useState<'old' | 'new'>('old');
+  const [bibleSearch, setBibleSearch] = useState('');
+  const [selectedBibleBook, setSelectedBibleBook] = useState<BibleBook>(bibleBooks[0]);
+  const [selectedBibleChapter, setSelectedBibleChapter] = useState(1);
+  const [selectedBibleVerses, setSelectedBibleVerses] = useState<string[]>([]);
+  const [bibleLoading, setBibleLoading] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -384,6 +395,7 @@ export default function HomePage() {
   useEffect(() => {
     const completed = window.localStorage.getItem('verse-legacy-onboarding-complete') === 'true';
     const savedProjectId = window.localStorage.getItem('verse-legacy-project');
+    const savedFreePassage = window.localStorage.getItem('verse-legacy-free-passage');
     const frame = window.requestAnimationFrame(() => {
       if (savedProjectId && projectTemplates.some((item) => item.id === savedProjectId)) {
         setSelectedTemplateId(savedProjectId);
@@ -399,6 +411,25 @@ export default function HomePage() {
           }
         } else if (template) {
           setActiveProject({ id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks });
+        }
+      }
+      if (!savedProjectId && savedFreePassage) {
+        try {
+          const passage = JSON.parse(savedFreePassage) as { code: string; name: string; chapter: number };
+          fetch(`/data/bible/${encodeURIComponent(passage.code)}.json`)
+            .then((response) => response.json() as Promise<string[][]>)
+            .then((chapters) => {
+              const chapterVerses = chapters[passage.chapter - 1];
+              if (!chapterVerses?.length) return;
+              setPassageBook({ code: passage.code, name: passage.name });
+              setPassageChapter(passage.chapter);
+              setPassageVerses(chapterVerses);
+              setTakes(chapterVerses.map(() => null));
+              setSaved(chapterVerses.map(() => false));
+            })
+            .catch(() => undefined);
+        } catch {
+          window.localStorage.removeItem('verse-legacy-free-passage');
         }
       }
       if (completed) setOnboardingStep('app');
@@ -447,7 +478,7 @@ export default function HomePage() {
       .then((recordings) => {
         if (cancelled) return;
         setLibraryRecordings(recordings);
-        setSaved(verses.map((_, index) => recordings.some((item) => item.verse === index + 1)));
+        setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === index + 1)));
       })
       .catch(() => {
         if (!cancelled) setNotice('보관함 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요.');
@@ -459,7 +490,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [passageBook.name, passageChapter, passageVerses]);
 
   useEffect(() => {
     let disposed = false;
@@ -535,21 +566,21 @@ export default function HomePage() {
 
   const completedCount = saved.filter(Boolean).length;
   const progress = useMemo(
-    () => Math.round((completedCount / verses.length) * 100),
-    [completedCount],
+    () => Math.round((completedCount / passageVerses.length) * 100),
+    [completedCount, passageVerses.length],
   );
   const chapterQueue = useMemo(() => {
     const latestByVerse = new Map<number, SavedRecording>();
     libraryRecordings.forEach((item) => {
-      if (!latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
+      if (item.book === passageBook.name && item.chapter === passageChapter && !latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
     });
     return [...latestByVerse.values()].sort((a, b) => a.verse - b.verse);
-  }, [libraryRecordings]);
+  }, [libraryRecordings, passageBook.name, passageChapter]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
-    setSaved(verses.map((_, index) => recordings.some((item) => item.verse === index + 1)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === index + 1)));
   };
 
   const stopLibraryPlayback = (recordingId?: string) => {
@@ -644,7 +675,7 @@ export default function HomePage() {
     const next = chapterQueue[currentIndex + 1];
     if (!next) {
       stopChapterPlayback();
-      setNotice('시편 23편 이어듣기를 모두 마쳤어요.');
+      setNotice(`${passageBook.name} ${passageChapter}장 이어듣기를 모두 마쳤어요.`);
       return;
     }
 
@@ -705,7 +736,7 @@ export default function HomePage() {
 
   const moveVerse = (nextIndex: number) => {
     if (recording || requestingMic) return;
-    const safeIndex = Math.min(Math.max(nextIndex, 0), verses.length - 1);
+    const safeIndex = Math.min(Math.max(nextIndex, 0), passageVerses.length - 1);
     if (replacingRecording?.verse !== safeIndex + 1) setReplacingRecording(null);
     setVerseIndex(safeIndex);
     setSeconds(takes[safeIndex]?.duration ?? 0);
@@ -887,14 +918,14 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append(
         'audio',
-        new File([currentTake.blob], `시편23편_${verseIndex + 1}절.${extension}`, {
+        new File([currentTake.blob], `${passageBook.name}${passageChapter}장_${verseIndex + 1}절.${extension}`, {
           type: currentTake.mimeType,
         }),
       );
-      formData.append('book', '시편');
-      formData.append('chapter', '23');
+      formData.append('book', passageBook.name);
+      formData.append('chapter', String(passageChapter));
       formData.append('verse', String(verseIndex + 1));
-      formData.append('verseText', verses[verseIndex]);
+      formData.append('verseText', passageVerses[verseIndex]);
       formData.append('bgmId', bgm);
       formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
@@ -936,13 +967,48 @@ export default function HomePage() {
         : 'webm';
     const anchor = document.createElement('a');
     anchor.href = currentTake.url;
-    anchor.download = `말씀유산_시편23편_${verseIndex + 1}절.${extension}`;
+    anchor.download = `말씀유산_${passageBook.name}${passageChapter}장_${verseIndex + 1}절.${extension}`;
     anchor.click();
+  };
+
+  const chooseBibleBook = (book: BibleBook) => {
+    setSelectedBibleBook(book);
+    setSelectedBibleChapter(1);
+    setSelectedBibleVerses([]);
+  };
+
+  const chooseBibleChapter = async (chapter: number) => {
+    setSelectedBibleChapter(chapter);
+    setBibleLoading(true);
+    try {
+      const response = await fetch(`/data/bible/${encodeURIComponent(selectedBibleBook.code)}.json`);
+      if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
+      const chapters = await response.json() as string[][];
+      setSelectedBibleVerses(chapters[chapter - 1] ?? []);
+    } catch {
+      setSelectedBibleVerses([]);
+      setNotice('성경 본문을 불러오지 못했어요. 다시 시도해 주세요.');
+    } finally {
+      setBibleLoading(false);
+    }
+  };
+
+  const startFreeChapter = () => {
+    if (!selectedBibleVerses.length) return;
+    setPassageBook({ code: selectedBibleBook.code, name: selectedBibleBook.name });
+    setPassageChapter(selectedBibleChapter);
+    setPassageVerses(selectedBibleVerses);
+    setVerseIndex(0);
+    setTakes(selectedBibleVerses.map(() => null));
+    setSaved(selectedBibleVerses.map(() => false));
+    window.localStorage.setItem('verse-legacy-free-passage', JSON.stringify({ code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter }));
+    finishOnboarding();
   };
 
   const finishOnboarding = (projectId?: string) => {
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
     if (projectId) {
+      window.localStorage.removeItem('verse-legacy-free-passage');
       window.localStorage.setItem('verse-legacy-project', projectId);
       setSelectedTemplateId(projectId);
       const project = projectTemplates.find((item) => item.id === projectId);
@@ -963,6 +1029,7 @@ export default function HomePage() {
 
   const selectedTemplate = projectTemplates.find((item) => item.id === selectedTemplateId) ?? projectTemplates[0];
   const visibleTemplates = projectTemplates.filter((item) => item.duration === projectDuration);
+  const visibleBibleBooks = bibleBooks.filter((book) => book.testament === bibleTestament && book.name.includes(bibleSearch.trim()));
   const customBook = supportedBibleBooks.find((item) => item.id === customBookId) ?? supportedBibleBooks[0];
   const customRecordingDays = projectDuration === 7 ? 6 : 12;
   const customDailyTasks = useMemo(
@@ -1012,11 +1079,11 @@ export default function HomePage() {
               <h1>어떤 방식으로 시작할까요?</h1>
               <p className="onboarding-lead">지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.</p>
               <div className="start-choice-grid">
-                <button type="button" onClick={() => finishOnboarding()}>
+                <button type="button" onClick={() => setOnboardingStep('bible')}>
                   <span><Sparkles size={22} /></span>
                   <strong>내 방식대로 자유롭게</strong>
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
-                  <em>바로 시작 <ArrowRight size={15} /></em>
+                  <em>성경 고르기 <ArrowRight size={15} /></em>
                 </button>
                 <button className="recommended" type="button" onClick={() => setOnboardingStep('projects')}>
                   <i>추천</i><span><Target size={22} /></span>
@@ -1025,6 +1092,40 @@ export default function HomePage() {
                   <em>프로젝트 고르기 <ArrowRight size={15} /></em>
                 </button>
               </div>
+            </div>
+          ) : onboardingStep === 'bible' ? (
+            <div className="onboarding-card bible-browser-card">
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 이전</button>
+              <p className="eyebrow">자유롭게 녹음하기</p>
+              <h1>어떤 말씀부터 읽어볼까요?</h1>
+              <p className="onboarding-lead">구약·신약 66권 전체에서 성경책과 장을 고르면 모든 절을 한눈에 볼 수 있어요.</p>
+              <div className="bible-browser-toolbar">
+                <div className="testament-tabs" aria-label="구약 또는 신약 선택">
+                  <button className={bibleTestament === 'old' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('old'); setBibleSearch(''); chooseBibleBook(bibleBooks[0]); }}>구약 <small>39권</small></button>
+                  <button className={bibleTestament === 'new' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('new'); setBibleSearch(''); chooseBibleBook(bibleBooks[39]); }}>신약 <small>27권</small></button>
+                </div>
+                <label className="bible-search"><Search size={16} /><input value={bibleSearch} onChange={(event) => setBibleSearch(event.target.value)} placeholder="성경책 이름 검색" /></label>
+              </div>
+              <div className="bible-browser-layout">
+                <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
+                  <div className="pane-heading"><span>1</span><div><strong>성경책</strong><small>{bibleTestament === 'old' ? '구약 39권' : '신약 27권'}</small></div></div>
+                  <div className="bible-book-grid">
+                    {visibleBibleBooks.map((book) => <button className={selectedBibleBook.code === book.code ? 'selected' : ''} type="button" onClick={() => chooseBibleBook(book)} key={book.code}><strong>{book.name}</strong><small>{book.chapters.length}장</small></button>)}
+                  </div>
+                </section>
+                <section className="bible-chapter-pane" aria-label={`${selectedBibleBook.name} 장 선택`}>
+                  <div className="pane-heading"><span>2</span><div><strong>장 선택</strong><small>{selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장</small></div></div>
+                  <div className="bible-chapter-grid">
+                    {selectedBibleBook.chapters.map((verseCount, index) => <button className={selectedBibleChapter === index + 1 && selectedBibleVerses.length ? 'selected' : ''} type="button" onClick={() => void chooseBibleChapter(index + 1)} key={index}><strong>{index + 1}</strong><small>{verseCount}절</small></button>)}
+                  </div>
+                </section>
+                <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절">
+                  <div className="pane-heading"><span>3</span><div><strong>본문 확인</strong><small>{selectedBibleBook.name} {selectedBibleChapter}장</small></div></div>
+                  {bibleLoading ? <div className="bible-empty"><LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요</div> : selectedBibleVerses.length ? <div className="bible-verse-preview">{selectedBibleVerses.map((text, index) => <p key={index}><span>{index + 1}</span>{text}</p>)}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
+                  <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}장 녹음 시작 <ArrowRight size={16} /></button>
+                </aside>
+              </div>
+              <p className="bible-credit">본문: PLAY X 번역(플레이엑스) · 번역 김무송 · CC BY 4.0</p>
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
@@ -1109,8 +1210,8 @@ export default function HomePage() {
           <span className="brand-mark"><BookOpen size={20} /></span>
           <span><strong>말씀유산</strong><small>VERSE LEGACY</small></span>
         </a>
-        <div className="project-progress" aria-label={activeProject ? `${activeProject.title} 진행 중` : `시편 23편 ${progress}% 완료`}>
-          <div><span>{activeProject?.title ?? '자유 녹음 · 시편 23편'}</span><strong>{activeProject ? `${activeProject.duration}일` : `${completedCount}/${verses.length}절`}</strong></div>
+        <div className="project-progress" aria-label={activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
+          <div><span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span><strong>{activeProject ? `${activeProject.duration}일` : `${completedCount}/${passageVerses.length}절`}</strong></div>
           <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         </div>
         <a className="icon-button" href="#library" aria-label="보관함으로 이동"><Archive size={20} /></a>
@@ -1138,11 +1239,11 @@ export default function HomePage() {
         <aside className="chapter-panel" aria-label="프로젝트 정보">
           <div>
             <p className="eyebrow">{activeProject ? `${activeProject.duration}일 완성 프로젝트` : '우리 가족 첫 번째 낭독'}</p>
-            <h2>{activeProject?.title ?? '시편 23편'}</h2>
+            <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
             <p className="muted">{activeProject?.tasks[0] ? `오늘: ${activeProject.tasks[0]}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
           <div className="verse-list" aria-label="구절 목록">
-            {verses.map((_, index) => (
+            {passageVerses.map((_, index) => (
               <button
                 className={`verse-item ${verseIndex === index ? 'active' : ''}`}
                 key={index}
@@ -1163,7 +1264,7 @@ export default function HomePage() {
         <section className="recording-card" aria-label="성경 녹음 화면">
           <div className="recording-heading">
             <div>
-              <p className="eyebrow">시편 23편 · {verseIndex + 1}절</p>
+              <p className="eyebrow">{passageBook.name} {passageChapter}장 · {verseIndex + 1}절</p>
               <h1>천천히, 평소 목소리로 읽어 주세요.</h1>
             </div>
             <span className={`status-pill ${recording ? 'live' : hasTake ? 'ready' : ''}`}>
@@ -1181,7 +1282,7 @@ export default function HomePage() {
 
           <article className="verse-paper">
             <span className="verse-number">{verseIndex + 1}</span>
-            <p>{verses[verseIndex]}</p>
+            <p>{passageVerses[verseIndex]}</p>
           </article>
 
           <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
@@ -1218,8 +1319,8 @@ export default function HomePage() {
 
           <div className="verse-navigation">
             <button onClick={() => moveVerse(verseIndex - 1)} disabled={verseIndex === 0 || recording || requestingMic} type="button"><ChevronLeft size={18} /> 이전 구절</button>
-            <span>{verseIndex + 1} / {verses.length}</span>
-            <button onClick={() => moveVerse(verseIndex + 1)} disabled={verseIndex === verses.length - 1 || recording || requestingMic} type="button">다음 구절 <ChevronRight size={18} /></button>
+            <span>{verseIndex + 1} / {passageVerses.length}</span>
+            <button onClick={() => moveVerse(verseIndex + 1)} disabled={verseIndex === passageVerses.length - 1 || recording || requestingMic} type="button">다음 구절 <ChevronRight size={18} /></button>
           </div>
         </section>
 
@@ -1297,8 +1398,8 @@ export default function HomePage() {
             <div className="chapter-player-copy">
               <span><BookOpen size={20} /></span>
               <div>
-                <strong>시편 23편 전체 이어듣기</strong>
-                <small>{chapterQueue.length === verses.length ? '1절부터 6절까지' : `완성률과 관계없이 저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
+                <strong>{passageBook.name} {passageChapter}장 전체 이어듣기</strong>
+                <small>{chapterQueue.length === passageVerses.length ? `1절부터 ${passageVerses.length}절까지` : `완성률과 관계없이 저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
               </div>
             </div>
             <div className="chapter-player-actions">
