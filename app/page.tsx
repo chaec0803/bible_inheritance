@@ -1619,6 +1619,7 @@ export default function HomePage() {
                   <button
                     className="music-select"
                     onClick={() => {
+                      if (option.id !== bgm && activePreview) stopPreview();
                       setBgm(option.id);
                       if (!option.videoId) stopPreview();
                     }}
