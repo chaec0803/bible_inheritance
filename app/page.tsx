@@ -1658,6 +1658,28 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
+              <div className="chapter-audio-bank">
+                {chapterQueue.map((item) => (
+                  // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
+                  <audio
+                    preload="metadata"
+                    src={ownerKey ? `/api/recordings/${item.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined}
+                    ref={(element) => {
+                      if (element) libraryAudioRefs.current.set(item.id, element);
+                      else libraryAudioRefs.current.delete(item.id);
+                    }}
+                    onPlay={() => playLibraryBgm(item)}
+                    onPause={(event) => {
+                      if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
+                        if (chapterPlayingRef.current) stopChapterPlayback();
+                        else stopLibraryPlayback(item.id);
+                      }
+                    }}
+                    onEnded={() => handleLibraryEnded(item.id)}
+                    key={item.id}
+                  />
+                ))}
+              </div>
               {selectedLibraryRecording && <div className="listen-track-section">
                 <div className="listen-track-heading"><div><small>SELECTED VERSE</small><strong>{selectedLibraryRecording.verse}절 녹음</strong></div><button type="button" onClick={() => setSelectedLibraryRecordingId(null)}>닫기</button></div>
           <div className="library-grid">
@@ -1678,25 +1700,12 @@ export default function HomePage() {
                     <span><Sparkles size={13} /> {item.reverb}</span>
                     <span>{formatTime(item.durationSeconds)}</span>
                   </div>
-                  {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다. */}
-                  <audio
-                    className="library-audio"
-                    controls
-                    preload="metadata"
-                    src={ownerKey ? `/api/recordings/${item.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined}
-                    ref={(element) => {
-                      if (element) libraryAudioRefs.current.set(item.id, element);
-                      else libraryAudioRefs.current.delete(item.id);
-                    }}
-                    onPlay={() => playLibraryBgm(item)}
-                    onPause={(event) => {
-                      if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
-                        if (chapterPlayingRef.current) stopChapterPlayback();
-                        else stopLibraryPlayback(item.id);
-                      }
-                    }}
-                    onEnded={() => handleLibraryEnded(item.id)}
-                  >저장된 녹음 재생을 지원하지 않는 브라우저입니다.</audio>
+                  <button className="library-audio-button" type="button" onClick={() => {
+                    const audio = libraryAudioRefs.current.get(item.id);
+                    if (!audio) return;
+                    if (isPlaying && !audio.paused) audio.pause();
+                    else void audio.play();
+                  }}>{isPlaying ? <Pause size={16} /> : <Play size={16} />}{isPlaying ? '이 절 멈춤' : '이 절 듣기'}</button>
                   <p className="library-playback-note">
                     {isPlaying
                       ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
