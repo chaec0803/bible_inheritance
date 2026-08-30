@@ -1646,7 +1646,7 @@ export default function HomePage() {
 
           <label className="volume-control">
             <span><Volume2 size={17} /> 배경음악 음량 <strong>{volume}%</strong></span>
-            <input type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
+            <input type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
           </label>
 
           <div className="sound-summary">
@@ -1704,7 +1704,7 @@ export default function HomePage() {
                   <div className="chapter-player-actions">
                   <label>
                     <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
-                    <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+                    <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
                   </label>
                   <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
                     {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
