@@ -90,6 +90,16 @@ button { color: inherit; }
 .word-card-library-entry strong { color: #173f50; font-size: 14px; }
 .word-card-library-entry small { margin-top: 4px; color: #776b5e; font-size: 9px; }
 .word-card-library-card { max-width: 980px; }
+.pending-word-cards { max-width: 790px; margin: 26px auto 0; padding: 16px; display: grid; gap: 10px; background: #fff8ec; border: 1px solid #ddc69f; border-radius: 18px; }
+.pending-word-cards > div { display: flex; align-items: center; gap: 10px; }
+.pending-word-cards > div > span { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; color: #765b35; background: #f1dcae; border-radius: 12px; }
+.pending-word-cards > div strong, .pending-word-cards > div small { display: block; }
+.pending-word-cards > div strong { color: #173f50; font-size: 12px; }
+.pending-word-cards > div small { margin-top: 3px; color: #776b5e; font-size: 8px; line-height: 1.5; }
+.pending-word-cards article { padding: 12px 13px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; background: #fff1dd; border: 1px solid #e7d4b5; border-radius: 13px; }
+.pending-word-cards article > strong { color: #173f50; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 17px; }
+.pending-word-cards article > span { color: #776b5e; font-size: 9px; }
+.pending-word-cards article > button { padding: 9px 11px; color: white; background: #355f50; border: 0; border-radius: 10px; font-size: 9px; font-weight: 900; cursor: pointer; }
 .word-card-collection-grid { max-width: 790px; margin: 30px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .word-card-collection-item { min-width: 0; padding: 0 0 15px; overflow: hidden; color: #173f50; background: #fff1dd; border: 1px solid #ddc69f; border-radius: 18px; box-shadow: 0 10px 26px rgba(79, 52, 25, .09); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
 .word-card-collection-item:hover { transform: translateY(-3px); box-shadow: 0 17px 35px rgba(79, 52, 25, .16); }
@@ -591,6 +601,8 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
   .start-choice-grid, .project-picker-layout { grid-template-columns: 1fr; }
   .start-choice-grid > button { min-height: 210px; padding: 22px; }
   .word-card-collection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .pending-word-cards article { grid-template-columns: 1fr; }
+  .pending-word-cards article > button { width: 100%; }
   .duration-picker { flex-wrap: wrap; }
   .duration-picker span { width: 100%; margin: 4px 0 0; text-align: center; }
   .project-schedule-preview { min-height: auto; }

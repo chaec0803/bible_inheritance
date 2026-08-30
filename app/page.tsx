@@ -417,6 +417,7 @@ export default function HomePage() {
   const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
   const [earnedCard, setEarnedCard] = useState<WordCard | null>(null);
   const [collectedCardIds, setCollectedCardIds] = useState<string[]>([]);
+  const [pendingCardAwards, setPendingCardAwards] = useState<WordCardAward[]>([]);
   const [wordCardCollectionMode, setWordCardCollectionMode] = useState(false);
   const [wordCardFlipped, setWordCardFlipped] = useState(false);
   const [wordCardExpanded, setWordCardExpanded] = useState(false);
@@ -482,6 +483,7 @@ export default function HomePage() {
     const savedFreePassage = window.localStorage.getItem('verse-legacy-free-passage');
     const savedActiveProjects = window.localStorage.getItem('verse-legacy-active-projects');
     let restoredCardIds: string[] = [];
+    let restoredPendingAwards: WordCardAward[] = [];
     try {
       const storedAwards = JSON.parse(window.localStorage.getItem('verse-legacy-word-card-awards') ?? '[]') as Partial<WordCardAward>[];
       const migratedAwards = storedAwards
@@ -493,11 +495,13 @@ export default function HomePage() {
         }));
       window.localStorage.setItem('verse-legacy-word-card-awards', JSON.stringify(migratedAwards));
       restoredCardIds = [...new Set(migratedAwards.filter((award) => award.collected).map((award) => award.cardId))];
+      restoredPendingAwards = migratedAwards.filter((award) => !award.collected);
     } catch {
       window.localStorage.removeItem('verse-legacy-word-card-awards');
     }
     const frame = window.requestAnimationFrame(() => {
       setCollectedCardIds(restoredCardIds);
+      setPendingCardAwards(restoredPendingAwards);
       let restoredProjects: ActiveProject[] = [];
       if (savedActiveProjects) {
         try {
@@ -886,6 +890,7 @@ export default function HomePage() {
     const pool = availableCards.length ? availableCards : wordCards;
     const card = pool[Math.floor(Math.random() * pool.length)];
     window.localStorage.setItem(storageKey, JSON.stringify([...awards.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, presented: true, collected: false }]));
+    setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, presented: true, collected: false }]);
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
@@ -897,17 +902,24 @@ export default function HomePage() {
     setWordCardCollectionMode(false);
   };
 
+  const collectStoredWordCard = (awardKey: string, cardId: string) => {
+    const storageKey = 'verse-legacy-word-card-awards';
+    try {
+      const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as WordCardAward[];
+      window.localStorage.setItem(storageKey, JSON.stringify(awards.map((award) => award.key === awardKey && award.cardId === cardId ? { ...award, presented: true, collected: true } : award)));
+      setCollectedCardIds((current) => current.includes(cardId) ? current : [...current, cardId]);
+      setPendingCardAwards((current) => current.filter((award) => !(award.key === awardKey && award.cardId === cardId)));
+      setNotice('내 카드 보관함에 간직했어요.');
+      return true;
+    } catch {
+      setNotice('카드를 보관하지 못했어요. 다시 시도해 주세요.');
+      return false;
+    }
+  };
+
   const collectEarnedWordCard = () => {
     if (activeProject && earnedCard) {
-      const storageKey = 'verse-legacy-word-card-awards';
-      try {
-        const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as WordCardAward[];
-        window.localStorage.setItem(storageKey, JSON.stringify(awards.map((award) => award.key === `${activeProject.id}:day-${displayedProjectDay}` && award.cardId === earnedCard.id ? { ...award, presented: true, collected: true } : award)));
-        setCollectedCardIds((current) => current.includes(earnedCard.id) ? current : [...current, earnedCard.id]);
-        setNotice('내 카드 보관함에 간직했어요.');
-      } catch {
-        setNotice('카드를 보관하지 못했어요. 다시 시도해 주세요.');
-      }
+      collectStoredWordCard(`${activeProject.id}:day-${displayedProjectDay}`, earnedCard.id);
     }
     closeWordCard();
   };
@@ -1502,6 +1514,10 @@ export default function HomePage() {
   );
   const customTotalVerses = customDailyTasks.reduce((total, task) => total + task.count, 0);
   const collectedWordCards = wordCards.filter((card) => collectedCardIds.includes(card.id));
+  const pendingWordCards = pendingCardAwards.flatMap((award) => {
+    const card = wordCards.find((item) => item.id === award.cardId);
+    return card ? [{ award, card }] : [];
+  });
 
   const openCollectedWordCard = (card: WordCard) => {
     setWordCardCollectionMode(true);
@@ -1572,6 +1588,13 @@ export default function HomePage() {
               <p className="eyebrow">MY WORD CARDS</p>
               <h1>내 카드 보관함</h1>
               <p className="onboarding-lead">프로젝트의 하루 과제를 마치고 직접 간직한 카드들이에요. 카드를 누르면 자세히 볼 수 있어요.</p>
+              {pendingWordCards.length > 0 && <section className="pending-word-cards" aria-label="아직 간직하지 않은 받은 카드">
+                <div><span><Sparkles size={18} /></span><div><strong>오늘 받은 카드가 기다리고 있어요</strong><small>다시 팝업으로 띄우지 않았어요. 여기서 간직하면 아래 보관함에 들어가요.</small></div></div>
+                {pendingWordCards.map(({ award, card }) => <article key={award.key}>
+                  <strong>{card.name}</strong><span>{card.heading}</span>
+                  <button type="button" onClick={() => collectStoredWordCard(award.key, card.id)}>내 카드로 간직하기</button>
+                </article>)}
+              </section>}
               {collectedWordCards.length ? (
                 <div className="word-card-collection-grid">
                   {collectedWordCards.map((card) => {
@@ -1583,9 +1606,9 @@ export default function HomePage() {
                     </button>;
                   })}
                 </div>
-              ) : (
+              ) : pendingWordCards.length === 0 ? (
                 <div className="word-card-collection-empty"><Sparkles size={28} /><strong>아직 간직한 카드가 없어요</strong><p>프로젝트의 하루 과제를 완료한 뒤<br />‘내 카드로 간직하기’를 눌러보세요.</p></div>
-              )}
+              ) : null}
             </div>
           ) : onboardingStep === 'projectHome' ? (
             <div className="onboarding-card project-home-card">
