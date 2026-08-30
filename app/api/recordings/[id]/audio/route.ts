@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { and, eq } from 'drizzle-orm';
-import { getDb } from '@/db';
+import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 
 type RouteContext = {
@@ -12,6 +12,7 @@ export async function GET(request: Request, context: RouteContext) {
   if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
     return Response.json({ error: '재생 권한이 없습니다.' }, { status: 401 });
   }
+  await ensureDbSchema();
 
   const { id } = await context.params;
   const [recording] = await getDb()
@@ -42,6 +43,7 @@ export async function PUT(request: Request, context: RouteContext) {
   if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
     return Response.json({ error: '교체 권한이 없습니다.' }, { status: 401 });
   }
+  await ensureDbSchema();
 
   const { id } = await context.params;
   const [existing] = await getDb()

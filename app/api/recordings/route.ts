@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { desc, eq } from 'drizzle-orm';
-import { getDb } from '@/db';
+import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 
 const OWNER_HEADER = 'x-verse-legacy-owner';
@@ -19,6 +19,7 @@ function formText(formData: FormData, key: string, maxLength: number) {
 export async function GET(request: Request) {
   const ownerKey = readOwnerKey(request);
   if (!ownerKey) return Response.json({ error: '보관함 식별 정보가 없습니다.' }, { status: 401 });
+  await ensureDbSchema();
 
   const rows = await getDb()
     .select({
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const ownerKey = readOwnerKey(request);
   if (!ownerKey) return Response.json({ error: '보관함 식별 정보가 없습니다.' }, { status: 401 });
+  await ensureDbSchema();
 
   const formData = await request.formData();
   const audio = formData.get('audio');
