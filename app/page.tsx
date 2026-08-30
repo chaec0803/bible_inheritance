@@ -367,7 +367,7 @@ export default function HomePage() {
   const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
@@ -379,7 +379,6 @@ export default function HomePage() {
   const [customEndVerse, setCustomEndVerse] = useState(6);
   const [activeProject, setActiveProject] = useState<ActiveProject | null>(null);
   const [activeProjects, setActiveProjects] = useState<ActiveProject[]>([]);
-  const [projectHubSection, setProjectHubSection] = useState<'projects' | 'free'>('projects');
   const [bibleTestament, setBibleTestament] = useState<'old' | 'new'>('old');
   const [bibleSearch, setBibleSearch] = useState('');
   const [selectedBibleBook, setSelectedBibleBook] = useState<BibleBook>(bibleBooks[0]);
@@ -436,7 +435,6 @@ export default function HomePage() {
           ?? (savedProjectId.startsWith('free-') ? restoredProjects.find((item) => item.kind === 'free') : undefined);
         if (restoredActiveProject) {
           setActiveProject(restoredActiveProject);
-          setProjectHubSection(restoredActiveProject.kind === 'free' ? 'free' : 'projects');
           window.localStorage.setItem('verse-legacy-project', restoredActiveProject.id);
         } else
         if (template?.custom) {
@@ -623,7 +621,6 @@ export default function HomePage() {
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const guidedProjects = activeProjects.filter((project) => project.kind !== 'free');
-  const freeRecordingProject = activeProjects.find((project) => project.kind === 'free') ?? null;
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
     activeLibraryRecordings.forEach((item) => {
@@ -1165,7 +1162,6 @@ export default function HomePage() {
   }, [activeProject]);
 
   const activateProject = (project: ActiveProject) => {
-    setProjectHubSection(project.kind === 'free' ? 'free' : 'projects');
     setActiveProject(project);
     setActiveProjects((current) => {
       const withoutPreviousFree = project.kind === 'free' ? current.filter((item) => item.kind !== 'free') : current;
@@ -1177,27 +1173,6 @@ export default function HomePage() {
     });
     window.localStorage.setItem('verse-legacy-project', project.id);
     window.localStorage.removeItem('verse-legacy-free-passage');
-  };
-
-  const showProjectHubSection = (section: 'projects' | 'free') => {
-    setProjectHubSection(section);
-    if (section === 'projects') {
-      const project = activeProject?.kind !== 'free' ? activeProject : guidedProjects[0];
-      if (project) activateProject(project);
-      return;
-    }
-    if (freeRecordingProject) activateProject(freeRecordingProject);
-  };
-
-  const selectActiveProject = (project: ActiveProject) => {
-    if (project.kind === 'free') {
-      setActiveProject(project);
-      window.localStorage.setItem('verse-legacy-project', project.id);
-      setBibleBackTarget('app');
-      setOnboardingStep('bible');
-      return;
-    }
-    activateProject(project);
   };
 
   const startFreeChapter = () => {
@@ -1222,6 +1197,7 @@ export default function HomePage() {
     window.localStorage.setItem('verse-legacy-free-passage', JSON.stringify({ code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter }));
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
     activateProject(freeProject);
+    setAppTab('recording');
     setNotice(`${selectedBibleBook.name} ${selectedBibleChapter}장을 자유 녹음으로 열었어요.`);
     setOnboardingStep('app');
   };
@@ -1306,13 +1282,24 @@ export default function HomePage() {
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
                   <em>성경 고르기 <ArrowRight size={15} /></em>
                 </button>
-                <button className="recommended" type="button" onClick={() => setOnboardingStep('projects')}>
+                <button className="recommended" type="button" onClick={() => setOnboardingStep('projectHome')}>
                   <i>추천</i><span><Target size={22} /></span>
-                  <strong>완성 프로젝트로 시작하기</strong>
-                  <small>정해진 기간 동안 조금씩 녹음해 하나의 말씀 작품을 완성해요.</small>
-                  <em>프로젝트 고르기 <ArrowRight size={15} /></em>
+                  <strong>프로젝트 보기</strong>
+                  <small>진행 중인 프로젝트를 골라 이어서 녹음하거나 새 프로젝트를 시작해요.</small>
+                  <em>내 프로젝트 보기 <ArrowRight size={15} /></em>
                 </button>
               </div>
+            </div>
+          ) : onboardingStep === 'projectHome' ? (
+            <div className="onboarding-card project-home-card">
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 홈으로</button>
+              <p className="eyebrow">MY PROJECTS</p>
+              <h1>어떤 프로젝트를 이어갈까요?</h1>
+              <p className="onboarding-lead">프로젝트를 선택하면 다른 항목 없이 그 프로젝트의 녹음 화면만 열려요.</p>
+              {guidedProjects.length ? <div className="running-project-list">
+                {guidedProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => { activateProject(project); setAppTab('recording'); setOnboardingStep('app'); }} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 프로젝트`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+              </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 프로젝트가 없어요</strong><p>첫 프로젝트를 만들고 매일 조금씩 완성해보세요.</p></div>}
+              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 프로젝트 시작하기 <ArrowRight size={16} /></button>
             </div>
           ) : onboardingStep === 'bible' ? (
             <div className="onboarding-card bible-browser-card">
@@ -1376,7 +1363,7 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 이전</button>
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('projectHome')}><ChevronLeft size={16} /> 이전</button>
               <p className="eyebrow">완성 프로젝트</p>
               <h1>얼마 동안 함께 완성해볼까요?</h1>
               <div className="duration-picker" aria-label="프로젝트 기간">
@@ -1470,35 +1457,6 @@ export default function HomePage() {
       </header>
 
       {appTab === 'recording' && <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>}
-
-      <section className="project-switcher project-hub" aria-label="내 프로젝트">
-        <div className="project-switcher-heading"><div><small>MY PROJECTS</small><strong>모든 말씀 녹음을 한곳에서 관리해요</strong></div><span>{guidedProjects.length}개 프로젝트</span></div>
-        <div className="project-hub-sections" role="tablist" aria-label="프로젝트 영역">
-          <button className={projectHubSection === 'projects' ? 'selected' : ''} type="button" role="tab" aria-selected={projectHubSection === 'projects'} onClick={() => showProjectHubSection('projects')}><Target size={17} /><span><strong>프로젝트 보기</strong><small>기간별 완성 프로젝트</small></span></button>
-          <button className={projectHubSection === 'free' ? 'selected' : ''} type="button" role="tab" aria-selected={projectHubSection === 'free'} onClick={() => showProjectHubSection('free')}><Sparkles size={17} /><span><strong>자유 녹음</strong><small>원하는 말씀을 바로 선택</small></span></button>
-        </div>
-
-        {projectHubSection === 'projects' ? <div className="project-hub-body">
-          <div className="project-tabs">
-            {guidedProjects.map((project, index) => (
-              <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'selected' : ''}`} type="button" onClick={() => selectActiveProject(project)} key={project.id}>
-                <Target size={15} /><span><strong>{project.title}</strong><small>{project.duration}일 · {project.tasks[0] ?? project.scope}</small></span>
-              </button>
-            ))}
-            <button className="add-project-tab" type="button" onClick={() => setOnboardingStep('welcome')}><span>＋</span><strong>새 프로젝트 시작</strong></button>
-          </div>
-          {activeProject && activeProject.kind !== 'free' ? <div className={`project-hub-current project-color-${Math.max(guidedProjects.findIndex((project) => project.id === activeProject.id), 0) % 5}`}>
-            <span><Target size={21} /></span><div><small>CURRENT PROJECT</small><strong>{activeProject?.title ?? '진행 중인 프로젝트'}</strong><p>{activeProject?.scope}</p></div>
-            <div className="today-task"><small>오늘의 녹음 분량</small><strong>{activeProject?.tasks[0] ?? '일정을 확인해 주세요'}</strong></div>
-            <button type="button" onClick={() => setOnboardingStep('schedule')}>프로젝트 일정 보기</button>
-          </div> : <div className="project-hub-empty"><Target size={25} /><strong>진행 중인 완성 프로젝트가 없어요</strong><button type="button" onClick={() => setOnboardingStep('projects')}>프로젝트 시작하기</button></div>}
-        </div> : <div className="project-hub-body">
-          <div className="free-recording-hub">
-            <span><Sparkles size={23} /></span><div><small>FREE RECORDING</small><strong>자유 녹음</strong><p>{freeRecordingProject?.tasks[0] ?? '성경책과 장을 골라 원하는 말씀부터 녹음해요.'}</p></div>
-            <button type="button" onClick={() => { setBibleBackTarget('app'); setOnboardingStep('bible'); }}>{freeRecordingProject ? '말씀 다시 고르기' : '말씀 고르기'}</button>
-          </div>
-        </div>}
-      </section>
 
       {appTab === 'recording' && <section className="workspace" id="recording">
         <aside className="chapter-panel" aria-label="프로젝트 정보">
@@ -1804,6 +1762,8 @@ export default function HomePage() {
         <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
         <button type="button"><Users size={19} /><span>가족</span></button>
       </nav>
+
+      <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="프로젝트와 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
 
       {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
     </main>
