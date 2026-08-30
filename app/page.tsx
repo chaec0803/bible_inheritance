@@ -1287,8 +1287,8 @@ export default function HomePage() {
     let contextBook = '';
     let contextChapter = 0;
     for (let index = 0; index <= taskIndex; index += 1) {
-      const task = project.tasks[index]?.replace('편', '장') ?? '';
-      const full = task.match(/^(.+?)\s+(\d+)장\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)장\s+(\d+)절)?/);
+      const task = project.tasks[index] ?? '';
+      const full = task.match(/^(.+?)\s+(\d+)(?:장|편)\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)(?:장|편)\s+(\d+)절)?/);
       const short = task.match(/^(\d+)(?:–(\d+))절/);
       if (full) {
         contextBook = full[1];
