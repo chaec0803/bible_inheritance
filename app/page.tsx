@@ -105,7 +105,7 @@ type YouTubePlayer = {
   loadVideoById: (options: {
     videoId: string;
     startSeconds: number;
-    endSeconds: number;
+    endSeconds?: number;
   }) => void;
   setVolume: (volume: number) => void;
   stopVideo: () => void;
@@ -167,6 +167,71 @@ function getSupportedMimeType() {
   );
 }
 
+function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
+  const context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  const highPass = context.createBiquadFilter();
+  const leveler = context.createDynamicsCompressor();
+  const makeupGain = context.createGain();
+  const dryGain = context.createGain();
+  const mix = context.createGain();
+  const limiter = context.createDynamicsCompressor();
+  const destination = context.createMediaStreamDestination();
+
+  highPass.type = 'highpass';
+  highPass.frequency.value = 70;
+  highPass.Q.value = 0.7;
+
+  // Gentle speech levelling keeps softly and loudly read verses closer together.
+  leveler.threshold.value = -30;
+  leveler.knee.value = 24;
+  leveler.ratio.value = 5;
+  leveler.attack.value = 0.008;
+  leveler.release.value = 0.28;
+  makeupGain.gain.value = 1.3;
+  dryGain.gain.value = reverb === '원음' ? 1 : 0.94;
+
+  // The final limiter protects the recorded file from clipping after make-up gain.
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.002;
+  limiter.release.value = 0.12;
+
+  source.connect(highPass);
+  highPass.connect(leveler);
+  leveler.connect(makeupGain);
+  makeupGain.connect(dryGain);
+  dryGain.connect(mix);
+
+  if (reverb !== '원음') {
+    const convolver = context.createConvolver();
+    const wetGain = context.createGain();
+    const duration = reverb === '예배당' ? 1.8 : 0.55;
+    const decay = reverb === '예배당' ? 3.4 : 7;
+    const impulse = context.createBuffer(2, Math.ceil(context.sampleRate * duration), context.sampleRate);
+
+    for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
+      const samples = impulse.getChannelData(channel);
+      for (let index = 0; index < samples.length; index += 1) {
+        const envelope = Math.pow(1 - index / samples.length, decay);
+        samples[index] = (Math.random() * 2 - 1) * envelope;
+      }
+    }
+
+    convolver.buffer = impulse;
+    wetGain.gain.value = reverb === '예배당' ? 0.22 : 0.1;
+    makeupGain.connect(convolver);
+    convolver.connect(wetGain);
+    wetGain.connect(mix);
+  }
+
+  mix.connect(limiter);
+  limiter.connect(destination);
+
+  return { context, stream: destination.stream };
+}
+
 export default function HomePage() {
   const [verseIndex, setVerseIndex] = useState(0);
   const [recording, setRecording] = useState(false);
@@ -191,6 +256,7 @@ export default function HomePage() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const recordingAudioContextRef = useRef<AudioContext | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const discardRecordingRef = useRef(false);
   const recordingStartedAtRef = useRef(0);
@@ -329,6 +395,7 @@ export default function HomePage() {
       discardRecordingRef.current = true;
       if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
+      void recordingAudioContextRef.current?.close();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
@@ -413,7 +480,6 @@ export default function HomePage() {
     youtubePlayerRef.current.loadVideoById({
       videoId: option.videoId,
       startSeconds: option.startSeconds,
-      endSeconds: option.startSeconds + Math.max(recording.durationSeconds + 2, 10),
     });
     setActivePreview(chapterPlayingRef.current ? `chapter-${playbackBgmId}` : `library-${recording.id}`);
     setPreviewRemaining(0);
@@ -533,11 +599,13 @@ export default function HomePage() {
           noiseSuppression: true,
         },
       });
+      const audioGraph = createRecordingAudioGraph(stream, reverb);
       const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const recorder = new MediaRecorder(audioGraph.stream, mimeType ? { mimeType } : undefined);
       const targetVerseIndex = verseIndex;
 
       streamRef.current = stream;
+      recordingAudioContextRef.current = audioGraph.context;
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
       discardRecordingRef.current = false;
@@ -555,7 +623,9 @@ export default function HomePage() {
         const chunks = [...chunksRef.current];
         chunksRef.current = [];
         stream.getTracks().forEach((track) => track.stop());
+        void audioGraph.context.close();
         streamRef.current = null;
+        recordingAudioContextRef.current = null;
         mediaRecorderRef.current = null;
         setRecording(false);
 
@@ -578,11 +648,13 @@ export default function HomePage() {
           return next;
         });
         setSeconds(duration);
-        setNotice('실제 음성 녹음이 완료됐어요. 바로 들어보거나 내려받을 수 있어요.');
+        setNotice('음량을 고르게 다듬은 녹음이 완료됐어요. 바로 들어보거나 내려받을 수 있어요.');
       };
 
       recorder.onerror = () => {
         stream.getTracks().forEach((track) => track.stop());
+        void audioGraph.context.close();
+        recordingAudioContextRef.current = null;
         setRecording(false);
         setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
       };
@@ -601,7 +673,7 @@ export default function HomePage() {
       setSeconds(0);
       recorder.start(250);
       setRecording(true);
-      setNotice('마이크 녹음을 시작했어요. 편안하게 읽어 주세요.');
+      setNotice(`자동 음량 보정과 ‘${reverb}’ 효과로 녹음을 시작했어요.`);
     } catch (error) {
       const denied = error instanceof DOMException && error.name === 'NotAllowedError';
       setNotice(
@@ -803,7 +875,7 @@ export default function HomePage() {
 
           <fieldset className="setting-group">
             <legend>리버브</legend>
-            <p>목소리에 자연스러운 공간감을 더해요.</p>
+            <p>녹음 파일에 자연스러운 공간감을 실제로 더해요.</p>
             <div className="segment-control">
               {reverbOptions.map((option) => (
                 <button className={reverb === option ? 'selected' : ''} onClick={() => setReverb(option)} type="button" key={option}>{option}</button>
@@ -847,12 +919,12 @@ export default function HomePage() {
 
           <label className="volume-control">
             <span><Volume2 size={17} /> 미리듣기·이어듣기 BGM 음량 <strong>{volume}%</strong></span>
-            <input type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
+            <input type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
           </label>
 
           <div className="sound-summary">
             <Sparkles size={18} />
-            <p><strong>녹음과 한 절 다시듣기는 목소리만</strong><small>보관함에서 ‘전체 이어듣기’를 눌렀을 때만 선택한 BGM이 작게 함께 재생돼요.</small></p>
+            <p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>새 녹음에는 음량 보정과 선택한 리버브가 적용되고, BGM은 전체 이어듣기에서만 작게 재생돼요.</small></p>
           </div>
         </aside>
       </section>
@@ -862,7 +934,7 @@ export default function HomePage() {
           <div>
             <p className="eyebrow">나중에도 다시 듣기</p>
             <h2 id="library-title">말씀 보관함</h2>
-            <p className="muted">저장한 목소리를 재생하면, 녹음할 때 골라 둔 배경음악이 뒤에 함께 흘러요.</p>
+            <p className="muted">한 절은 목소리만 듣고, 전체 이어듣기에서는 선택한 배경음악과 함께 감상할 수 있어요.</p>
           </div>
           <span className="library-count"><Archive size={15} /> {libraryRecordings.length}개 보관</span>
         </div>
@@ -879,7 +951,7 @@ export default function HomePage() {
             <div className="chapter-player-actions">
               <label>
                 <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
-                <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={Math.min(volume, 40)} onChange={(event) => setVolume(Number(event.target.value))} />
+                <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
               </label>
               <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
                 {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
