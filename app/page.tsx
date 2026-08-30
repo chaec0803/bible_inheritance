@@ -363,6 +363,7 @@ export default function HomePage() {
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [deletingRecordingId, setDeletingRecordingId] = useState<string | null>(null);
+  const [savedRecordingPlaying, setSavedRecordingPlaying] = useState(false);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
@@ -402,6 +403,7 @@ export default function HomePage() {
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const ownerKeyRef = useRef('');
   const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
+  const savedRecordingAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeLibraryRef = useRef<string | null>(null);
   const chapterPlayingRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
@@ -620,6 +622,7 @@ export default function HomePage() {
     () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
     [activeProject, libraryRecordings],
   );
+  const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
   const completedProjectTaskIndexes = useMemo(() => {
     const completed = new Set<number>();
     if (!activeProject || activeProject.kind === 'free') return completed;
@@ -765,6 +768,8 @@ export default function HomePage() {
     libraryAudioRefs.current.forEach((audio) => {
       if (!audio.paused) audio.pause();
     });
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
     stopLibraryPlayback();
   };
 
@@ -776,6 +781,8 @@ export default function HomePage() {
 
   const openLibraryTab = () => {
     stopChapterPlayback();
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
     setAppTab('library');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -907,6 +914,8 @@ export default function HomePage() {
 
   const moveVerse = (nextIndex: number) => {
     if (recording || requestingMic) return;
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
     const safeIndex = Math.min(Math.max(nextIndex, 0), passageVerses.length - 1);
     if (replacingRecording?.verse !== safeIndex + 1) setReplacingRecording(null);
     setVerseIndex(safeIndex);
@@ -970,6 +979,8 @@ export default function HomePage() {
     }
 
     setHeadphoneWarningOpen(false);
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
     libraryAudioRefs.current.forEach((audio) => audio.pause());
     chapterPlayingRef.current = false;
     chapterBgmIdRef.current = null;
@@ -1144,12 +1155,15 @@ export default function HomePage() {
       }
 
       await refreshLibrary();
-      if (isReplacingCurrentVerse) {
-        setReplacingRecording(null);
-        setNotice(`${currentVerseNumber}절을 새 녹음으로 안전하게 교체했어요.`);
-      } else {
-        setNotice(`${currentVerseNumber}절을 실제 보관함에 저장했어요. 나중에도 다시 들을 수 있어요.`);
-      }
+      setReplacingRecording(null);
+      setTakes((current) => current.map((take, index) => {
+        if (index !== verseIndex || !take) return take;
+        URL.revokeObjectURL(take.url);
+        objectUrlsRef.current.delete(take.url);
+        return null;
+      }));
+      setSeconds(0);
+      setNotice('보관함에 저장되었어요.');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -1572,8 +1586,8 @@ export default function HomePage() {
               <p className="eyebrow">{passageBook.name} {passageChapter}장 · {currentVerseNumber}절</p>
               <h1>천천히, 평소 목소리로 읽어 주세요.</h1>
             </div>
-            <span className={`status-pill ${recording ? 'live' : hasTake ? 'ready' : ''}`}>
-              {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : '녹음 전'}
+            <span className={`status-pill ${recording ? 'live' : hasTake || saved[verseIndex] ? 'ready' : ''}`}>
+              {recording ? '녹음 중' : hasTake ? '재생 가능' : saved[verseIndex] ? '저장 완료' : replacingRecording ? '다시 녹음' : '녹음 전'}
             </span>
           </div>
 
@@ -1596,17 +1610,30 @@ export default function HomePage() {
             ))}
           </div>
 
-          <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
+          <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : saved[verseIndex] ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
 
           <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''}`}>
             {hasTake && !recording ? <>
               <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
               <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
-            </> : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
+            </> : saved[verseIndex] && currentSavedRecording ? <button className="record-button saved-listen" onClick={() => {
+              const audio = savedRecordingAudioRef.current;
+              if (!audio) return;
+              if (savedRecordingPlaying) audio.pause();
+              else void audio.play();
+            }} type="button">
+              <span>{savedRecordingPlaying ? <Pause size={27} /> : <Headphones size={27} />}</span>
+              {savedRecordingPlaying ? '듣기 멈춤' : '녹음 듣기'}
+            </button> : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
               {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
             </button>}
           </div>
+
+          {currentSavedRecording && saved[verseIndex] && (
+            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
+            <audio ref={savedRecordingAudioRef} preload="metadata" src={ownerKey ? `/api/recordings/${currentSavedRecording.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={() => setSavedRecordingPlaying(false)} />
+          )}
 
           {currentTake && !recording && (
             <div className="take-preview">

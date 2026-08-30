@@ -352,6 +352,7 @@ h1, h2, p { margin-top: 0; }
 .record-button { min-width: 176px; height: 58px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--action-ink); border: 0; border-radius: 19px; background: var(--action-bg); box-shadow: 0 10px 30px color-mix(in srgb, var(--action-bg) 28%, transparent); font-size: 14px; font-weight: 800; cursor: pointer; }
 .record-button span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: rgba(255,255,255,.13); }
 .record-button.recording { background: var(--coral); box-shadow: 0 10px 30px rgba(201, 93, 85, .25); }
+.record-button.saved-listen { color: var(--sage); background: var(--paper); border: 1px solid var(--sage); box-shadow: 0 10px 28px rgba(61, 101, 86, .12); }
 .record-button:disabled { opacity: .58; cursor: wait; }
 .take-preview { width: min(520px, 100%); margin: 24px auto 0; padding: 14px; display: grid; grid-template-columns: 1fr; gap: 11px; align-items: center; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 16px; }
 .take-preview-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; }
