@@ -117,3 +117,24 @@ export async function PUT(request: Request, context: RouteContext) {
   await env.FILES.delete(existing.objectKey);
   return Response.json({ id, createdAt });
 }
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const ownerKey = request.headers.get('x-verse-legacy-owner')?.trim() ?? '';
+  if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
+    return Response.json({ error: '삭제 권한이 없습니다.' }, { status: 401 });
+  }
+  await ensureDbSchema();
+
+  const { id } = await context.params;
+  const [existing] = await getDb()
+    .select({ objectKey: recordings.objectKey })
+    .from(recordings)
+    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)))
+    .limit(1);
+
+  if (!existing) return Response.json({ error: '삭제할 녹음을 찾을 수 없습니다.' }, { status: 404 });
+
+  await getDb().delete(recordings).where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)));
+  await env.FILES.delete(existing.objectKey);
+  return Response.json({ id });
+}

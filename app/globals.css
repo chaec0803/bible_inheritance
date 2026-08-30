@@ -493,6 +493,7 @@ html[data-theme='dark'] .library-audio { color-scheme: dark; }
 .library-card.playing .library-playback-note { color: var(--sage); font-weight: 800; }
 .library-retake-button { width: 100%; margin-top: 12px; padding: 9px 11px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--sage); background: var(--paper); border: 1px solid color-mix(in srgb, var(--sage) 34%, var(--line)); border-radius: 10px; font-size: 9px; font-weight: 900; cursor: pointer; }
 .library-retake-button:hover { background: var(--sage-soft); }
+.library-retake-button:disabled { opacity: .55; cursor: wait; }
 .library-state { min-height: 220px; display: grid; place-items: center; align-content: center; gap: 9px; color: var(--muted); text-align: center; }
 .library-state strong { color: var(--ink); font-size: 14px; }
 .library-state p { margin: 0; font-size: 11px; }
