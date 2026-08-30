@@ -81,6 +81,15 @@ function getProjectDay(project: ActiveProject, today: string) {
   return Math.min(project.duration, Math.max(1, Math.floor((todayTime - startTime) / 86_400_000) + 1));
 }
 
+function getProjectChapterKeys(project: Pick<ActiveProject, 'tasks' | 'passage'>) {
+  const keys = new Set<string>();
+  if (project.passage) keys.add(`${project.passage.name}-${project.passage.chapter}`);
+  project.tasks.forEach((task) => {
+    for (const match of task.matchAll(/([가-힣]+)\s+(\d+)(?:장|편)/g)) keys.add(`${match[1]}-${Number(match[2])}`);
+  });
+  return keys;
+}
+
 const projectTemplates: ProjectTemplate[] = [
   {
     id: 'psalm-23-beginner', duration: 7, level: '초보자', title: '시편 23편 완성하기', scope: '총 6절 · 하루 한 절', minutes: '하루 1–2분',
@@ -674,10 +683,23 @@ export default function HomePage() {
     [completedCount, passageVerses.length],
   );
   const currentPassageComplete = passageVerses.length > 0 && saved.length === passageVerses.length && saved.every(Boolean);
-  const activeLibraryRecordings = useMemo(
-    () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
-    [activeProject, libraryRecordings],
-  );
+  const activeLibraryRecordings = useMemo(() => {
+    if (!activeProject) return libraryRecordings;
+    if (activeProject.kind === 'free') return libraryRecordings.filter((item) => item.projectId.startsWith('free-'));
+
+    const targetChapters = getProjectChapterKeys(activeProject);
+    return libraryRecordings.filter((item) => {
+      const recordingChapter = `${item.book}-${item.chapter}`;
+      if (item.projectId === activeProject.id) return targetChapters.size === 0 || targetChapters.has(recordingChapter);
+      if (!targetChapters.has(recordingChapter)) return false;
+
+      const sourceProject = activeProjects.find((project) => project.id === item.projectId)
+        ?? projectTemplates.find((project) => project.id === item.projectId);
+      if (!sourceProject) return false;
+      const sourceChapters = getProjectChapterKeys(sourceProject);
+      return sourceChapters.size > 0 && !sourceChapters.has(recordingChapter);
+    });
+  }, [activeProject, activeProjects, libraryRecordings]);
   const currentProjectDay = activeProject ? getProjectDay(activeProject, kstToday) : 1;
   const displayedProjectDay = viewedProjectDay ?? currentProjectDay;
   const displayedProjectDayIndex = Math.max(0, displayedProjectDay - 1);
