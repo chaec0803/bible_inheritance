@@ -613,6 +613,11 @@ export default function HomePage() {
     () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) : libraryRecordings,
     [activeProject, libraryRecordings],
   );
+  const freeRecordingChapterKeys = useMemo(() => new Set(
+    libraryRecordings
+      .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
+      .map((item) => `${item.book}-${item.chapter}`),
+  ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
@@ -1227,6 +1232,7 @@ export default function HomePage() {
   const selectedTemplate = projectTemplates.find((item) => item.id === selectedTemplateId) ?? projectTemplates[0];
   const visibleTemplates = projectTemplates.filter((item) => item.duration === projectDuration);
   const visibleBibleBooks = bibleBooks.filter((book) => book.testament === bibleTestament && book.name.includes(bibleSearch.trim()));
+  const selectedFreeChapterInProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`);
   const customBook = supportedBibleBooks.find((item) => item.id === customBookId) ?? supportedBibleBooks[0];
   const customRecordingDays = projectDuration === 7 ? 6 : 12;
   const customDailyTasks = useMemo(
@@ -1314,13 +1320,17 @@ export default function HomePage() {
                 <section className="bible-chapter-pane" aria-label={`${selectedBibleBook.name} 장 선택`}>
                   <div className="pane-heading"><span>2</span><div><strong>장 선택</strong><small>{selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장</small></div></div>
                   <div className="bible-chapter-grid">
-                    {selectedBibleBook.chapters.map((verseCount, index) => <button className={selectedBibleChapter === index + 1 && selectedBibleVerses.length ? 'selected' : ''} type="button" onClick={() => void chooseBibleChapter(index + 1)} key={index}><strong>{index + 1}</strong><small>{verseCount}절</small></button>)}
+                    {selectedBibleBook.chapters.map((verseCount, index) => {
+                      const chapter = index + 1;
+                      const inProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${chapter}`);
+                      return <button className={`${selectedBibleChapter === chapter && selectedBibleVerses.length ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => void chooseBibleChapter(chapter)} key={index}><strong>{chapter}</strong><small>{inProgress ? `진행 중 · ${verseCount}절` : `${verseCount}절`}</small></button>;
+                    })}
                   </div>
                 </section>
                 <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절" ref={bibleVersePaneRef}>
                   <div className="pane-heading"><span>3</span><div><strong>본문 확인</strong><small>{selectedBibleBook.name} {selectedBibleChapter}장</small></div></div>
                   {bibleLoading ? <div className="bible-empty"><LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요</div> : selectedBibleVerses.length ? <div className="bible-verse-preview">{selectedBibleVerses.map((text, index) => <p key={index}><span>{index + 1}</span>{text}</p>)}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
-                  <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}장 녹음 시작 <ArrowRight size={16} /></button>
+                  <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}장 {selectedFreeChapterInProgress ? '계속하기' : '녹음 시작'} <ArrowRight size={16} /></button>
                 </aside>
               </div>
               <p className="bible-credit">본문: PLAY X 번역(플레이엑스) · 번역 김무송 · CC BY 4.0</p>
