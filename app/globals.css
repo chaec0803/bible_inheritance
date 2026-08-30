@@ -351,6 +351,10 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .chapter-player-copy strong { font-size: clamp(22px, 3vw, 32px); }
 .chapter-player-copy small { margin-top: 5px; color: rgba(255,255,255,.7); font-size: 9px; line-height: 1.45; }
 .chapter-player-copy .now-playing-label { margin: 0 0 5px; color: #f1d78e; font-size: 8px; font-weight: 900; letter-spacing: .14em; }
+.chapter-lyrics { max-width: 780px; animation: lyrics-in .35s ease-out; }
+.chapter-lyrics strong { font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: clamp(20px, 2.8vw, 30px); line-height: 1.65; letter-spacing: -.025em; text-wrap: balance; }
+.chapter-lyrics > small:last-child { margin-top: 12px; color: rgba(255,255,255,.58); font-size: 9px; }
+@keyframes lyrics-in { from { opacity: 0; transform: translateY(6px); } }
 .chapter-player-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
 .chapter-player-controls { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.14); }
 .chapter-list-trigger { width: 50px; height: 50px; display: grid; place-items: center; align-content: center; gap: 2px; color: white; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 14px; cursor: pointer; }

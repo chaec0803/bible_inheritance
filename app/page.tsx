@@ -674,6 +674,7 @@ export default function HomePage() {
     return book?.chapters[selectedLibraryGroup.chapter - 1] ?? Math.max(0, ...chapterQueue.map((item) => item.verse));
   }, [chapterQueue, selectedLibraryGroup]);
   const selectedLibraryRecording = chapterQueue.find((item) => item.id === selectedLibraryRecordingId) ?? null;
+  const currentlyPlayingRecording = chapterQueue.find((item) => item.id === activeLibraryId) ?? null;
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
@@ -1639,12 +1640,20 @@ export default function HomePage() {
             {selectedLibraryGroup && <div className="library-listen-detail">
               <div className="chapter-player">
                 <div className="chapter-player-copy">
-                  <span><BookOpen size={20} /></span>
-                  <div>
-                    <small className="now-playing-label">NOW PLAYING</small>
-                    <strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기</strong>
-                    <small>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
-                  </div>
+                  <span>{chapterPlaying ? <AudioLines size={31} /> : <BookOpen size={31} />}</span>
+                  {chapterPlaying && currentlyPlayingRecording ? (
+                    <div className="chapter-lyrics" key={currentlyPlayingRecording.id}>
+                      <small className="now-playing-label">NOW PLAYING · {currentlyPlayingRecording.verse}절</small>
+                      <strong>{currentlyPlayingRecording.verseText}</strong>
+                      <small>{currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}{currentlyPlayingRecording.book === '시편' ? '편' : '장'} {currentlyPlayingRecording.verse}절</small>
+                    </div>
+                  ) : (
+                    <div>
+                      <small className="now-playing-label">READY TO PLAY</small>
+                      <strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기</strong>
+                      <small>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
+                    </div>
+                  )}
                 </div>
                 <div className="chapter-player-controls">
                   <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
