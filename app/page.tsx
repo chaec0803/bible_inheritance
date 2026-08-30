@@ -368,6 +368,7 @@ export default function HomePage() {
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
+  const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'app'>('welcome');
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
@@ -1177,6 +1178,7 @@ export default function HomePage() {
     if (project.kind === 'free') {
       setActiveProject(project);
       window.localStorage.setItem('verse-legacy-project', project.id);
+      setBibleBackTarget('app');
       setOnboardingStep('bible');
       return;
     }
@@ -1283,7 +1285,7 @@ export default function HomePage() {
               <h1>어떤 방식으로 시작할까요?</h1>
               <p className="onboarding-lead">지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.</p>
               <div className="start-choice-grid">
-                <button type="button" onClick={() => setOnboardingStep('bible')}>
+                <button type="button" onClick={() => { setBibleBackTarget('welcome'); setOnboardingStep('bible'); }}>
                   <span><Sparkles size={22} /></span>
                   <strong>내 방식대로 자유롭게</strong>
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
@@ -1299,7 +1301,7 @@ export default function HomePage() {
             </div>
           ) : onboardingStep === 'bible' ? (
             <div className="onboarding-card bible-browser-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 이전</button>
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep(bibleBackTarget)}><ChevronLeft size={16} /> 이전</button>
               <p className="eyebrow">자유롭게 녹음하기</p>
               <h1>어떤 말씀부터 읽어볼까요?</h1>
               <p className="onboarding-lead">구약·신약 66권 전체에서 성경책과 장을 고르면 모든 절을 한눈에 볼 수 있어요.</p>
@@ -1480,7 +1482,7 @@ export default function HomePage() {
             <small>오늘의 녹음 분량</small>
             <strong>{activeProject.tasks[0] ?? '일정을 확인해 주세요'}</strong>
           </div>
-          <button type="button" onClick={() => setOnboardingStep(activeProject.kind === 'free' ? 'bible' : 'schedule')}>{activeProject.kind === 'free' ? '말씀 다시 고르기' : '일정 다시 보기'}</button>
+          <button type="button" onClick={() => { if (activeProject.kind === 'free') { setBibleBackTarget('app'); setOnboardingStep('bible'); } else setOnboardingStep('schedule'); }}>{activeProject.kind === 'free' ? '말씀 다시 고르기' : '일정 다시 보기'}</button>
         </section>
       )}
 
