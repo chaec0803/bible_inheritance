@@ -1232,6 +1232,11 @@ export default function HomePage() {
   const visibleTemplates = projectTemplates.filter((item) => item.duration === projectDuration);
   const visibleBibleBooks = bibleBooks.filter((book) => book.testament === bibleTestament && book.name.includes(bibleSearch.trim()));
   const selectedFreeChapterInProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`);
+  const selectedFreeRecordedVerses = new Set(
+    libraryRecordings
+      .filter((item) => (item.projectId === 'free-recording' || item.projectId.startsWith('free-')) && item.book === selectedBibleBook.name && item.chapter === selectedBibleChapter)
+      .map((item) => item.verse),
+  );
   const customBook = supportedBibleBooks.find((item) => item.id === customBookId) ?? supportedBibleBooks[0];
   const customRecordingDays = projectDuration === 7 ? 6 : 12;
   const customDailyTasks = useMemo(
@@ -1342,7 +1347,11 @@ export default function HomePage() {
                 </section>
                 <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절" ref={bibleVersePaneRef}>
                   <div className="pane-heading"><span>3</span><div><strong>본문 확인</strong><small>{selectedBibleBook.name} {selectedBibleChapter}장</small></div></div>
-                  {bibleLoading ? <div className="bible-empty"><LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요</div> : selectedBibleVerses.length ? <div className="bible-verse-preview">{selectedBibleVerses.map((text, index) => <p key={index}><span>{index + 1}</span>{text}</p>)}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
+                  {bibleLoading ? <div className="bible-empty"><LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요</div> : selectedBibleVerses.length ? <div className="bible-verse-preview">{selectedBibleVerses.map((text, index) => {
+                    const verse = index + 1;
+                    const completed = selectedFreeRecordedVerses.has(verse);
+                    return <p className={completed ? 'completed' : ''} key={index}><span>{completed ? <Check size={12} /> : verse}</span>{text}</p>;
+                  })}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
                   <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}장 {selectedFreeChapterInProgress ? '계속하기' : '녹음 시작'} <ArrowRight size={16} /></button>
                 </aside>
               </div>
