@@ -176,7 +176,7 @@ export default function HomePage() {
   const [saved, setSaved] = useState<boolean[]>(() => verses.map(() => false));
   const [reverb, setReverb] = useState('따뜻하게');
   const [bgm, setBgm] = useState('still-waters');
-  const [volume, setVolume] = useState(28);
+  const [volume, setVolume] = useState(12);
   const [notice, setNotice] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [playerReady, setPlayerReady] = useState(false);
@@ -281,7 +281,7 @@ export default function HomePage() {
         },
         events: {
           onReady: (event) => {
-            event.target.setVolume(28);
+            event.target.setVolume(12);
             event.target.stopVideo();
             setPlayerReady(true);
           },
@@ -389,9 +389,13 @@ export default function HomePage() {
       if (id !== recording.id && !audio.paused) audio.pause();
     });
 
-    const playbackBgmId = chapterPlayingRef.current
-      ? (chapterBgmIdRef.current ?? recording.bgmId)
-      : recording.bgmId;
+    if (!chapterPlayingRef.current) {
+      youtubePlayerRef.current?.stopVideo();
+      setActivePreview(null);
+      return;
+    }
+
+    const playbackBgmId = chapterBgmIdRef.current ?? recording.bgmId;
     const option = bgmOptions.find((item) => item.id === playbackBgmId);
     if (!option?.videoId) {
       youtubePlayerRef.current?.stopVideo();
@@ -842,13 +846,13 @@ export default function HomePage() {
           </div>
 
           <label className="volume-control">
-            <span><Volume2 size={17} /> 미리듣기 음량 <strong>{volume}%</strong></span>
+            <span><Volume2 size={17} /> 미리듣기·이어듣기 BGM 음량 <strong>{volume}%</strong></span>
             <input type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
           </label>
 
           <div className="sound-summary">
             <Sparkles size={18} />
-            <p><strong>녹음할 때는 목소리만</strong><small>보관함의 다시듣기를 누르면 저장 당시 선택한 BGM이 목소리 뒤에 함께 재생돼요.</small></p>
+            <p><strong>녹음과 한 절 다시듣기는 목소리만</strong><small>보관함에서 ‘전체 이어듣기’를 눌렀을 때만 선택한 BGM이 작게 함께 재생돼요.</small></p>
           </div>
         </aside>
       </section>
@@ -869,13 +873,19 @@ export default function HomePage() {
               <span><BookOpen size={20} /></span>
               <div>
                 <strong>시편 23편 전체 이어듣기</strong>
-                <small>{chapterQueue.length === verses.length ? '1절부터 6절까지' : `저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
+                <small>{chapterQueue.length === verses.length ? '1절부터 6절까지' : `완성률과 관계없이 저장된 ${chapterQueue.length}개 절`} · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
               </div>
             </div>
-            <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
-              {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
-              {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
-            </button>
+            <div className="chapter-player-actions">
+              <label>
+                <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
+                <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="40" value={Math.min(volume, 40)} onChange={(event) => setVolume(Number(event.target.value))} />
+              </label>
+              <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
+                {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
+                {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -927,8 +937,8 @@ export default function HomePage() {
                   >저장된 녹음 재생을 지원하지 않는 브라우저입니다.</audio>
                   <p className="library-playback-note">
                     {isPlaying
-                      ? savedBgm.videoId ? `목소리와 ‘${savedBgm.name}’을 함께 재생하고 있어요.` : '배경음악 없이 목소리만 재생하고 있어요.'
-                      : savedBgm.videoId ? `재생 버튼을 누르면 ‘${savedBgm.name}’이 뒤에 함께 나와요.` : '이 녹음은 목소리만 재생돼요.'}
+                      ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
+                      : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}
                   </p>
                 </article>
               );
