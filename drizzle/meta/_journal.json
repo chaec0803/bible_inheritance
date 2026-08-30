@@ -8,6 +8,13 @@
       "when": 1788100698948,
       "tag": "0000_funny_microchip",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788109509170,
+      "tag": "0001_left_the_hand",
+      "breakpoints": true
     }
   ]
 }

@@ -61,6 +61,8 @@ type ActiveProject = {
   scope: string;
   tasks: string[];
   totalVerses?: number;
+  kind?: 'guided' | 'free';
+  passage?: ProjectPassage;
 };
 
 type ProjectPassage = { code: string; name: string; chapter: number; startVerse: number; endVerse: number };
@@ -189,6 +191,8 @@ type RecordingTake = {
 
 type SavedRecording = {
   id: string;
+  projectId: string;
+  projectTitle: string;
   book: string;
   chapter: number;
   verse: number;
@@ -502,7 +506,7 @@ export default function HomePage() {
       .then((recordings) => {
         if (cancelled) return;
         setLibraryRecordings(recordings);
-        setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+        setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
       })
       .catch(() => {
         if (!cancelled) setNotice('보관함 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요.');
@@ -514,7 +518,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [passageBook.name, passageChapter, passageStartVerse, passageVerses]);
+  }, [activeProject, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
 
   useEffect(() => {
     let disposed = false;
@@ -593,18 +597,22 @@ export default function HomePage() {
     () => Math.round((completedCount / passageVerses.length) * 100),
     [completedCount, passageVerses.length],
   );
+  const activeLibraryRecordings = useMemo(
+    () => activeProject ? libraryRecordings.filter((item) => item.projectId === activeProject.id) : libraryRecordings,
+    [activeProject, libraryRecordings],
+  );
   const chapterQueue = useMemo(() => {
     const latestByVerse = new Map<number, SavedRecording>();
-    libraryRecordings.forEach((item) => {
+    activeLibraryRecordings.forEach((item) => {
       if (item.book === passageBook.name && item.chapter === passageChapter && !latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
     });
     return [...latestByVerse.values()].sort((a, b) => a.verse - b.verse);
-  }, [libraryRecordings, passageBook.name, passageChapter]);
+  }, [activeLibraryRecordings, passageBook.name, passageChapter]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
-    setSaved(passageVerses.map((_, index) => recordings.some((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
   };
 
   const stopLibraryPlayback = (recordingId?: string) => {
@@ -950,6 +958,8 @@ export default function HomePage() {
       formData.append('chapter', String(passageChapter));
       formData.append('verse', String(currentVerseNumber));
       formData.append('verseText', passageVerses[verseIndex]);
+      formData.append('projectId', activeProject?.id ?? `free-${passageBook.code}-${passageChapter}`);
+      formData.append('projectTitle', activeProject?.title ?? `${passageBook.name} ${passageChapter}장 자유 녹음`);
       formData.append('bgmId', bgm);
       formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
@@ -1019,6 +1029,7 @@ export default function HomePage() {
   };
 
   function resolveProjectPassage(project: ActiveProject): ProjectPassage {
+    if (project.passage) return project.passage;
     const task = project.tasks[0]?.replace('편', '장') ?? '';
     const match = task.match(/^(.+?)\s+(\d+)장(?:\s+(\d+)(?:–(\d+))?절)?/);
     if (match) {
@@ -1076,6 +1087,16 @@ export default function HomePage() {
 
   const startFreeChapter = () => {
     if (!selectedBibleVerses.length) return;
+    const freeProject: ActiveProject = {
+      id: `free-${selectedBibleBook.code}-${selectedBibleChapter}`,
+      title: `${selectedBibleBook.name} ${selectedBibleChapter}장 자유 녹음`,
+      duration: 0,
+      scope: `총 ${selectedBibleVerses.length}절 · 일정 없이 자유롭게`,
+      tasks: [`${selectedBibleBook.name} ${selectedBibleChapter}장 전체`],
+      totalVerses: selectedBibleVerses.length,
+      kind: 'free',
+      passage: { code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter, startVerse: 1, endVerse: selectedBibleVerses.length },
+    };
     setPassageBook({ code: selectedBibleBook.code, name: selectedBibleBook.name });
     setPassageChapter(selectedBibleChapter);
     setPassageStartVerse(1);
@@ -1084,7 +1105,10 @@ export default function HomePage() {
     setTakes(selectedBibleVerses.map(() => null));
     setSaved(selectedBibleVerses.map(() => false));
     window.localStorage.setItem('verse-legacy-free-passage', JSON.stringify({ code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter }));
-    finishOnboarding();
+    window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
+    activateProject(freeProject);
+    setNotice(`‘${freeProject.title}’ 프로젝트를 시작했어요.`);
+    setOnboardingStep('app');
   };
 
   const finishOnboarding = (projectId?: string) => {
@@ -1291,7 +1315,7 @@ export default function HomePage() {
           <span><strong>말씀유산</strong><small>VERSE LEGACY</small></span>
         </a>
         <div className="project-progress" aria-label={activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
-          <div><span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span><strong>{activeProject ? `${activeProject.duration}일` : `${completedCount}/${passageVerses.length}절`}</strong></div>
+          <div><span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span><strong>{activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong></div>
           <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         </div>
         <a className="icon-button" href="#library" aria-label="보관함으로 이동"><Archive size={20} /></a>
@@ -1305,7 +1329,7 @@ export default function HomePage() {
           <div className="project-tabs">
             {activeProjects.map((project) => (
               <button className={activeProject?.id === project.id ? 'selected' : ''} type="button" onClick={() => activateProject(project)} key={project.id}>
-                <Target size={15} /><span><strong>{project.title}</strong><small>{project.duration}일 · {project.tasks[0] ?? project.scope}</small></span>
+                <Target size={15} /><span><strong>{project.title}</strong><small>{project.kind === 'free' ? '자유 녹음' : `${project.duration}일`} · {project.tasks[0] ?? project.scope}</small></span>
               </button>
             ))}
             <button className="add-project-tab" type="button" onClick={() => setOnboardingStep('projects')}><span>＋</span><strong>새 프로젝트 시작</strong></button>
@@ -1317,7 +1341,7 @@ export default function HomePage() {
         <section className="active-project-banner" aria-label="현재 진행 중인 프로젝트">
           <span><Target size={20} /></span>
           <div>
-            <small>현재 진행 중인 {activeProject.duration}일 프로젝트</small>
+            <small>현재 진행 중인 {activeProject.kind === 'free' ? '자유 녹음' : `${activeProject.duration}일`} 프로젝트</small>
             <strong>{activeProject.title}</strong>
             <p>{activeProject.scope}</p>
           </div>
@@ -1332,7 +1356,7 @@ export default function HomePage() {
       <section className="workspace" id="recording">
         <aside className="chapter-panel" aria-label="프로젝트 정보">
           <div>
-            <p className="eyebrow">{activeProject ? `${activeProject.duration}일 완성 프로젝트` : '우리 가족 첫 번째 낭독'}</p>
+            <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 프로젝트' : `${activeProject.duration}일 완성 프로젝트`) : '우리 가족 첫 번째 낭독'}</p>
             <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
             <p className="muted">{activeProject?.tasks[0] ? `오늘: ${activeProject.tasks[0]}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
@@ -1481,10 +1505,10 @@ export default function HomePage() {
         <div className="library-heading">
           <div>
             <p className="eyebrow">나중에도 다시 듣기</p>
-            <h2 id="library-title">말씀 보관함</h2>
-            <p className="muted">한 절은 목소리만 듣고, 전체 이어듣기에서는 선택한 배경음악과 함께 감상할 수 있어요.</p>
+            <h2 id="library-title">{activeProject ? `${activeProject.title} 보관함` : '말씀 보관함'}</h2>
+            <p className="muted">현재 선택한 프로젝트의 녹음만 모아 보여드려요. 프로젝트 탭을 바꾸면 보관함도 함께 바뀝니다.</p>
           </div>
-          <span className="library-count"><Archive size={15} /> {libraryRecordings.length}개 보관</span>
+          <span className="library-count"><Archive size={15} /> {activeLibraryRecordings.length}개 보관</span>
         </div>
 
         {chapterQueue.length > 0 && (
@@ -1511,27 +1535,28 @@ export default function HomePage() {
 
         {libraryLoading ? (
           <div className="library-state"><LoaderCircle className="spin" size={28} /><strong>보관함을 불러오고 있어요</strong></div>
-        ) : libraryRecordings.length === 0 ? (
+        ) : activeLibraryRecordings.length === 0 ? (
           <div className="library-state empty">
             <span><Archive size={28} /></span>
-            <strong>아직 저장된 녹음이 없어요</strong>
-            <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요.</p>
+            <strong>{activeProject ? `‘${activeProject.title}’에 저장된 녹음이 없어요` : '아직 저장된 녹음이 없어요'}</strong>
+            <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요. 다른 프로젝트의 녹음과 섞이지 않아요.</p>
             <a href="#recording">첫 녹음 시작하기</a>
           </div>
         ) : (
           <div className="library-grid">
-            {libraryRecordings.map((item) => {
+            {activeLibraryRecordings.map((item) => {
               const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
               const isPlaying = activeLibraryId === item.id;
               return (
                 <article className={`library-card ${isPlaying ? 'playing' : ''}`} key={item.id}>
                   <div className="library-card-top">
                     <span className="library-verse-number">{item.verse}</span>
-                    <div><strong>{item.book} {item.chapter}편 · {item.verse}절</strong><small>{formatSavedDate(item.createdAt)} 저장</small></div>
+                    <div><strong>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</strong><small>{formatSavedDate(item.createdAt)} 저장</small></div>
                     {isPlaying && <span className="playing-badge"><AudioLines size={13} /> 재생 중</span>}
                   </div>
                   <blockquote>{item.verseText}</blockquote>
                   <div className="library-tags">
+                    <span><Target size={13} /> {item.projectTitle}</span>
                     <span><Music2 size={13} /> {savedBgm.name}</span>
                     <span><Sparkles size={13} /> {item.reverb}</span>
                     <span>{formatTime(item.durationSeconds)}</span>

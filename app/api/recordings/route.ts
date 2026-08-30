@@ -24,6 +24,8 @@ export async function GET(request: Request) {
   const rows = await getDb()
     .select({
       id: recordings.id,
+      projectId: recordings.projectId,
+      projectTitle: recordings.projectTitle,
       book: recordings.book,
       chapter: recordings.chapter,
       verse: recordings.verse,
@@ -57,6 +59,8 @@ export async function POST(request: Request) {
   }
 
   const book = formText(formData, 'book', 30) || '시편';
+  const projectId = formText(formData, 'projectId', 100) || 'legacy';
+  const projectTitle = formText(formData, 'projectTitle', 100) || '이전 녹음';
   const chapter = Number(formText(formData, 'chapter', 4));
   const verse = Number(formText(formData, 'verse', 4));
   const verseText = formText(formData, 'verseText', 1000);
@@ -82,6 +86,8 @@ export async function POST(request: Request) {
     await getDb().insert(recordings).values({
       id,
       ownerKey,
+      projectId,
+      projectTitle,
       book,
       chapter,
       verse,

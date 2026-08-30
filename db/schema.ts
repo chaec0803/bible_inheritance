@@ -5,6 +5,8 @@ export const recordings = sqliteTable(
   {
     id: text('id').primaryKey(),
     ownerKey: text('owner_key').notNull(),
+    projectId: text('project_id').notNull().default('legacy'),
+    projectTitle: text('project_title').notNull().default('이전 녹음'),
     book: text('book').notNull(),
     chapter: integer('chapter').notNull(),
     verse: integer('verse').notNull(),
@@ -17,5 +19,8 @@ export const recordings = sqliteTable(
     durationSeconds: integer('duration_seconds').notNull(),
     createdAt: integer('created_at').notNull(),
   },
-  (table) => [index('idx_recordings_owner_created').on(table.ownerKey, table.createdAt)],
+  (table) => [
+    index('idx_recordings_owner_created').on(table.ownerKey, table.createdAt),
+    index('idx_recordings_owner_project_created').on(table.ownerKey, table.projectId, table.createdAt),
+  ],
 );

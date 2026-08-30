@@ -68,6 +68,8 @@ export async function PUT(request: Request, context: RouteContext) {
     return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
   };
   const book = readText('book', 30) || '시편';
+  const projectId = readText('projectId', 100) || 'legacy';
+  const projectTitle = readText('projectTitle', 100) || '이전 녹음';
   const chapter = Number(readText('chapter', 4));
   const verse = Number(readText('verse', 4));
   const verseText = readText('verseText', 1000);
@@ -93,6 +95,8 @@ export async function PUT(request: Request, context: RouteContext) {
       .update(recordings)
       .set({
         book,
+        projectId,
+        projectTitle,
         chapter,
         verse,
         verseText,
