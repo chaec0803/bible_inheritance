@@ -253,6 +253,7 @@ export default function HomePage() {
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
+  const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -573,8 +574,33 @@ export default function HomePage() {
   const moveVerse = (nextIndex: number) => {
     if (recording || requestingMic) return;
     const safeIndex = Math.min(Math.max(nextIndex, 0), verses.length - 1);
+    if (replacingRecording?.verse !== safeIndex + 1) setReplacingRecording(null);
     setVerseIndex(safeIndex);
     setSeconds(takes[safeIndex]?.duration ?? 0);
+  };
+
+  const startRetake = (item: SavedRecording) => {
+    stopChapterPlayback();
+    const targetIndex = item.verse - 1;
+    setTakes((current) => {
+      const next = [...current];
+      const previousTake = next[targetIndex];
+      if (previousTake) {
+        URL.revokeObjectURL(previousTake.url);
+        objectUrlsRef.current.delete(previousTake.url);
+      }
+      next[targetIndex] = null;
+      return next;
+    });
+    setReplacingRecording(item);
+    setVerseIndex(targetIndex);
+    setSeconds(0);
+    setBgm(item.bgmId);
+    setReverb(item.reverb);
+    setNotice(`${item.verse}절의 기존 녹음은 보존한 채 다시 녹음할 준비가 됐어요.`);
+    window.requestAnimationFrame(() => {
+      document.querySelector('#recording')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const startRecording = async () => {
@@ -741,18 +767,27 @@ export default function HomePage() {
       formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
 
-      const response = await fetch('/api/recordings', {
-        method: 'POST',
+      const isReplacingCurrentVerse = replacingRecording?.verse === verseIndex + 1;
+      const response = await fetch(
+        isReplacingCurrentVerse ? `/api/recordings/${replacingRecording.id}/audio` : '/api/recordings',
+        {
+        method: isReplacingCurrentVerse ? 'PUT' : 'POST',
         headers: { 'x-verse-legacy-owner': ownerKeyRef.current },
         body: formData,
-      });
+        },
+      );
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error || '보관함에 저장하지 못했어요.');
       }
 
       await refreshLibrary();
-      setNotice(`${verseIndex + 1}절을 실제 보관함에 저장했어요. 나중에도 다시 들을 수 있어요.`);
+      if (isReplacingCurrentVerse) {
+        setReplacingRecording(null);
+        setNotice(`${verseIndex + 1}절을 새 녹음으로 안전하게 교체했어요.`);
+      } else {
+        setNotice(`${verseIndex + 1}절을 실제 보관함에 저장했어요. 나중에도 다시 들을 수 있어요.`);
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -822,9 +857,17 @@ export default function HomePage() {
               <h1>천천히, 평소 목소리로 읽어 주세요.</h1>
             </div>
             <span className={`status-pill ${recording ? 'live' : hasTake ? 'ready' : ''}`}>
-              {recording ? '녹음 중' : hasTake ? '재생 가능' : '녹음 전'}
+              {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : '녹음 전'}
             </span>
           </div>
+
+          {replacingRecording && replacingRecording.verse === verseIndex + 1 && (
+            <div className="retake-banner">
+              <RotateCcw size={18} />
+              <p><strong>{verseIndex + 1}절을 다시 녹음하고 있어요.</strong><small>새 녹음을 저장하기 전까지 기존 보관함 음성은 그대로 유지됩니다.</small></p>
+              <button type="button" onClick={() => setReplacingRecording(null)}>취소</button>
+            </div>
+          )}
 
           <article className="verse-paper">
             <span className="verse-number">{verseIndex + 1}</span>
@@ -845,7 +888,7 @@ export default function HomePage() {
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
               {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
             </button>
-            <button className="round-button save" onClick={() => void saveVerse()} disabled={!hasTake || recording || savingLibrary} type="button" aria-label="이 구절을 보관함에 저장">{savingLibrary ? <LoaderCircle className="spin" size={20} /> : <Save size={20} />}</button>
+            <button className="round-button save" onClick={() => void saveVerse()} disabled={!hasTake || recording || savingLibrary} type="button" aria-label={replacingRecording ? '새 녹음으로 교체' : '이 구절을 보관함에 저장'}>{savingLibrary ? <LoaderCircle className="spin" size={20} /> : <Save size={20} />}</button>
           </div>
 
           {currentTake && !recording && (
@@ -857,7 +900,7 @@ export default function HomePage() {
               {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
               <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>녹음 재생을 지원하지 않는 브라우저입니다.</audio>
               <div className="take-actions">
-                <button className="library-save-button" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} 보관함에 저장</button>
+                <button className="library-save-button" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} {replacingRecording ? '새 녹음으로 교체' : '보관함에 저장'}</button>
                 <button className="download-button" onClick={downloadTake} type="button"><Download size={15} /> 파일 내려받기</button>
               </div>
             </div>
@@ -1012,6 +1055,9 @@ export default function HomePage() {
                       ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
                       : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}
                   </p>
+                  <button className="library-retake-button" type="button" onClick={() => startRetake(item)}>
+                    <RotateCcw size={14} /> 이 절 다시 녹음
+                  </button>
                 </article>
               );
             })}

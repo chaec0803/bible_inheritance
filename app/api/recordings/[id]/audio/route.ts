@@ -36,3 +36,78 @@ export async function GET(request: Request, context: RouteContext) {
 
   return new Response(object.body, { headers });
 }
+
+export async function PUT(request: Request, context: RouteContext) {
+  const ownerKey = request.headers.get('x-verse-legacy-owner')?.trim() ?? '';
+  if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
+    return Response.json({ error: '교체 권한이 없습니다.' }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const [existing] = await getDb()
+    .select({ objectKey: recordings.objectKey })
+    .from(recordings)
+    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)))
+    .limit(1);
+
+  if (!existing) return Response.json({ error: '교체할 녹음을 찾을 수 없습니다.' }, { status: 404 });
+
+  const formData = await request.formData();
+  const audio = formData.get('audio');
+  if (!(audio instanceof File) || audio.size === 0) {
+    return Response.json({ error: '새 녹음 파일이 없습니다.' }, { status: 400 });
+  }
+  if (audio.size > 25 * 1024 * 1024) {
+    return Response.json({ error: '한 번의 녹음은 25MB까지 저장할 수 있어요.' }, { status: 413 });
+  }
+
+  const readText = (key: string, maxLength: number) => {
+    const value = formData.get(key);
+    return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+  };
+  const book = readText('book', 30) || '시편';
+  const chapter = Number(readText('chapter', 4));
+  const verse = Number(readText('verse', 4));
+  const verseText = readText('verseText', 1000);
+  const bgmId = readText('bgmId', 80) || 'none';
+  const reverb = readText('reverb', 40) || '원음';
+  const durationSeconds = Math.max(1, Number(readText('durationSeconds', 8)) || 1);
+
+  if (!Number.isInteger(chapter) || chapter < 1 || !Number.isInteger(verse) || verse < 1 || !verseText) {
+    return Response.json({ error: '구절 정보가 올바르지 않습니다.' }, { status: 400 });
+  }
+
+  const replacementObjectKey = `${ownerKey}/${id}-replacement-${crypto.randomUUID()}`;
+  const mimeType = audio.type || 'audio/webm';
+  const createdAt = Date.now();
+
+  await env.FILES.put(replacementObjectKey, audio.stream(), {
+    httpMetadata: { contentType: mimeType },
+    customMetadata: { recordingId: id },
+  });
+
+  try {
+    await getDb()
+      .update(recordings)
+      .set({
+        book,
+        chapter,
+        verse,
+        verseText,
+        bgmId,
+        reverb,
+        objectKey: replacementObjectKey,
+        mimeType,
+        sizeBytes: audio.size,
+        durationSeconds,
+        createdAt,
+      })
+      .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)));
+  } catch (error) {
+    await env.FILES.delete(replacementObjectKey);
+    throw error;
+  }
+
+  await env.FILES.delete(existing.objectKey);
+  return Response.json({ id, createdAt });
+}

@@ -105,6 +105,12 @@ h1, h2, p { margin-top: 0; }
 
 .recording-heading { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
 .recording-heading h1 { max-width: 520px; margin-bottom: 0; font-size: clamp(20px, 2.4vw, 30px); line-height: 1.25; letter-spacing: -.045em; }
+.retake-banner { margin: 18px 0 -20px; padding: 13px 15px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; color: #50685f; background: var(--sage-soft); border: 1px solid color-mix(in srgb, var(--sage) 36%, var(--line)); border-radius: 14px; }
+.retake-banner > svg { color: var(--sage); }
+.retake-banner strong, .retake-banner small { display: block; }
+.retake-banner strong { font-size: 11px; }
+.retake-banner small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.retake-banner button { padding: 7px 9px; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 9px; font-size: 9px; font-weight: 800; cursor: pointer; }
 .status-pill { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; background: var(--surface-control); color: var(--muted); font-size: 10px; font-weight: 800; }
 .status-pill.live { color: #a44742; background: #fae7e4; }
 .status-pill.ready { color: #4b685d; background: var(--sage-soft); }
@@ -217,6 +223,8 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 html[data-theme='dark'] .library-audio { color-scheme: dark; }
 .library-playback-note { margin: 9px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .library-card.playing .library-playback-note { color: var(--sage); font-weight: 800; }
+.library-retake-button { width: 100%; margin-top: 12px; padding: 9px 11px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--sage); background: var(--paper); border: 1px solid color-mix(in srgb, var(--sage) 34%, var(--line)); border-radius: 10px; font-size: 9px; font-weight: 900; cursor: pointer; }
+.library-retake-button:hover { background: var(--sage-soft); }
 .library-state { min-height: 220px; display: grid; place-items: center; align-content: center; gap: 9px; color: var(--muted); text-align: center; }
 .library-state strong { color: var(--ink); font-size: 14px; }
 .library-state p { margin: 0; font-size: 11px; }
@@ -263,6 +271,8 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
   .family-card { display: none; }
   .recording-card { min-height: auto; padding: 24px 18px 20px; border-radius: 10px; box-shadow: 0 15px 50px rgba(39,48,43,.1); }
   .recording-heading h1 { font-size: 21px; }
+  .retake-banner { margin-bottom: -14px; grid-template-columns: auto 1fr; }
+  .retake-banner button { grid-column: 2; width: fit-content; }
   .status-pill { padding: 6px 8px; }
   .verse-paper { min-height: 210px; margin: 26px 0 20px; padding: 42px 24px; }
   .verse-paper p { font-size: 22px; line-height: 1.65; }
