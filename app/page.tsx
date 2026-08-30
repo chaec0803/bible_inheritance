@@ -2,22 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Archive,
   AudioLines,
   BookOpen,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleStop,
+  Cloud,
   Download,
   Headphones,
   Home,
+  LoaderCircle,
   Mic,
   Moon,
   Music2,
   Pause,
   Play,
   RotateCcw,
-  Settings2,
+  Save,
   Sparkles,
   Sun,
   Users,
@@ -83,6 +86,20 @@ type RecordingTake = {
   duration: number;
 };
 
+type SavedRecording = {
+  id: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  verseText: string;
+  bgmId: string;
+  reverb: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  createdAt: number;
+};
+
 type YouTubePlayer = {
   destroy: () => void;
   loadVideoById: (options: {
@@ -123,6 +140,24 @@ function formatTime(seconds: number) {
   return `${minutes}:${remainder}`;
 }
 
+function formatSavedDate(timestamp: number) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
+async function fetchLibrary(ownerKey: string) {
+  const response = await fetch('/api/recordings', {
+    headers: { 'x-verse-legacy-owner': ownerKey },
+  });
+  if (!response.ok) throw new Error('보관함을 불러오지 못했어요.');
+  const payload = (await response.json()) as { recordings: SavedRecording[] };
+  return payload.recordings;
+}
+
 function getSupportedMimeType() {
   if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
   return (
@@ -147,6 +182,11 @@ export default function HomePage() {
   const [playerReady, setPlayerReady] = useState(false);
   const [activePreview, setActivePreview] = useState<string | null>(null);
   const [previewRemaining, setPreviewRemaining] = useState(0);
+  const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(true);
+  const [savingLibrary, setSavingLibrary] = useState(false);
+  const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
+  const [ownerKey, setOwnerKey] = useState('');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -157,6 +197,9 @@ export default function HomePage() {
   const youtubeContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const previewTimerRef = useRef<number | null>(null);
+  const ownerKeyRef = useRef('');
+  const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
+  const activeLibraryRef = useRef<string | null>(null);
 
   const currentTake = takes[verseIndex];
   const hasTake = Boolean(currentTake);
@@ -185,6 +228,36 @@ export default function HomePage() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem('verse-legacy-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let ownerKey = window.localStorage.getItem('verse-legacy-owner') ?? '';
+    if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
+      ownerKey = crypto.randomUUID();
+      window.localStorage.setItem('verse-legacy-owner', ownerKey);
+    }
+    ownerKeyRef.current = ownerKey;
+    queueMicrotask(() => {
+      if (!cancelled) setOwnerKey(ownerKey);
+    });
+
+    fetchLibrary(ownerKey)
+      .then((recordings) => {
+        if (cancelled) return;
+        setLibraryRecordings(recordings);
+        setSaved(verses.map((_, index) => recordings.some((item) => item.verse === index + 1)));
+      })
+      .catch(() => {
+        if (!cancelled) setNotice('보관함 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요.');
+      })
+      .finally(() => {
+        if (!cancelled) setLibraryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -263,6 +336,21 @@ export default function HomePage() {
     [completedCount],
   );
 
+  const refreshLibrary = async () => {
+    const recordings = await fetchLibrary(ownerKeyRef.current);
+    setLibraryRecordings(recordings);
+    setSaved(verses.map((_, index) => recordings.some((item) => item.verse === index + 1)));
+  };
+
+  const stopLibraryPlayback = (recordingId?: string) => {
+    if (recordingId && activeLibraryRef.current !== recordingId) return;
+    youtubePlayerRef.current?.stopVideo();
+    activeLibraryRef.current = null;
+    setActiveLibraryId(null);
+    setActivePreview(null);
+    setPreviewRemaining(0);
+  };
+
   const stopPreview = () => {
     if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
     previewTimerRef.current = null;
@@ -271,7 +359,46 @@ export default function HomePage() {
     setPreviewRemaining(0);
   };
 
+  const playLibraryBgm = (recording: SavedRecording) => {
+    if (previewTimerRef.current) window.clearInterval(previewTimerRef.current);
+    previewTimerRef.current = null;
+
+    activeLibraryRef.current = recording.id;
+    setActiveLibraryId(recording.id);
+    libraryAudioRefs.current.forEach((audio, id) => {
+      if (id !== recording.id && !audio.paused) audio.pause();
+    });
+
+    const option = bgmOptions.find((item) => item.id === recording.bgmId);
+    if (!option?.videoId) {
+      youtubePlayerRef.current?.stopVideo();
+      setActivePreview(null);
+      return;
+    }
+    if (!playerReady || !youtubePlayerRef.current) {
+      setNotice('목소리는 재생 중이에요. BGM 플레이어가 준비되면 다시 재생해 주세요.');
+      return;
+    }
+
+    youtubePlayerRef.current.setVolume(volume);
+    youtubePlayerRef.current.loadVideoById({
+      videoId: option.videoId,
+      startSeconds: option.startSeconds,
+      endSeconds: option.startSeconds + Math.max(recording.durationSeconds + 2, 10),
+    });
+    setActivePreview(`library-${recording.id}`);
+    setPreviewRemaining(0);
+  };
+
   const startPreview = (option: BgmOption) => {
+    if (recording) {
+      setNotice('녹음 중에는 배경음악이 나오지 않아요. 녹음이 끝난 뒤 미리 들어보세요.');
+      return;
+    }
+    if (activeLibraryRef.current) {
+      libraryAudioRefs.current.get(activeLibraryRef.current)?.pause();
+      stopLibraryPlayback();
+    }
     if (!option.videoId) {
       stopPreview();
       return;
@@ -322,6 +449,10 @@ export default function HomePage() {
       return;
     }
 
+    libraryAudioRefs.current.forEach((audio) => audio.pause());
+    activeLibraryRef.current = null;
+    setActiveLibraryId(null);
+    stopPreview();
     setRequestingMic(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -339,13 +470,17 @@ export default function HomePage() {
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
       discardRecordingRef.current = false;
-      recordingStartedAtRef.current = Date.now();
+      recordingStartedAtRef.current = 0;
+
+      recorder.onstart = (event) => {
+        recordingStartedAtRef.current = event.timeStamp;
+      };
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
 
-      recorder.onstop = () => {
+      recorder.onstop = (event) => {
         const chunks = [...chunksRef.current];
         chunksRef.current = [];
         stream.getTracks().forEach((track) => track.stop());
@@ -358,7 +493,7 @@ export default function HomePage() {
         const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
         const blob = new Blob(chunks, { type: finalMimeType });
         const url = URL.createObjectURL(blob);
-        const duration = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000));
+        const duration = Math.max(1, Math.round((event.timeStamp - recordingStartedAtRef.current) / 1000));
         objectUrlsRef.current.add(url);
 
         setTakes((current) => {
@@ -439,12 +574,47 @@ export default function HomePage() {
     setNotice('현재 녹음을 지웠어요. 다시 시작할 수 있어요.');
   };
 
-  const saveVerse = () => {
-    if (!currentTake) return;
-    const nextSaved = [...saved];
-    nextSaved[verseIndex] = true;
-    setSaved(nextSaved);
-    setNotice(`${verseIndex + 1}절을 완료로 표시했어요. 음성 파일은 아래에서 내려받을 수 있어요.`);
+  const saveVerse = async () => {
+    if (!currentTake || savingLibrary) return;
+    setSavingLibrary(true);
+    try {
+      const extension = currentTake.mimeType.includes('mp4')
+        ? 'm4a'
+        : currentTake.mimeType.includes('ogg')
+          ? 'ogg'
+          : 'webm';
+      const formData = new FormData();
+      formData.append(
+        'audio',
+        new File([currentTake.blob], `시편23편_${verseIndex + 1}절.${extension}`, {
+          type: currentTake.mimeType,
+        }),
+      );
+      formData.append('book', '시편');
+      formData.append('chapter', '23');
+      formData.append('verse', String(verseIndex + 1));
+      formData.append('verseText', verses[verseIndex]);
+      formData.append('bgmId', bgm);
+      formData.append('reverb', reverb);
+      formData.append('durationSeconds', String(currentTake.duration));
+
+      const response = await fetch('/api/recordings', {
+        method: 'POST',
+        headers: { 'x-verse-legacy-owner': ownerKeyRef.current },
+        body: formData,
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || '보관함에 저장하지 못했어요.');
+      }
+
+      await refreshLibrary();
+      setNotice(`${verseIndex + 1}절을 실제 보관함에 저장했어요. 나중에도 다시 들을 수 있어요.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
+    } finally {
+      setSavingLibrary(false);
+    }
   };
 
   const downloadTake = () => {
@@ -471,10 +641,10 @@ export default function HomePage() {
           <div><span>시편 23편</span><strong>{completedCount}/{verses.length}절</strong></div>
           <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         </div>
-        <button className="icon-button" type="button" aria-label="설정"><Settings2 size={20} /></button>
+        <a className="icon-button" href="#library" aria-label="보관함으로 이동"><Archive size={20} /></a>
       </header>
 
-      <div className="prototype-note"><Sparkles size={15} /> 실제 마이크 녹음 가능 · 음성은 이 기기에서 재생하거나 내려받을 수 있어요.</div>
+      <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>
 
       <section className="workspace" id="recording">
         <aside className="chapter-panel" aria-label="프로젝트 정보">
@@ -532,7 +702,7 @@ export default function HomePage() {
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
               {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
             </button>
-            <button className="round-button save" onClick={saveVerse} disabled={!hasTake || recording} type="button" aria-label="이 구절 완료"><Check size={21} /></button>
+            <button className="round-button save" onClick={() => void saveVerse()} disabled={!hasTake || recording || savingLibrary} type="button" aria-label="이 구절을 보관함에 저장">{savingLibrary ? <LoaderCircle className="spin" size={20} /> : <Save size={20} />}</button>
           </div>
 
           {currentTake && !recording && (
@@ -543,7 +713,10 @@ export default function HomePage() {
               </div>
               {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
               <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>녹음 재생을 지원하지 않는 브라우저입니다.</audio>
-              <button className="download-button" onClick={downloadTake} type="button"><Download size={15} /> 음성 파일 내려받기</button>
+              <div className="take-actions">
+                <button className="library-save-button" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} 보관함에 저장</button>
+                <button className="download-button" onClick={downloadTake} type="button"><Download size={15} /> 파일 내려받기</button>
+              </div>
             </div>
           )}
 
@@ -569,7 +742,7 @@ export default function HomePage() {
 
           <fieldset className="setting-group">
             <legend><Music2 size={17} /> 배경음악</legend>
-            <p>원본 유튜브 음원을 공식 플레이어로 10초 미리 들어요.</p>
+            <p>선택만 해두세요. 녹음 중에는 조용하고, 보관함에서 다시 들을 때 함께 재생돼요.</p>
             <div className="music-list">
               {bgmOptions.map((option) => (
                 <div className={`music-option ${bgm === option.id ? 'selected' : ''}`} key={option.id}>
@@ -586,9 +759,9 @@ export default function HomePage() {
                     <span className="radio-dot" />
                   </button>
                   {option.videoId && (
-                    <button className="preview-button" onClick={() => startPreview(option)} type="button" aria-label={`${option.name} 10초 미리듣기`}>
+                    <button className="preview-button" onClick={() => startPreview(option)} disabled={!playerReady} type="button" aria-label={`${option.name} 10초 미리듣기`}>
                       {activePreview === option.id ? <Pause size={13} /> : <Play size={13} />}
-                      {activePreview === option.id ? `${previewRemaining}초` : '10초 듣기'}
+                      {activePreview === option.id ? `${previewRemaining}초` : playerReady ? '10초 듣기' : '준비 중'}
                     </button>
                   )}
                 </div>
@@ -608,9 +781,74 @@ export default function HomePage() {
 
           <div className="sound-summary">
             <Sparkles size={18} />
-            <p><strong>10초 미리듣기</strong><small>유튜브 원본을 재생하며, BGM과 리버브를 녹음 파일에 합치는 기능은 다음 단계예요.</small></p>
+            <p><strong>녹음할 때는 목소리만</strong><small>보관함의 다시듣기를 누르면 저장 당시 선택한 BGM이 목소리 뒤에 함께 재생돼요.</small></p>
           </div>
         </aside>
+      </section>
+
+      <section className="library-section" id="library" aria-labelledby="library-title">
+        <div className="library-heading">
+          <div>
+            <p className="eyebrow">나중에도 다시 듣기</p>
+            <h2 id="library-title">말씀 보관함</h2>
+            <p className="muted">저장한 목소리를 재생하면, 녹음할 때 골라 둔 배경음악이 뒤에 함께 흘러요.</p>
+          </div>
+          <span className="library-count"><Archive size={15} /> {libraryRecordings.length}개 보관</span>
+        </div>
+
+        {libraryLoading ? (
+          <div className="library-state"><LoaderCircle className="spin" size={28} /><strong>보관함을 불러오고 있어요</strong></div>
+        ) : libraryRecordings.length === 0 ? (
+          <div className="library-state empty">
+            <span><Archive size={28} /></span>
+            <strong>아직 저장된 녹음이 없어요</strong>
+            <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요.</p>
+            <a href="#recording">첫 녹음 시작하기</a>
+          </div>
+        ) : (
+          <div className="library-grid">
+            {libraryRecordings.map((item) => {
+              const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
+              const isPlaying = activeLibraryId === item.id;
+              return (
+                <article className={`library-card ${isPlaying ? 'playing' : ''}`} key={item.id}>
+                  <div className="library-card-top">
+                    <span className="library-verse-number">{item.verse}</span>
+                    <div><strong>{item.book} {item.chapter}편 · {item.verse}절</strong><small>{formatSavedDate(item.createdAt)} 저장</small></div>
+                    {isPlaying && <span className="playing-badge"><AudioLines size={13} /> 재생 중</span>}
+                  </div>
+                  <blockquote>{item.verseText}</blockquote>
+                  <div className="library-tags">
+                    <span><Music2 size={13} /> {savedBgm.name}</span>
+                    <span><Sparkles size={13} /> {item.reverb}</span>
+                    <span>{formatTime(item.durationSeconds)}</span>
+                  </div>
+                  {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다. */}
+                  <audio
+                    className="library-audio"
+                    controls
+                    preload="metadata"
+                    src={ownerKey ? `/api/recordings/${item.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined}
+                    ref={(element) => {
+                      if (element) libraryAudioRefs.current.set(item.id, element);
+                      else libraryAudioRefs.current.delete(item.id);
+                    }}
+                    onPlay={() => playLibraryBgm(item)}
+                    onPause={() => stopLibraryPlayback(item.id)}
+                    onEnded={() => stopLibraryPlayback(item.id)}
+                  >저장된 녹음 재생을 지원하지 않는 브라우저입니다.</audio>
+                  <p className="library-playback-note">
+                    {isPlaying
+                      ? savedBgm.videoId ? `목소리와 ‘${savedBgm.name}’을 함께 재생하고 있어요.` : '배경음악 없이 목소리만 재생하고 있어요.'
+                      : savedBgm.videoId ? `재생 버튼을 누르면 ‘${savedBgm.name}’이 뒤에 함께 나와요.` : '이 녹음은 목소리만 재생돼요.'}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="library-privacy"><Cloud size={14} /> 현재는 이 브라우저에서 저장한 녹음만 보여요. 다른 기기와 공유하는 가족 계정은 다음 단계에서 연결할 수 있어요.</p>
       </section>
 
       <footer className="page-footer">
