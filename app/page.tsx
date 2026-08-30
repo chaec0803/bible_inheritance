@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
+  ArrowRight,
   AudioLines,
   BookOpen,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +25,7 @@ import {
   Save,
   Sparkles,
   Sun,
+  Target,
   Users,
   Volume2,
 } from 'lucide-react';
@@ -37,6 +40,50 @@ const verses = [
 ];
 
 const reverbOptions = ['원음', '따뜻하게', '예배당'];
+
+type ProjectTemplate = {
+  id: string;
+  duration: 7 | 14;
+  level: '초보자' | '중급' | '고급';
+  title: string;
+  scope: string;
+  minutes: string;
+  tasks: string[];
+  custom?: boolean;
+};
+
+const projectTemplates: ProjectTemplate[] = [
+  {
+    id: 'psalm-23-beginner', duration: 7, level: '초보자', title: '시편 23편 완성하기', scope: '총 6절 · 하루 한 절', minutes: '하루 1–2분',
+    tasks: ['시편 23편 1절', '시편 23편 2절', '시편 23편 3절', '시편 23편 4절', '시편 23편 5절', '시편 23편 6절', '전체 확인하고 완성하기'],
+  },
+  {
+    id: 'hope-psalms-medium', duration: 7, level: '중급', title: '도움과 소망의 시편', scope: '시편 121편·130편 · 총 16절', minutes: '하루 3–5분',
+    tasks: ['시편 121편 1–3절', '시편 121편 4–6절', '시편 121편 7–8절', '시편 130편 1–3절', '시편 130편 4–6절', '시편 130편 7–8절', '전체 확인하고 완성하기'],
+  },
+  {
+    id: 'james-1-advanced', duration: 7, level: '고급', title: '야고보서 1장 완성하기', scope: '총 27절 · 하루 4–5절', minutes: '하루 6–10분',
+    tasks: ['야고보서 1장 1–4절', '5–8절', '9–13절', '14–18절', '19–22절', '23–27절', '전체 확인하고 완성하기'],
+  },
+  {
+    id: 'custom-7', duration: 7, level: '초보자', title: '내가 직접 프로젝트 만들기', scope: '원하는 범위를 6일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
+  },
+  {
+    id: 'comfort-14-beginner', duration: 14, level: '초보자', title: '위로가 되는 말씀 12일', scope: '짧은 위로의 말씀 12개', minutes: '하루 1–2분',
+    tasks: Array.from({ length: 12 }, (_, index) => `위로의 말씀 ${index + 1}`),
+  },
+  {
+    id: 'sermon-medium', duration: 14, level: '중급', title: '산상수훈 핵심 말씀', scope: '마태복음 5장 · 하루 3–6절', minutes: '하루 4–7분',
+    tasks: Array.from({ length: 12 }, (_, index) => `마태복음 5장 · ${index + 1}일차 분량`),
+  },
+  {
+    id: 'philippians-advanced', duration: 14, level: '고급', title: '빌립보서 전체 완성하기', scope: '총 4장 · 하루 약 8–10절', minutes: '하루 8–12분',
+    tasks: Array.from({ length: 12 }, (_, index) => `빌립보서 · ${index + 1}일차 분량`),
+  },
+  {
+    id: 'custom-14', duration: 14, level: '초보자', title: '내가 직접 프로젝트 만들기', scope: '원하는 범위를 12일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
+  },
+];
 
 type BgmOption = {
   id: string;
@@ -254,6 +301,9 @@ export default function HomePage() {
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projects' | 'app'>('welcome');
+  const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('psalm-23-beginner');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -273,6 +323,18 @@ export default function HomePage() {
 
   const currentTake = takes[verseIndex];
   const hasTake = Boolean(currentTake);
+
+  useEffect(() => {
+    const completed = window.localStorage.getItem('verse-legacy-onboarding-complete') === 'true';
+    const savedProjectId = window.localStorage.getItem('verse-legacy-project');
+    const frame = window.requestAnimationFrame(() => {
+      if (savedProjectId && projectTemplates.some((item) => item.id === savedProjectId)) {
+        setSelectedTemplateId(savedProjectId);
+      }
+      if (completed) setOnboardingStep('app');
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     if (!recording) return;
@@ -808,8 +870,89 @@ export default function HomePage() {
     anchor.click();
   };
 
+  const finishOnboarding = (projectId?: string) => {
+    window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
+    if (projectId) {
+      window.localStorage.setItem('verse-legacy-project', projectId);
+      setSelectedTemplateId(projectId);
+      const project = projectTemplates.find((item) => item.id === projectId);
+      setNotice(project?.custom ? '직접 프로젝트를 만들 준비가 됐어요.' : `‘${project?.title}’ 프로젝트를 시작했어요.`);
+    } else {
+      window.localStorage.removeItem('verse-legacy-project');
+      setNotice('원하는 말씀을 자유롭게 녹음할 수 있어요.');
+    }
+    setOnboardingStep('app');
+  };
+
+  const selectedTemplate = projectTemplates.find((item) => item.id === selectedTemplateId) ?? projectTemplates[0];
+  const visibleTemplates = projectTemplates.filter((item) => item.duration === projectDuration);
+
   return (
     <main className="app-shell">
+      {onboardingStep !== 'app' && (
+        <section className="onboarding-overlay" aria-label="말씀유산 시작 설정">
+          <div className="onboarding-brand"><span className="brand-mark"><BookOpen size={20} /></span><strong>말씀유산</strong></div>
+          {onboardingStep === 'welcome' ? (
+            <div className="onboarding-card welcome-card">
+              <p className="eyebrow">소중한 목소리를 오래 간직해요</p>
+              <h1>어떤 방식으로 시작할까요?</h1>
+              <p className="onboarding-lead">지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.</p>
+              <div className="start-choice-grid">
+                <button type="button" onClick={() => finishOnboarding()}>
+                  <span><Sparkles size={22} /></span>
+                  <strong>내 방식대로 자유롭게</strong>
+                  <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
+                  <em>바로 시작 <ArrowRight size={15} /></em>
+                </button>
+                <button className="recommended" type="button" onClick={() => setOnboardingStep('projects')}>
+                  <i>추천</i><span><Target size={22} /></span>
+                  <strong>완성 프로젝트로 시작하기</strong>
+                  <small>정해진 기간 동안 조금씩 녹음해 하나의 말씀 작품을 완성해요.</small>
+                  <em>프로젝트 고르기 <ArrowRight size={15} /></em>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="onboarding-card project-picker-card">
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 이전</button>
+              <p className="eyebrow">완성 프로젝트</p>
+              <h1>얼마 동안 함께 완성해볼까요?</h1>
+              <div className="duration-picker" aria-label="프로젝트 기간">
+                <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId('psalm-23-beginner'); }}>1주</button>
+                <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId('comfort-14-beginner'); }}>2주</button>
+                <span>1개월부터 3년 프로젝트는 준비 중이에요.</span>
+              </div>
+              <div className="project-picker-layout">
+                <div className="project-template-list">
+                  {visibleTemplates.map((project) => (
+                    <button className={selectedTemplateId === project.id ? 'selected' : ''} type="button" onClick={() => setSelectedTemplateId(project.id)} key={project.id}>
+                      <span className={`difficulty difficulty-${project.level}`}>{project.custom ? '직접 구성' : project.level}</span>
+                      <strong>{project.title}</strong>
+                      <small>{project.scope}</small>
+                      <em><CalendarDays size={13} /> {project.duration}일 · {project.minutes}</em>
+                    </button>
+                  ))}
+                </div>
+                <aside className="project-schedule-preview">
+                  <p className="eyebrow">자동으로 만든 일정</p>
+                  <h2>{selectedTemplate.title}</h2>
+                  {selectedTemplate.custom ? (
+                    <div className="custom-project-preview"><Target size={28} /><strong>원하는 말씀을 직접 골라요</strong><p>범위를 선택하면 말씀 길이와 문단을 살펴 하루 분량을 자동으로 나눠드려요.</p></div>
+                  ) : (
+                    <ol>
+                      {selectedTemplate.tasks.map((task, index) => (
+                        <li key={task}><span>{index + 1}일</span><strong>{task}</strong></li>
+                      ))}
+                      {selectedTemplate.duration === 14 && <><li><span>13일</span><strong>밀린 녹음과 다시 녹음</strong></li><li><span>14일</span><strong>전체 확인하고 완성하기</strong></li></>}
+                    </ol>
+                  )}
+                  <button className="start-project-button" type="button" onClick={() => finishOnboarding(selectedTemplate.id)}>{selectedTemplate.custom ? '직접 프로젝트 만들기' : '이 프로젝트 시작하기'} <ArrowRight size={16} /></button>
+                </aside>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
       <header className="topbar">
         <a className="brand" href="#recording" aria-label="말씀유산 홈">
           <span className="brand-mark"><BookOpen size={20} /></span>
@@ -1068,6 +1211,7 @@ export default function HomePage() {
       </section>
 
       <footer className="page-footer">
+        <button className="theme-toggle" onClick={() => setOnboardingStep('welcome')} type="button" aria-label="시작 방식과 프로젝트 다시 선택"><Target size={18} /><span>프로젝트 선택</span></button>
         <button className="theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           <span>{theme === 'dark' ? '라이트 모드' : '다크 모드'}</span>
