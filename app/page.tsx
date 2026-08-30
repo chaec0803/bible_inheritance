@@ -213,6 +213,15 @@ type WordCard = {
   spriteIndex: number;
 };
 
+type WordCardAward = {
+  key: string;
+  cardId: string;
+  completionSignature?: string;
+  presented: boolean;
+  collected: boolean;
+  claimed?: boolean;
+};
+
 const wordCards: readonly WordCard[] = [
   { id: 'jacob', name: '야곱', heading: '붙들고 씨름하며 새 이름을 받은 사람', detail: '야곱은 부족함과 실수 속에서도 하나님의 약속을 놓지 않았어요. 하나님은 그에게 이스라엘이라는 새 이름을 주시고, 한 민족의 시작이 되게 하셨어요.', spriteIndex: 0 },
   { id: 'jesus', name: '예수님', heading: '사랑으로 우리에게 가장 가까이 오신 구원자', detail: '예수님은 하나님의 사랑을 삶으로 보여 주시고, 아픈 사람을 고치며 소외된 이들을 품으셨어요. 십자가와 부활을 통해 모든 사람에게 구원의 길을 열어 주셨어요.', spriteIndex: 1 },
@@ -407,6 +416,8 @@ export default function HomePage() {
   const [bgmPaused, setBgmPaused] = useState(false);
   const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
   const [earnedCard, setEarnedCard] = useState<WordCard | null>(null);
+  const [collectedCardIds, setCollectedCardIds] = useState<string[]>([]);
+  const [wordCardCollectionMode, setWordCardCollectionMode] = useState(false);
   const [wordCardFlipped, setWordCardFlipped] = useState(false);
   const [wordCardExpanded, setWordCardExpanded] = useState(false);
   const [kstToday, setKstToday] = useState(() => getKstDateKey());
@@ -424,7 +435,7 @@ export default function HomePage() {
   const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'app'>('welcome');
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
@@ -460,7 +471,6 @@ export default function HomePage() {
   const chapterPlayingRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
-  const shownWordCardAwardKeysRef = useRef(new Set<string>());
 
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
@@ -471,7 +481,23 @@ export default function HomePage() {
     const savedProjectId = window.localStorage.getItem('verse-legacy-project');
     const savedFreePassage = window.localStorage.getItem('verse-legacy-free-passage');
     const savedActiveProjects = window.localStorage.getItem('verse-legacy-active-projects');
+    let restoredCardIds: string[] = [];
+    try {
+      const storedAwards = JSON.parse(window.localStorage.getItem('verse-legacy-word-card-awards') ?? '[]') as Partial<WordCardAward>[];
+      const migratedAwards = storedAwards
+        .filter((award): award is Partial<WordCardAward> & Pick<WordCardAward, 'key' | 'cardId'> => typeof award.key === 'string' && typeof award.cardId === 'string')
+        .map((award) => ({
+          ...award,
+          presented: true,
+          collected: award.collected === true || award.claimed === true,
+        }));
+      window.localStorage.setItem('verse-legacy-word-card-awards', JSON.stringify(migratedAwards));
+      restoredCardIds = [...new Set(migratedAwards.filter((award) => award.collected).map((award) => award.cardId))];
+    } catch {
+      window.localStorage.removeItem('verse-legacy-word-card-awards');
+    }
     const frame = window.requestAnimationFrame(() => {
+      setCollectedCardIds(restoredCardIds);
       let restoredProjects: ActiveProject[] = [];
       if (savedActiveProjects) {
         try {
@@ -845,46 +871,45 @@ export default function HomePage() {
 
     const storageKey = 'verse-legacy-word-card-awards';
     const awardKey = `${activeProject.id}:day-${displayedProjectDay}`;
-    if (shownWordCardAwardKeysRef.current.has(awardKey)) return;
     const completionSignature = `${passageBook.name}-${passageChapter}-${passageStartVerse}-${passageStartVerse + passageVerses.length - 1}:verified-v2`;
-    let awards: { key: string; cardId: string; completionSignature?: string; claimed?: boolean }[] = [];
+    let awards: WordCardAward[] = [];
     try {
-      awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string; completionSignature?: string; claimed?: boolean }[];
+      awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as WordCardAward[];
     } catch {
       awards = [];
     }
-    const existingAward = awards.find((award) => award.key === awardKey && award.completionSignature === completionSignature);
-    if (existingAward) {
-      const existingCard = wordCards.find((card) => card.id === existingAward.cardId);
-      if (existingCard) {
-        shownWordCardAwardKeysRef.current.add(awardKey);
-        setEarnedCard(existingCard);
-      }
-      return;
-    }
+    const existingAward = awards.find((award) => award.key === awardKey);
+    if (existingAward) return;
 
     const ownedIds = new Set(awards.map((award) => award.cardId));
     const availableCards = wordCards.filter((card) => !ownedIds.has(card.id));
     const pool = availableCards.length ? availableCards : wordCards;
     const card = pool[Math.floor(Math.random() * pool.length)];
-    window.localStorage.setItem(storageKey, JSON.stringify([...awards.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, claimed: false }]));
-    shownWordCardAwardKeysRef.current.add(awardKey);
+    window.localStorage.setItem(storageKey, JSON.stringify([...awards.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, presented: true, collected: false }]));
+    setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
     setEarnedCard(card);
   }, [activeProject, displayedProjectDay, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
 
-  const claimEarnedWordCard = () => {
+  const closeWordCard = () => {
+    setEarnedCard(null);
+    setWordCardCollectionMode(false);
+  };
+
+  const collectEarnedWordCard = () => {
     if (activeProject && earnedCard) {
       const storageKey = 'verse-legacy-word-card-awards';
       try {
-        const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as { key: string; cardId: string; completionSignature?: string; claimed?: boolean }[];
-        window.localStorage.setItem(storageKey, JSON.stringify(awards.map((award) => award.key === `${activeProject.id}:day-${displayedProjectDay}` && award.cardId === earnedCard.id ? { ...award, claimed: true } : award)));
+        const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as WordCardAward[];
+        window.localStorage.setItem(storageKey, JSON.stringify(awards.map((award) => award.key === `${activeProject.id}:day-${displayedProjectDay}` && award.cardId === earnedCard.id ? { ...award, presented: true, collected: true } : award)));
+        setCollectedCardIds((current) => current.includes(earnedCard.id) ? current : [...current, earnedCard.id]);
+        setNotice('내 카드 보관함에 간직했어요.');
       } catch {
-        // 카드 확인 상태 저장에 실패해도 현재 모달은 닫을 수 있어요.
+        setNotice('카드를 보관하지 못했어요. 다시 시도해 주세요.');
       }
     }
-    setEarnedCard(null);
+    closeWordCard();
   };
 
   useEffect(() => {
@@ -1476,6 +1501,14 @@ export default function HomePage() {
     [customBook, customEndChapter, customEndVerse, customRecordingDays, customStartChapter, customStartVerse],
   );
   const customTotalVerses = customDailyTasks.reduce((total, task) => total + task.count, 0);
+  const collectedWordCards = wordCards.filter((card) => collectedCardIds.includes(card.id));
+
+  const openCollectedWordCard = (card: WordCard) => {
+    setWordCardCollectionMode(true);
+    setWordCardFlipped(false);
+    setWordCardExpanded(false);
+    setEarnedCard(card);
+  };
 
   const changeCustomBook = (bookId: string) => {
     const book = supportedBibleBooks.find((item) => item.id === bookId) ?? supportedBibleBooks[0];
@@ -1527,6 +1560,32 @@ export default function HomePage() {
                   <em>내 프로젝트 보기 <ArrowRight size={15} /></em>
                 </button>
               </div>
+              <button className="word-card-library-entry" type="button" onClick={() => setOnboardingStep('cards')}>
+                <span><Sparkles size={21} /></span>
+                <div><strong>내 카드 보관함</strong><small>간직한 말씀 카드 {collectedWordCards.length}장을 모아봐요.</small></div>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          ) : onboardingStep === 'cards' ? (
+            <div className="onboarding-card word-card-library-card">
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 홈으로</button>
+              <p className="eyebrow">MY WORD CARDS</p>
+              <h1>내 카드 보관함</h1>
+              <p className="onboarding-lead">프로젝트의 하루 과제를 마치고 직접 간직한 카드들이에요. 카드를 누르면 자세히 볼 수 있어요.</p>
+              {collectedWordCards.length ? (
+                <div className="word-card-collection-grid">
+                  {collectedWordCards.map((card) => {
+                    const column = card.spriteIndex % 4;
+                    const row = Math.floor(card.spriteIndex / 4);
+                    return <button className="word-card-collection-item" type="button" onClick={() => openCollectedWordCard(card)} key={card.id}>
+                      <span className="word-card-collection-art" style={{ backgroundImage: 'url(/cards/bible-character-sprite.png)', backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
+                      <small>성경 속 말씀 인물</small><strong>{card.name}</strong>
+                    </button>;
+                  })}
+                </div>
+              ) : (
+                <div className="word-card-collection-empty"><Sparkles size={28} /><strong>아직 간직한 카드가 없어요</strong><p>프로젝트의 하루 과제를 완료한 뒤<br />‘내 카드로 간직하기’를 눌러보세요.</p></div>
+              )}
             </div>
           ) : onboardingStep === 'projectHome' ? (
             <div className="onboarding-card project-home-card">
@@ -2072,9 +2131,9 @@ export default function HomePage() {
         return (
           <div className="word-card-modal-backdrop" role="presentation">
             <dialog className="word-card-modal" open aria-labelledby="word-card-modal-title">
-              <button className="word-card-close" type="button" onClick={claimEarnedWordCard} aria-label="말씀 카드 닫기"><X size={21} /></button>
-              <p className="eyebrow">TODAY&apos;S WORD CARD</p>
-              <h2 id="word-card-modal-title">오늘의 말씀 카드를 뽑았어요!</h2>
+              <button className="word-card-close" type="button" onClick={closeWordCard} aria-label="말씀 카드 닫기"><X size={21} /></button>
+              <p className="eyebrow">{wordCardCollectionMode ? 'MY WORD CARD' : 'TODAY\'S WORD CARD'}</p>
+              <h2 id="word-card-modal-title">{wordCardCollectionMode ? '내 말씀 카드' : '오늘의 말씀 카드를 뽑았어요!'}</h2>
               <p className="word-card-instruction">카드를 눌러 뒤집어 보세요.</p>
               <div className={`word-card-scene ${wordCardFlipped ? 'flipped' : ''}`}>
                 <button className="word-card" type="button" aria-label={`${earnedCard.name} 말씀 카드 뒤집기`} onClick={() => setWordCardFlipped((current) => !current)}>
@@ -2082,7 +2141,7 @@ export default function HomePage() {
                     <div className="word-card-art" style={{ backgroundImage: 'url(/cards/bible-character-sprite.png)', backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
                     <small>성경 속 말씀 인물</small>
                     <strong>{earnedCard.name}</strong>
-                    <span><Sparkles size={13} /> 오늘의 카드</span>
+                    <span><Sparkles size={13} /> {wordCardCollectionMode ? '간직한 카드' : '오늘의 카드'}</span>
                   </section>
                   <section className="word-card-face word-card-back">
                     <small>성경 속 말씀 인물</small>
@@ -2094,7 +2153,7 @@ export default function HomePage() {
                 </button>
                 {wordCardFlipped && <button className="word-card-detail-toggle" type="button" onClick={() => setWordCardExpanded((current) => !current)}>{wordCardExpanded ? '간단히 보기' : '더 자세히'}</button>}
               </div>
-              <button className="word-card-keep" type="button" onClick={claimEarnedWordCard}>내 카드로 간직하기</button>
+              <button className="word-card-keep" type="button" onClick={wordCardCollectionMode ? closeWordCard : collectEarnedWordCard}>{wordCardCollectionMode ? '카드 보관함으로 돌아가기' : '내 카드로 간직하기'}</button>
             </dialog>
           </div>
         );
