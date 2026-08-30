@@ -383,6 +383,7 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .music-option { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); transition: border-color .18s ease, background-color .18s ease; }
 .music-option.selected { border-color: var(--sage); background: var(--surface-selected); }
 .music-select { min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr) 14px; align-items: center; gap: 9px; padding: 10px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.music-select:disabled { opacity: .48; cursor: not-allowed; }
 .music-icon { width: 31px; height: 31px; display: grid; place-items: center; color: var(--sage); background: var(--sage-soft); border-radius: 10px; font-weight: 900; }
 .music-list strong, .music-list small { display: block; }
 .music-list strong { font-size: 10px; }
@@ -430,6 +431,7 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .library-bgm-picker > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .library-bgm-picker button { padding: 7px 9px; color: rgba(255,255,255,.72); background: transparent; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; font-size: 8px; font-weight: 800; cursor: pointer; }
 .library-bgm-picker button.selected { color: #193b32; background: #f1d78e; border-color: #f1d78e; }
+.library-bgm-picker button:disabled { opacity: .45; cursor: not-allowed; }
 .chapter-player-controls { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.14); }
 .chapter-list-trigger { width: 50px; height: 50px; display: grid; place-items: center; align-content: center; gap: 2px; color: white; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 14px; cursor: pointer; }
 .chapter-list-trigger span { font-size: 7px; font-weight: 900; }

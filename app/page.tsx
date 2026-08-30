@@ -1618,6 +1618,7 @@ export default function HomePage() {
                 <div className={`music-option ${bgm === option.id ? 'selected' : ''}`} key={option.id}>
                   <button
                     className="music-select"
+                    disabled={recording || requestingMic}
                     onClick={() => {
                       if (option.id !== bgm && activePreview) stopPreview();
                       setBgm(option.id);
@@ -1696,7 +1697,7 @@ export default function HomePage() {
                 </div>
                 <div className="library-bgm-picker" aria-label="이어듣기 배경음악 선택">
                   <span><Music2 size={14} /> 이어듣기 BGM</span>
-                  <div>{bgmOptions.map((option) => <button className={bgm === option.id ? 'selected' : ''} type="button" onClick={() => selectLibraryBgm(option)} key={option.id}>{option.name}</button>)}</div>
+                  <div>{bgmOptions.map((option) => <button className={bgm === option.id ? 'selected' : ''} type="button" disabled={chapterPlaying} onClick={() => selectLibraryBgm(option)} key={option.id}>{option.name}</button>)}</div>
                 </div>
                 <div className="chapter-player-controls">
                   <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
