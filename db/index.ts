@@ -12,6 +12,8 @@ export function ensureDbSchema() {
       owner_key TEXT NOT NULL,
       project_id TEXT NOT NULL DEFAULT 'legacy',
       project_title TEXT NOT NULL DEFAULT '이전 녹음',
+      recording_group_id TEXT,
+      recording_mode TEXT NOT NULL DEFAULT 'verse',
       book TEXT NOT NULL,
       chapter INTEGER NOT NULL,
       verse INTEGER NOT NULL,
@@ -30,6 +32,8 @@ export function ensureDbSchema() {
     const additions = [];
     if (!names.has('project_id')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN project_id TEXT NOT NULL DEFAULT 'legacy'"));
     if (!names.has('project_title')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN project_title TEXT NOT NULL DEFAULT '이전 녹음'"));
+    if (!names.has('recording_group_id')) additions.push(env.DB.prepare('ALTER TABLE recordings ADD COLUMN recording_group_id TEXT'));
+    if (!names.has('recording_mode')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN recording_mode TEXT NOT NULL DEFAULT 'verse'"));
     if (additions.length) await env.DB.batch(additions);
     await env.DB.batch([
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_created ON recordings(owner_key, created_at)'),

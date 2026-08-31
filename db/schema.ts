@@ -7,6 +7,8 @@ export const recordings = sqliteTable(
     ownerKey: text('owner_key').notNull(),
     projectId: text('project_id').notNull().default('legacy'),
     projectTitle: text('project_title').notNull().default('이전 녹음'),
+    recordingGroupId: text('recording_group_id'),
+    recordingMode: text('recording_mode').notNull().default('verse'),
     book: text('book').notNull(),
     chapter: integer('chapter').notNull(),
     verse: integer('verse').notNull(),

@@ -70,6 +70,8 @@ export async function PUT(request: Request, context: RouteContext) {
   const book = readText('book', 30) || '시편';
   const projectId = readText('projectId', 100) || 'legacy';
   const projectTitle = readText('projectTitle', 100) || '이전 녹음';
+  const recordingGroupId = readText('recordingGroupId', 100) || null;
+  const recordingMode = readText('recordingMode', 20) === 'continuous' ? 'continuous' : 'verse';
   const chapter = Number(readText('chapter', 4));
   const verse = Number(readText('verse', 4));
   const verseText = readText('verseText', 1000);
@@ -97,6 +99,8 @@ export async function PUT(request: Request, context: RouteContext) {
         book,
         projectId,
         projectTitle,
+        recordingGroupId,
+        recordingMode,
         chapter,
         verse,
         verseText,

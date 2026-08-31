@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 
@@ -26,6 +26,8 @@ export async function GET(request: Request) {
       id: recordings.id,
       projectId: recordings.projectId,
       projectTitle: recordings.projectTitle,
+      recordingGroupId: recordings.recordingGroupId,
+      recordingMode: recordings.recordingMode,
       book: recordings.book,
       chapter: recordings.chapter,
       verse: recordings.verse,
@@ -61,6 +63,8 @@ export async function POST(request: Request) {
   const book = formText(formData, 'book', 30) || '시편';
   const projectId = formText(formData, 'projectId', 100) || 'legacy';
   const projectTitle = formText(formData, 'projectTitle', 100) || '이전 녹음';
+  const recordingGroupId = formText(formData, 'recordingGroupId', 100) || null;
+  const recordingMode = formText(formData, 'recordingMode', 20) === 'continuous' ? 'continuous' : 'verse';
   const chapter = Number(formText(formData, 'chapter', 4));
   const verse = Number(formText(formData, 'verse', 4));
   const verseText = formText(formData, 'verseText', 1000);
@@ -76,6 +80,10 @@ export async function POST(request: Request) {
   const objectKey = `${ownerKey}/${id}`;
   const mimeType = audio.type || 'audio/webm';
   const createdAt = Date.now();
+  const existing = await getDb()
+    .select({ id: recordings.id, objectKey: recordings.objectKey })
+    .from(recordings)
+    .where(and(eq(recordings.ownerKey, ownerKey), eq(recordings.projectId, projectId), eq(recordings.book, book), eq(recordings.chapter, chapter), eq(recordings.verse, verse)));
 
   await env.FILES.put(objectKey, audio.stream(), {
     httpMetadata: { contentType: mimeType },
@@ -88,6 +96,8 @@ export async function POST(request: Request) {
       ownerKey,
       projectId,
       projectTitle,
+      recordingGroupId,
+      recordingMode,
       book,
       chapter,
       verse,
@@ -103,6 +113,11 @@ export async function POST(request: Request) {
   } catch (error) {
     await env.FILES.delete(objectKey);
     throw error;
+  }
+
+  if (existing.length) {
+    await getDb().delete(recordings).where(inArray(recordings.id, existing.map((item) => item.id)));
+    await Promise.all(existing.map((item) => env.FILES.delete(item.objectKey)));
   }
 
   return Response.json({ id, createdAt }, { status: 201 });
