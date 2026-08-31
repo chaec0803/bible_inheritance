@@ -372,13 +372,16 @@ h1, h2, p { margin-top: 0; }
 .status-pill.ready { color: #4b685d; background: var(--sage-soft); }
 .verse-paper { position: relative; min-height: 215px; margin: 42px 0 34px; padding: clamp(34px, 5vw, 62px); display: grid; place-items: center; overflow: hidden; background: linear-gradient(135deg, var(--paper-gradient-start), var(--paper-gradient-end) 62%); border: 1px solid var(--paper-border); border-radius: 22px 22px 22px 8px; }
 .verse-paper.continuous { align-content: center; gap: 26px; padding-bottom: 30px; }
+.karaoke-tap-area { width: 100%; display: grid; place-items: center; gap: 26px; color: inherit; background: transparent; border: 0; cursor: pointer; }
+.karaoke-tap-area:disabled { cursor: default; }
 .karaoke-verse { color: color-mix(in srgb, var(--muted) 48%, transparent); white-space: pre-wrap; }
 .karaoke-verse > span > span { transition: color .12s ease, background-color .12s ease, text-shadow .12s ease; }
 .karaoke-verse > span > span.read { color: var(--ink); }
-.karaoke-verse > span > span.current { color: var(--action-ink); background: var(--action-bg); border-radius: 4px; text-shadow: 0 0 12px color-mix(in srgb, var(--action-bg) 60%, transparent); }
 .next-verse-preview { width: min(620px, 100%); padding-top: 18px; display: grid; gap: 6px; color: var(--muted); border-top: 1px solid var(--paper-border); opacity: .62; }
 .next-verse-preview small { color: var(--sage); font-size: 9px; font-weight: 900; }
 .next-verse-preview span { font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 14px; line-height: 1.55; }
+.tap-to-continue { padding: 8px 12px; color: var(--sage); background: var(--sage-soft); border-radius: 999px; font-size: 9px; animation: tap-pulse 1.4s ease-in-out infinite; }
+@keyframes tap-pulse { 50% { opacity: .55; transform: scale(.98); } }
 .continuous-timing { margin: -20px 0 28px; display: grid; gap: 7px; }
 .continuous-timing > div:first-child { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 9px; }
 .continuous-timing strong { color: var(--sage); }
