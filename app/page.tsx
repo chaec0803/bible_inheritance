@@ -592,6 +592,8 @@ export default function HomePage() {
   const chapterPlayingRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
+  const verseListRef = useRef<HTMLDivElement | null>(null);
+  const verseMenuListRef = useRef<HTMLDivElement | null>(null);
 
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
@@ -1057,6 +1059,26 @@ export default function HomePage() {
   }, [chapterQueue, selectedLibraryGroup]);
   const selectedLibraryRecording = chapterQueue.find((item) => item.id === selectedLibraryRecordingId) ?? null;
   const currentlyPlayingRecording = chapterQueue.find((item) => item.id === activeLibraryId) ?? null;
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const activeVerseButton = verseListRef.current?.querySelector<HTMLElement>(`[data-verse-index="${verseIndex}"]`);
+      activeVerseButton?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [verseIndex]);
+
+  useEffect(() => {
+    if (!libraryChapterMenuOpen || !selectedLibraryVerseCount) return;
+    const recordedVerses = new Set(chapterQueue.map((item) => item.verse));
+    const firstUnrecordedVerse = Array.from({ length: selectedLibraryVerseCount }, (_, index) => index + 1).find((verse) => !recordedVerses.has(verse));
+    if (!firstUnrecordedVerse) return;
+    const frame = window.requestAnimationFrame(() => {
+      const nextVerseButton = verseMenuListRef.current?.querySelector<HTMLElement>(`[data-verse-number="${firstUnrecordedVerse}"]`);
+      nextVerseButton?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chapterQueue, libraryChapterMenuOpen, selectedLibraryVerseCount]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
@@ -2139,10 +2161,11 @@ export default function HomePage() {
             </div>
           </div>}
           {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => setOnboardingStep('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
-          <div className="verse-list" aria-label="구절 목록">
+          <div className="verse-list" aria-label="구절 목록" ref={verseListRef}>
             {passageVerses.map((_, index) => (
               <button
                 className={`verse-item ${verseIndex === index ? 'active' : ''}`}
+                data-verse-index={index}
                 key={index}
                 onClick={() => moveVerse(index)}
                 type="button"
@@ -2437,11 +2460,11 @@ export default function HomePage() {
               </div>
               {selectedLibraryGroup && <div className="verse-menu-section">
                 <div className="verse-menu-heading"><strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} · 절별 녹음</strong><span>{chapterQueue.length}/{selectedLibraryVerseCount}절</span></div>
-                <div className="verse-menu-list">
+                <div className="verse-menu-list" ref={verseMenuListRef}>
                   {Array.from({ length: selectedLibraryVerseCount }, (_, index) => {
                     const verse = index + 1;
                     const recording = chapterQueue.find((item) => item.verse === verse);
-                    return <button type="button" disabled={!recording} onClick={() => recording && openLibraryVerse(recording)} key={verse}><strong>{verse}절</strong><small>{recording ? '녹음 듣기' : '미녹음'}</small></button>;
+                    return <button type="button" data-verse-number={verse} disabled={!recording} onClick={() => recording && openLibraryVerse(recording)} key={verse}><strong>{verse}절</strong><small>{recording ? '녹음 듣기' : '미녹음'}</small></button>;
                   })}
                 </div>
               </div>}
