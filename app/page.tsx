@@ -499,6 +499,10 @@ export default function HomePage() {
   const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
   const expectedVerseDurationMs = estimateVerseDurationMs(passageVerses[verseIndex] ?? '');
+  const karaokeCharacters = Array.from(passageVerses[verseIndex] ?? '');
+  const karaokeCharacterIndex = recording && recordingMode === 'continuous'
+    ? Math.min(karaokeCharacters.length - 1, Math.floor(continuousProgress * karaokeCharacters.length))
+    : -1;
 
   const moveContinuousVerse = useCallback((nextIndex: number, source: 'timer' | 'manual') => {
     const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
@@ -1944,7 +1948,9 @@ export default function HomePage() {
 
           <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
             <span className="verse-number">{currentVerseNumber}</span>
-            <p>{passageVerses[verseIndex]}</p>
+            {recordingMode === 'continuous' ? <p className="karaoke-verse" aria-label={passageVerses[verseIndex]}>
+              <span aria-hidden="true">{karaokeCharacters.map((character, index) => <span className={recording ? index < karaokeCharacterIndex ? 'read' : index === karaokeCharacterIndex ? 'current' : '' : ''} key={`${character}-${index}`}>{character}</span>)}</span>
+            </p> : <p>{passageVerses[verseIndex]}</p>}
             {recordingMode === 'continuous' && verseIndex < passageVerses.length - 1 && <div className="next-verse-preview"><small>다음 {currentVerseNumber + 1}절</small><span>{passageVerses[verseIndex + 1]}</span></div>}
           </article>
 
