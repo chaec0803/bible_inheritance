@@ -287,6 +287,22 @@ const wordCards: readonly WordCard[] = [
   { id: 'stephen', name: '스데반', heading: '끝까지 사랑과 용서를 선택한 증인', detail: '스데반은 지혜와 믿음으로 예수님을 전했어요. 박해를 받는 마지막 순간에도 자신을 해치는 사람들을 용서해 달라고 기도했어요.', spriteIndex: 13, spriteSheet: '/cards/bible-character-sprite-v2.png' },
   { id: 'timothy', name: '디모데', heading: '배운 말씀을 삶으로 이어 간 젊은 동역자', detail: '디모데는 어머니와 외할머니에게 믿음을 배웠고 바울과 함께 복음을 전했어요. 젊지만 말과 행동과 사랑에서 본이 되도록 격려받았어요.', spriteIndex: 14, spriteSheet: '/cards/bible-character-sprite-v2.png' },
   { id: 'zacchaeus', name: '삭개오', heading: '예수님을 만난 뒤 삶으로 돌이킨 사람', detail: '삭개오는 예수님을 보기 위해 나무에 올라갔어요. 예수님을 집에 모신 뒤 잘못을 바로잡고 가진 것을 나누겠다고 결단했어요.', spriteIndex: 15, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'noah', name: '노아', heading: '긴 기다림 속에서도 말씀을 따른 사람', detail: '노아는 사람들이 믿지 않을 때에도 하나님의 말씀을 따라 방주를 만들었어요. 오랜 시간 묵묵히 순종하며 가족과 생명을 지켰고, 무지개 언약을 받았어요.', spriteIndex: 0, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'isaac', name: '이삭', heading: '약속 안에서 평화를 선택한 사람', detail: '이삭은 아브라함에게 주신 약속을 이어받았어요. 우물을 둘러싼 다툼을 피하고 새로운 자리를 찾으며, 하나님이 마련하신 평화를 기다렸어요.', spriteIndex: 1, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'hagar', name: '하갈', heading: '광야에서 자신을 보시는 하나님을 만난 사람', detail: '하갈은 외롭고 막막한 광야에서 하나님의 돌보심을 경험했어요. 하나님은 그의 눈물을 들으시고 아들과 함께 살아갈 길을 열어 주셨어요.', spriteIndex: 2, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'miriam', name: '미리암', heading: '구원의 기쁨을 노래와 춤으로 이끈 사람', detail: '미리암은 어린 모세를 지혜롭게 지켜보았고, 홍해를 건넌 뒤에는 소고를 들고 백성의 찬양을 이끌었어요. 기쁨을 공동체와 함께 나누었어요.', spriteIndex: 3, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'aaron', name: '아론', heading: '백성을 위해 하나님 앞에 섰던 제사장', detail: '아론은 모세와 함께 이스라엘 백성을 이끌고 첫 대제사장으로 섬겼어요. 백성을 대신해 예배드리며 하나님과 사람 사이의 화해를 나타냈어요.', spriteIndex: 4, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'caleb', name: '갈렙', heading: '세월이 지나도 약속을 향한 용기를 지킨 사람', detail: '갈렙은 가나안 땅을 살핀 뒤 두려움보다 하나님의 약속을 믿었어요. 오랜 시간이 지나서도 믿음과 용기를 잃지 않고 맡겨진 땅을 향해 나아갔어요.', spriteIndex: 5, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'rahab', name: '라합', heading: '용기 있는 선택으로 가족을 지킨 사람', detail: '라합은 위험을 무릅쓰고 이스라엘의 정탐꾼들을 도왔어요. 창문에 붉은 줄을 매어 약속을 기억했고, 믿음으로 자신과 가족을 지켰어요.', spriteIndex: 6, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'gideon', name: '기드온', heading: '작은 자신을 통해 일하시는 하나님을 믿은 사람', detail: '기드온은 자신이 약하고 부족하다고 느꼈지만 하나님의 부르심을 따랐어요. 적은 수의 사람들과 횃불과 항아리를 들고 큰 군대에 맞섰어요.', spriteIndex: 7, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'hannah', name: '한나', heading: '슬픔을 숨기지 않고 기도로 맡긴 사람', detail: '한나는 깊은 슬픔과 소원을 하나님께 솔직하게 기도했어요. 응답으로 얻은 사무엘을 하나님께 맡기고 감사의 노래를 드렸어요.', spriteIndex: 8, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'solomon', name: '솔로몬', heading: '많은 것보다 지혜를 먼저 구한 왕', detail: '솔로몬은 왕이 되었을 때 부나 권력보다 백성을 잘 이끌 지혜를 구했어요. 성전을 세우고 지혜로운 판결과 말씀을 남겼어요.', spriteIndex: 9, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'nehemiah', name: '느헤미야', heading: '기도하며 무너진 성벽을 다시 세운 지도자', detail: '느헤미야는 예루살렘의 무너진 소식을 듣고 울며 기도했어요. 방해와 두려움 속에서도 사람들을 하나로 모아 성벽을 다시 세웠어요.', spriteIndex: 10, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'daniel', name: '다니엘', heading: '낯선 땅에서도 믿음의 습관을 지킨 사람', detail: '다니엘은 포로로 끌려간 낯선 나라에서도 하나님께 기도하는 일을 멈추지 않았어요. 사자굴에서도 보호받으며 흔들리지 않는 믿음을 보여 주었어요.', spriteIndex: 11, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'jonah', name: '요나', heading: '도망친 자리에서도 다시 사명을 배운 선지자', detail: '요나는 하나님의 말씀을 피해 달아났지만 큰 물고기 속에서 기도하고 다시 기회를 얻었어요. 하나님의 긍휼이 자신이 생각한 경계보다 넓음을 배웠어요.', spriteIndex: 12, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'elisha', name: '엘리사', heading: '평범한 일상 속에서 이웃을 도운 선지자', detail: '엘리사는 엘리야의 뒤를 이어 하나님의 말씀을 전했어요. 병든 사람을 고치고 배고픈 이들을 먹이며 삶 가까이에서 하나님의 돌보심을 보여 주었어요.', spriteIndex: 13, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'luke', name: '누가', heading: '꼼꼼히 기록해 복음을 전한 의사', detail: '누가는 여러 증언을 자세히 살펴 예수님의 이야기를 기록했어요. 바울의 여행에 함께하며 사람을 돌보고, 모든 이에게 열린 복음을 전했어요.', spriteIndex: 14, spriteSheet: '/cards/bible-character-sprite-v3.png' },
+  { id: 'philip', name: '빌립', heading: '한 사람에게도 기쁜 소식을 전한 전도자', detail: '빌립은 성령의 인도를 따라 광야 길에서 한 여행자를 만났어요. 그의 질문을 듣고 성경을 설명하며 예수님의 기쁜 소식을 전했어요.', spriteIndex: 15, spriteSheet: '/cards/bible-character-sprite-v3.png' },
 ];
 
 type RecordingTake = {
