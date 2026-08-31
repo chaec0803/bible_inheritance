@@ -803,8 +803,11 @@ export default function HomePage() {
     fetchLibrary(ownerKey)
       .then((recordings) => {
         if (cancelled) return;
+        const passageSaved = passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
         setLibraryRecordings(recordings);
-        setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+        setSaved(passageSaved);
+        const firstUnrecordedIndex = passageSaved.findIndex((isSaved) => !isSaved);
+        setVerseIndex(firstUnrecordedIndex >= 0 ? firstUnrecordedIndex : 0);
       })
       .catch(() => {
         if (!cancelled) setNotice('보관함 연결을 준비하고 있어요. 잠시 후 다시 시도해 주세요.');
@@ -920,12 +923,11 @@ export default function HomePage() {
   const displayedProjectTask = activeProject?.tasks[displayedProjectDayIndex]
     ?? (activeProject && displayedProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
   const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
-  const latestContinuousRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.recordingMode === 'continuous' && item.recordingGroupId) ?? null;
   const continuousPlaybackGroupId = currentSavedRecording?.recordingMode === 'continuous' && currentSavedRecording.recordingGroupId
     ? currentSavedRecording.recordingGroupId
-    : latestContinuousRecording?.recordingGroupId;
+    : null;
   const continuousPlaybackQueue = activeLibraryRecordings
-    .filter((item) => item.book === passageBook.name && item.chapter === passageChapter && item.recordingGroupId === continuousPlaybackGroupId)
+    .filter((item) => Boolean(continuousPlaybackGroupId) && item.book === passageBook.name && item.chapter === passageChapter && item.recordingGroupId === continuousPlaybackGroupId)
     .sort((left, right) => left.verse - right.verse);
   const playbackRecording = recordingMode === 'continuous'
     ? continuousPlaybackQueue.find((item) => item.id === continuousPlaybackRecordingId) ?? continuousPlaybackQueue[0] ?? null
@@ -1379,6 +1381,7 @@ export default function HomePage() {
       const first = continuousPlaybackQueue[0];
       if (!first) return;
       continuousPlaybackAutoplayRef.current = true;
+      setVerseIndex(Math.max(0, first.verse - passageStartVerse));
       setContinuousPlaybackRecordingId(first.id);
       if (playbackRecording?.id === first.id) void audio?.play();
       return;
@@ -1396,6 +1399,7 @@ export default function HomePage() {
       setContinuousPlaybackRecordingId(null);
       return;
     }
+    setVerseIndex(Math.max(0, next.verse - passageStartVerse));
     setContinuousPlaybackRecordingId(next.id);
   };
 
@@ -1468,7 +1472,7 @@ export default function HomePage() {
       const audioGraph = createRecordingAudioGraph(stream, reverb);
       const mimeType = getSupportedMimeType();
       const recorder = new MediaRecorder(audioGraph.stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 192_000 });
-      const targetVerseIndex = recordingMode === 'continuous' ? 0 : verseIndex;
+      const targetVerseIndex = verseIndex;
 
       streamRef.current = stream;
       recordingAudioContextRef.current = audioGraph.context;
@@ -1481,11 +1485,11 @@ export default function HomePage() {
         recordingStartedAtRef.current = event.timeStamp;
         if (recordingMode === 'continuous') {
           continuousVerseStartedAtRef.current = event.timeStamp;
-          continuousVerseIndexRef.current = 0;
+          continuousVerseIndexRef.current = targetVerseIndex;
           continuousRecordingGroupIdRef.current = crypto.randomUUID();
           continuousBoundariesRef.current = [];
           setContinuousBoundaries([]);
-          setVerseIndex(0);
+          setVerseIndex(targetVerseIndex);
         }
       };
 
@@ -2156,7 +2160,7 @@ export default function HomePage() {
 
         <section className="recording-card" aria-label="성경 녹음 화면">
           <div className="recording-mode-switch" aria-label="녹음 방식">
-            <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('continuous'); setVerseIndex(0); }}>이어 녹음</button>
+            <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('continuous'); }}>이어 녹음</button>
             <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('verse'); }}>절별 수정</button>
           </div>
           <div className="recording-heading">
