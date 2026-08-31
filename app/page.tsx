@@ -566,6 +566,21 @@ export default function HomePage() {
     setNotice('마지막 절까지 읽었어요. 완료한 절을 저장하고 있어요.');
   }, [moveContinuousVerse, passageVerses.length, recording, recordingMode, verseIndex]);
 
+  const stopContinuousAndSaveCurrent = useCallback(() => {
+    if (!recording || recordingMode !== 'continuous' || mediaRecorderRef.current?.state !== 'recording') return;
+    const now = performance.now();
+    const boundary: ContinuousVerseBoundary = {
+      verseIndex,
+      startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
+      endMs: Math.max(0, Math.round(now - recordingStartedAtRef.current)),
+      transitionSource: 'manual',
+    };
+    continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
+    setContinuousBoundaries(continuousBoundariesRef.current);
+    mediaRecorderRef.current.stop();
+    setNotice('현재 절까지 저장하고 있어요.');
+  }, [recording, recordingMode, verseIndex]);
+
   useEffect(() => {
     if (!recording || recordingMode !== 'continuous') return;
     const interval = window.setInterval(() => {
@@ -1496,6 +1511,10 @@ export default function HomePage() {
 
   const toggleRecording = () => {
     if (recording) {
+      if (recordingMode === 'continuous') {
+        stopContinuousAndSaveCurrent();
+        return;
+      }
       if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
       setRecording(false);
       setNotice('녹음을 마무리하고 있어요. 잠시만 기다려 주세요.');
@@ -2093,12 +2112,16 @@ export default function HomePage() {
 
           <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
             <span className="verse-number">{currentVerseNumber}</span>
-            {recordingMode === 'continuous' ? <button className="karaoke-tap-area" type="button" disabled={!recording} onClick={completeContinuousVerse} aria-label={recording ? `${currentVerseNumber}절을 다 읽음, 다음 절로 이동` : '이어 녹음을 시작하면 화면을 눌러 다음 절로 이동할 수 있어요'}>
+            {recordingMode === 'continuous' ? <div className="continuous-verse-copy">
               <p>{passageVerses[verseIndex]}</p>
               {verseIndex < passageVerses.length - 1 && <span className="next-verse-preview"><small>다음 {currentVerseNumber + 1}절</small><span>{passageVerses[verseIndex + 1]}</span></span>}
-              {recording && <strong className="tap-to-continue">다 읽었으면 화면을 탭하세요</strong>}
-            </button> : <p>{passageVerses[verseIndex]}</p>}
+            </div> : <p>{passageVerses[verseIndex]}</p>}
           </article>
+
+          {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행">
+            <button className="next" type="button" onClick={completeContinuousVerse} disabled={verseIndex === passageVerses.length - 1}>다음 절 <ChevronRight size={18} /></button>
+            <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}><CircleStop size={18} /> 여기까지 녹음</button>
+          </div>}
 
           <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
             {Array.from({ length: 34 }).map((_, index) => (
@@ -2121,7 +2144,7 @@ export default function HomePage() {
                 {deletingRecordingId ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
                 <span>{deletingRecordingId ? '삭제 중' : recordingMode === 'continuous' ? '전체 다시 녹음' : '다시 녹음'}</span>
               </button>
-            </> : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
+            </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
               {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
             </button>}
@@ -2143,11 +2166,11 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="verse-navigation">
+          {!(recordingMode === 'continuous' && recording) && <div className="verse-navigation">
             <button onClick={() => recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex - 1, 'manual') : moveVerse(verseIndex - 1)} disabled={verseIndex === 0 || requestingMic || (recording && recordingMode === 'verse')} type="button"><ChevronLeft size={18} /> 이전 구절</button>
             <span>{currentVerseNumber}절 · {verseIndex + 1} / {passageVerses.length}</span>
             <button onClick={() => recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex + 1, 'manual') : moveVerse(verseIndex + 1)} disabled={verseIndex === passageVerses.length - 1 || requestingMic || (recording && recordingMode === 'verse')} type="button">다음 구절 <ChevronRight size={18} /></button>
-          </div>
+          </div>}
         </section>
 
         <aside className="sound-panel" aria-label="음향 설정">
