@@ -245,6 +245,20 @@ type RecordingTake = {
   duration: number;
 };
 
+type ContinuousVerseBoundary = {
+  verseIndex: number;
+  startMs: number;
+  endMs: number;
+  transitionSource: 'timer' | 'manual' | 'stop';
+};
+
+function estimateVerseDurationMs(text: string) {
+  const readableCharacters = text.replace(/\s/g, '').length;
+  const commaPauses = (text.match(/[,，、]/g) ?? []).length * 400;
+  const sentencePauses = (text.match(/[.!?。？！]/g) ?? []).length * 800;
+  return Math.max(4_000, Math.round((readableCharacters / 4) * 1_000 + commaPauses + sentencePauses + 1_500));
+}
+
 type SavedRecording = {
   id: string;
   projectId: string;
@@ -402,6 +416,9 @@ export default function HomePage() {
   const [passageStartVerse, setPassageStartVerse] = useState(1);
   const [passageVerses, setPassageVerses] = useState(defaultVerses);
   const [recording, setRecording] = useState(false);
+  const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>('verse');
+  const [continuousProgress, setContinuousProgress] = useState(0);
+  const [continuousBoundaries, setContinuousBoundaries] = useState<ContinuousVerseBoundary[]>([]);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => defaultVerses.map(() => null));
@@ -462,9 +479,14 @@ export default function HomePage() {
   const chunksRef = useRef<Blob[]>([]);
   const discardRecordingRef = useRef(false);
   const recordingStartedAtRef = useRef(0);
+  const continuousVerseStartedAtRef = useRef(0);
+  const continuousVerseIndexRef = useRef(0);
+  const continuousBoundariesRef = useRef<ContinuousVerseBoundary[]>([]);
   const objectUrlsRef = useRef(new Set<string>());
   const youtubeContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
+  const restartBgmOnNextPlayRef = useRef(false);
+  const themeInitializedRef = useRef(false);
   const ownerKeyRef = useRef('');
   const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
   const savedRecordingAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -476,6 +498,38 @@ export default function HomePage() {
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
+  const expectedVerseDurationMs = estimateVerseDurationMs(passageVerses[verseIndex] ?? '');
+
+  const moveContinuousVerse = useCallback((nextIndex: number, source: 'timer' | 'manual') => {
+    const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
+    if (safeIndex === verseIndex) return;
+    const now = performance.now();
+    const sessionStart = recordingStartedAtRef.current;
+    const boundary: ContinuousVerseBoundary = {
+      verseIndex,
+      startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - sessionStart)),
+      endMs: Math.max(0, Math.round(now - sessionStart)),
+      transitionSource: source,
+    };
+    continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
+    setContinuousBoundaries(continuousBoundariesRef.current);
+    continuousVerseStartedAtRef.current = now;
+    continuousVerseIndexRef.current = safeIndex;
+    setContinuousProgress(0);
+    setVerseIndex(safeIndex);
+  }, [passageVerses.length, verseIndex]);
+
+  useEffect(() => {
+    if (!recording || recordingMode !== 'continuous') return;
+    const interval = window.setInterval(() => {
+      const elapsed = performance.now() - continuousVerseStartedAtRef.current;
+      const progress = Math.min(1, elapsed / expectedVerseDurationMs);
+      setContinuousProgress(progress);
+      setSeconds(Math.max(0, Math.floor((performance.now() - recordingStartedAtRef.current) / 1_000)));
+      if (progress >= 1 && verseIndex < passageVerses.length - 1) moveContinuousVerse(verseIndex + 1, 'timer');
+    }, 100);
+    return () => window.clearInterval(interval);
+  }, [expectedVerseDurationMs, moveContinuousVerse, passageVerses.length, recording, recordingMode, verseIndex]);
 
   useEffect(() => {
     const completed = window.localStorage.getItem('verse-legacy-onboarding-complete') === 'true';
@@ -596,12 +650,16 @@ export default function HomePage() {
     const savedTheme = window.localStorage.getItem('verse-legacy-theme');
     const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const initialTheme = savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : preferredTheme;
-    const frame = window.requestAnimationFrame(() => setTheme(initialTheme));
+    const frame = window.requestAnimationFrame(() => {
+      themeInitializedRef.current = true;
+      setTheme(initialTheme);
+    });
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    if (!themeInitializedRef.current) return;
     window.localStorage.setItem('verse-legacy-theme', theme);
   }, [theme]);
 
@@ -974,6 +1032,7 @@ export default function HomePage() {
 
   const stopPreview = () => {
     youtubePlayerRef.current?.stopVideo();
+    restartBgmOnNextPlayRef.current = true;
     setActivePreview(null);
     setBgmPaused(false);
   };
@@ -1069,8 +1128,12 @@ export default function HomePage() {
     }
 
     youtubePlayerRef.current.setVolume(volume);
-    if (activePreview === option.id) youtubePlayerRef.current.playVideo();
-    else youtubePlayerRef.current.loadVideoById({ videoId: option.videoId, startSeconds: option.startSeconds });
+    if (activePreview === option.id && !restartBgmOnNextPlayRef.current) {
+      youtubePlayerRef.current.playVideo();
+    } else {
+      youtubePlayerRef.current.loadVideoById({ videoId: option.videoId, startSeconds: option.startSeconds });
+    }
+    restartBgmOnNextPlayRef.current = false;
     setBgm(option.id);
     setActivePreview(option.id);
     setBgmPaused(false);
@@ -1080,6 +1143,10 @@ export default function HomePage() {
     youtubePlayerRef.current?.pauseVideo();
     setBgmPaused(true);
   };
+
+  const selectedBgmIsActive = activePreview === bgm;
+  const bgmIsPlaying = selectedBgmIsActive && !bgmPaused;
+  const bgmIsPaused = selectedBgmIsActive && bgmPaused;
 
   const selectLibraryBgm = (option: BgmOption) => {
     setBgm(option.id);
@@ -1176,7 +1243,7 @@ export default function HomePage() {
       const audioGraph = createRecordingAudioGraph(stream, reverb);
       const mimeType = getSupportedMimeType();
       const recorder = new MediaRecorder(audioGraph.stream, mimeType ? { mimeType } : undefined);
-      const targetVerseIndex = verseIndex;
+      const targetVerseIndex = recordingMode === 'continuous' ? 0 : verseIndex;
 
       streamRef.current = stream;
       recordingAudioContextRef.current = audioGraph.context;
@@ -1187,6 +1254,14 @@ export default function HomePage() {
 
       recorder.onstart = (event) => {
         recordingStartedAtRef.current = event.timeStamp;
+        if (recordingMode === 'continuous') {
+          continuousVerseStartedAtRef.current = event.timeStamp;
+          continuousVerseIndexRef.current = 0;
+          continuousBoundariesRef.current = [];
+          setContinuousBoundaries([]);
+          setContinuousProgress(0);
+          setVerseIndex(0);
+        }
       };
 
       recorder.ondataavailable = (event) => {
@@ -1205,6 +1280,17 @@ export default function HomePage() {
 
         if (discardRecordingRef.current || chunks.length === 0) return;
 
+        if (recordingMode === 'continuous') {
+          const finalBoundary: ContinuousVerseBoundary = {
+            verseIndex: continuousVerseIndexRef.current,
+            startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
+            endMs: Math.max(0, Math.round(event.timeStamp - recordingStartedAtRef.current)),
+            transitionSource: 'stop',
+          };
+          continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== continuousVerseIndexRef.current), finalBoundary];
+          setContinuousBoundaries(continuousBoundariesRef.current);
+        }
+
         const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
         const blob = new Blob(chunks, { type: finalMimeType });
         const url = URL.createObjectURL(blob);
@@ -1222,7 +1308,7 @@ export default function HomePage() {
           return next;
         });
         setSeconds(duration);
-        setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
+        setNotice(recordingMode === 'continuous' ? `${continuousBoundariesRef.current.length}개 절의 경계를 기록했어요.` : '녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
       };
 
       recorder.onerror = () => {
@@ -1780,10 +1866,15 @@ export default function HomePage() {
           <div><span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span><strong>{activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong></div>
           <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         </div>
-        <nav className="desktop-tabs" aria-label="주요 화면">
-          <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={16} /> 녹음</button>
-          <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={16} /> 듣기</button>
-        </nav>
+        <div className="topbar-actions">
+          <nav className="desktop-tabs" aria-label="주요 화면">
+            <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={16} /> 녹음</button>
+            <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={16} /> 듣기</button>
+          </nav>
+          <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+        </div>
       </header>
 
       {appTab === 'recording' && <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>}
@@ -1829,10 +1920,14 @@ export default function HomePage() {
         </aside>
 
         <section className="recording-card" aria-label="성경 녹음 화면">
+          <div className="recording-mode-switch" aria-label="녹음 방식">
+            <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => setRecordingMode('verse')}>절별 녹음</button>
+            <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { setRecordingMode('continuous'); setVerseIndex(0); }}>이어 녹음</button>
+          </div>
           <div className="recording-heading">
             <div>
               <p className="eyebrow">{passageBook.name} {passageChapter}장 · {currentVerseNumber}절</p>
-              <h1>천천히, 평소 목소리로 읽어 주세요.</h1>
+              <h1>{recordingMode === 'continuous' ? '본문을 따라 자연스럽게 이어 읽어 주세요.' : '천천히, 평소 목소리로 읽어 주세요.'}</h1>
             </div>
             <span className={`status-pill ${recording ? 'live' : hasTake || currentVerseSaved ? 'ready' : ''}`}>
               {recording ? '녹음 중' : hasTake ? '재생 가능' : currentVerseSaved ? '저장 완료' : replacingRecording ? '다시 녹음' : '녹음 전'}
@@ -1847,10 +1942,16 @@ export default function HomePage() {
             </div>
           )}
 
-          <article className="verse-paper">
+          <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
             <span className="verse-number">{currentVerseNumber}</span>
             <p>{passageVerses[verseIndex]}</p>
+            {recordingMode === 'continuous' && verseIndex < passageVerses.length - 1 && <div className="next-verse-preview"><small>다음 {currentVerseNumber + 1}절</small><span>{passageVerses[verseIndex + 1]}</span></div>}
           </article>
+
+          {recordingMode === 'continuous' && <div className="continuous-timing" aria-label="현재 절 자동 진행 시간">
+            <div><span>예상 낭독 시간 {Math.ceil(expectedVerseDurationMs / 1000)}초</span><strong>{recording ? '자동 진행 중' : continuousBoundaries.length ? `${continuousBoundaries.length}개 경계 기록됨` : '녹음 시작 전'}</strong></div>
+            <div className="continuous-progress"><span style={{ width: `${continuousProgress * 100}%` }} /></div>
+          </div>}
 
           <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
             {Array.from({ length: 34 }).map((_, index) => (
@@ -1901,9 +2002,9 @@ export default function HomePage() {
           )}
 
           <div className="verse-navigation">
-            <button onClick={() => moveVerse(verseIndex - 1)} disabled={verseIndex === 0 || recording || requestingMic} type="button"><ChevronLeft size={18} /> 이전 구절</button>
+            <button onClick={() => recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex - 1, 'manual') : moveVerse(verseIndex - 1)} disabled={verseIndex === 0 || requestingMic || (recording && recordingMode === 'verse')} type="button"><ChevronLeft size={18} /> 이전 구절</button>
             <span>{currentVerseNumber}절 · {verseIndex + 1} / {passageVerses.length}</span>
-            <button onClick={() => moveVerse(verseIndex + 1)} disabled={verseIndex === passageVerses.length - 1 || recording || requestingMic} type="button">다음 구절 <ChevronRight size={18} /></button>
+            <button onClick={() => recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex + 1, 'manual') : moveVerse(verseIndex + 1)} disabled={verseIndex === passageVerses.length - 1 || requestingMic || (recording && recordingMode === 'verse')} type="button">다음 구절 <ChevronRight size={18} /></button>
           </div>
         </section>
 
@@ -1946,11 +2047,11 @@ export default function HomePage() {
           </fieldset>
 
           <div className="bgm-transport" aria-label="배경음악 재생 조작">
-            <button type="button" onClick={() => {
+            <button className={bgmIsPlaying ? 'active' : ''} type="button" onClick={() => {
               const option = bgmOptions.find((item) => item.id === bgm);
               if (option) playSelectedBgm(option);
-            }} disabled={!playerReady || bgm === 'none'} aria-label="배경음악 재생"><Play size={16} /><span>재생</span></button>
-            <button type="button" onClick={pauseSelectedBgm} disabled={!activePreview || bgmPaused} aria-label="배경음악 일시정지"><Pause size={16} /><span>일시정지</span></button>
+            }} disabled={!playerReady || bgm === 'none' || bgmIsPlaying} aria-label={bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'} aria-pressed={bgmIsPlaying}><Play size={16} /><span>{bgmIsPlaying ? '재생 중' : '재생'}</span></button>
+            <button className={bgmIsPaused ? 'active' : ''} type="button" onClick={pauseSelectedBgm} disabled={!bgmIsPlaying} aria-label={bgmIsPaused ? '배경음악 일시정지됨' : '배경음악 일시정지'} aria-pressed={bgmIsPaused}><Pause size={16} /><span>{bgmIsPaused ? '멈춤 상태' : '일시정지'}</span></button>
             <button type="button" onClick={stopPreview} disabled={!activePreview} aria-label="배경음악 정지"><CircleStop size={16} /><span>정지</span></button>
           </div>
 
@@ -2116,11 +2217,6 @@ export default function HomePage() {
       </section>}
 
       <footer className="page-footer">
-        <button className="theme-toggle" onClick={() => setOnboardingStep('welcome')} type="button" aria-label="시작 방식과 프로젝트 다시 선택"><Target size={18} /><span>프로젝트 선택</span></button>
-        <button className="theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          <span>{theme === 'dark' ? '라이트 모드' : '다크 모드'}</span>
-        </button>
         <p>말씀유산 · 소중한 목소리를 오래 간직하는 성경 낭독</p>
       </footer>
 
