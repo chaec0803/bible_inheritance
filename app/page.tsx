@@ -1428,7 +1428,7 @@ export default function HomePage() {
         if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
       }));
       await refreshLibrary();
-      setNotice(`${boundaries.length}개 절을 저장했어요. 멈춘 절은 저장하지 않았어요.`);
+      setNotice(`${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
     } finally {
@@ -1505,7 +1505,7 @@ export default function HomePage() {
 
         if (discardRecordingRef.current || chunks.length === 0) return;
 
-        const completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
+        let completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
         if (recordingMode === 'continuous') {
           const finalBoundary: ContinuousVerseBoundary = {
             verseIndex: continuousVerseIndexRef.current,
@@ -1515,6 +1515,7 @@ export default function HomePage() {
           };
           continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== continuousVerseIndexRef.current), finalBoundary];
           setContinuousBoundaries(continuousBoundariesRef.current);
+          completedContinuousBoundaries = [...continuousBoundariesRef.current];
         }
 
         const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
