@@ -259,6 +259,40 @@ function estimateVerseDurationMs(text: string) {
   return Math.max(4_000, Math.round((readableCharacters / 4) * 1_000 + commaPauses + sentencePauses + 1_500));
 }
 
+function encodeAudioBufferAsWav(buffer: AudioBuffer, startMs: number, endMs: number) {
+  const startFrame = Math.max(0, Math.floor((startMs / 1_000) * buffer.sampleRate));
+  const endFrame = Math.min(buffer.length, Math.ceil((endMs / 1_000) * buffer.sampleRate));
+  const frameCount = Math.max(1, endFrame - startFrame);
+  const channelCount = Math.min(2, buffer.numberOfChannels);
+  const bytesPerSample = 2;
+  const wav = new ArrayBuffer(44 + frameCount * channelCount * bytesPerSample);
+  const view = new DataView(wav);
+  const write = (offset: number, value: string) => Array.from(value).forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
+  write(0, 'RIFF');
+  view.setUint32(4, wav.byteLength - 8, true);
+  write(8, 'WAVE');
+  write(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, buffer.sampleRate, true);
+  view.setUint32(28, buffer.sampleRate * channelCount * bytesPerSample, true);
+  view.setUint16(32, channelCount * bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  write(36, 'data');
+  view.setUint32(40, frameCount * channelCount * bytesPerSample, true);
+  const channels = Array.from({ length: channelCount }, (_, index) => buffer.getChannelData(index));
+  let offset = 44;
+  for (let frame = startFrame; frame < endFrame; frame += 1) {
+    for (let channel = 0; channel < channelCount; channel += 1) {
+      const sample = Math.max(-1, Math.min(1, channels[channel][frame] ?? 0));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += bytesPerSample;
+    }
+  }
+  return new Blob([wav], { type: 'audio/wav' });
+}
+
 type SavedRecording = {
   id: string;
   projectId: string;
@@ -418,6 +452,7 @@ export default function HomePage() {
   const [recording, setRecording] = useState(false);
   const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>('verse');
   const [continuousProgress, setContinuousProgress] = useState(0);
+  const [continuousSpeed, setContinuousSpeed] = useState(1);
   const [continuousBoundaries, setContinuousBoundaries] = useState<ContinuousVerseBoundary[]>([]);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -498,7 +533,7 @@ export default function HomePage() {
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
-  const expectedVerseDurationMs = estimateVerseDurationMs(passageVerses[verseIndex] ?? '');
+  const expectedVerseDurationMs = estimateVerseDurationMs(passageVerses[verseIndex] ?? '') / continuousSpeed;
   const karaokeCharacters = Array.from(passageVerses[verseIndex] ?? '');
   const karaokeCharacterIndex = recording && recordingMode === 'continuous'
     ? Math.min(karaokeCharacters.length - 1, Math.floor(continuousProgress * karaokeCharacters.length))
@@ -531,6 +566,19 @@ export default function HomePage() {
       setContinuousProgress(progress);
       setSeconds(Math.max(0, Math.floor((performance.now() - recordingStartedAtRef.current) / 1_000)));
       if (progress >= 1 && verseIndex < passageVerses.length - 1) moveContinuousVerse(verseIndex + 1, 'timer');
+      if (progress >= 1 && verseIndex === passageVerses.length - 1 && mediaRecorderRef.current?.state === 'recording') {
+        const now = performance.now();
+        const finalBoundary: ContinuousVerseBoundary = {
+          verseIndex,
+          startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
+          endMs: Math.max(0, Math.round(now - recordingStartedAtRef.current)),
+          transitionSource: 'timer',
+        };
+        continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), finalBoundary];
+        setContinuousBoundaries(continuousBoundariesRef.current);
+        mediaRecorderRef.current.stop();
+        setNotice('마지막 절까지 읽었어요. 완료한 절을 저장하고 있어요.');
+      }
     }, 100);
     return () => window.clearInterval(interval);
   }, [expectedVerseDurationMs, moveContinuousVerse, passageVerses.length, recording, recordingMode, verseIndex]);
@@ -1216,6 +1264,42 @@ export default function HomePage() {
     }
   };
 
+  const saveCompletedContinuousVerses = async (sourceBlob: Blob, boundaries: ContinuousVerseBoundary[]) => {
+    if (!boundaries.length) {
+      setNotice('완료한 절이 없어 저장하지 않았어요. 읽던 절부터 다시 시작할 수 있어요.');
+      return;
+    }
+    setSavingLibrary(true);
+    const decodeContext = new AudioContext();
+    try {
+      const decoded = await decodeContext.decodeAudioData(await sourceBlob.arrayBuffer());
+      await Promise.all(boundaries.map(async (boundary) => {
+        const verseNumber = passageStartVerse + boundary.verseIndex;
+        const verseAudio = encodeAudioBufferAsWav(decoded, boundary.startMs, boundary.endMs);
+        const formData = new FormData();
+        formData.append('audio', new File([verseAudio], `${passageBook.name}${passageChapter}장_${verseNumber}절.wav`, { type: 'audio/wav' }));
+        formData.append('book', passageBook.name);
+        formData.append('chapter', String(passageChapter));
+        formData.append('verse', String(verseNumber));
+        formData.append('verseText', passageVerses[boundary.verseIndex] ?? '');
+        formData.append('projectId', activeProject?.id ?? 'free-recording');
+        formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
+        formData.append('bgmId', bgm);
+        formData.append('reverb', reverb);
+        formData.append('durationSeconds', String(Math.max(1, Math.round((boundary.endMs - boundary.startMs) / 1_000))));
+        const response = await fetch('/api/recordings', { method: 'POST', headers: { 'x-verse-legacy-owner': ownerKeyRef.current }, body: formData });
+        if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
+      }));
+      await refreshLibrary();
+      setNotice(`${boundaries.length}개 절을 저장했어요. 멈춘 절은 저장하지 않았어요.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
+    } finally {
+      await decodeContext.close();
+      setSavingLibrary(false);
+    }
+  };
+
   const startRecording = async (skipHeadphoneWarning = false) => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setNotice('이 브라우저에서는 마이크 녹음을 지원하지 않아요. 최신 Safari나 Chrome을 사용해 주세요.');
@@ -1284,6 +1368,7 @@ export default function HomePage() {
 
         if (discardRecordingRef.current || chunks.length === 0) return;
 
+        const completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
         if (recordingMode === 'continuous') {
           const finalBoundary: ContinuousVerseBoundary = {
             verseIndex: continuousVerseIndexRef.current,
@@ -1297,11 +1382,14 @@ export default function HomePage() {
 
         const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
         const blob = new Blob(chunks, { type: finalMimeType });
-        const url = URL.createObjectURL(blob);
         const duration = Math.max(1, Math.round((event.timeStamp - recordingStartedAtRef.current) / 1000));
-        objectUrlsRef.current.add(url);
 
-        setTakes((current) => {
+        if (recordingMode === 'continuous') {
+          void saveCompletedContinuousVerses(blob, completedContinuousBoundaries);
+        } else {
+          const url = URL.createObjectURL(blob);
+          objectUrlsRef.current.add(url);
+          setTakes((current) => {
           const next = [...current];
           const previousTake = next[targetVerseIndex];
           if (previousTake) {
@@ -1310,9 +1398,10 @@ export default function HomePage() {
           }
           next[targetVerseIndex] = { url, blob, mimeType: finalMimeType, duration };
           return next;
-        });
+          });
+        }
         setSeconds(duration);
-        setNotice(recordingMode === 'continuous' ? `${continuousBoundariesRef.current.length}개 절의 경계를 기록했어요.` : '녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
+        if (recordingMode !== 'continuous') setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
       };
 
       recorder.onerror = () => {
@@ -1323,7 +1412,7 @@ export default function HomePage() {
         setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
       };
 
-      setTakes((current) => {
+      if (recordingMode === 'verse') setTakes((current) => {
         const next = [...current];
         const previousTake = next[targetVerseIndex];
         if (previousTake) {
@@ -1957,6 +2046,11 @@ export default function HomePage() {
           {recordingMode === 'continuous' && <div className="continuous-timing" aria-label="현재 절 자동 진행 시간">
             <div><span>예상 낭독 시간 {Math.ceil(expectedVerseDurationMs / 1000)}초</span><strong>{recording ? '자동 진행 중' : continuousBoundaries.length ? `${continuousBoundaries.length}개 경계 기록됨` : '녹음 시작 전'}</strong></div>
             <div className="continuous-progress"><span style={{ width: `${continuousProgress * 100}%` }} /></div>
+            <div className="continuous-speed" aria-label="자막 진행 속도">
+              <button type="button" onClick={() => setContinuousSpeed((speed) => Math.max(.5, speed - .25))} disabled={continuousSpeed <= .5}>− 느리게</button>
+              <strong>{continuousSpeed.toFixed(2).replace(/0$/, '')}×</strong>
+              <button type="button" onClick={() => setContinuousSpeed((speed) => Math.min(1.5, speed + .25))} disabled={continuousSpeed >= 1.5}>빠르게 +</button>
+            </div>
           </div>}
 
           <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>

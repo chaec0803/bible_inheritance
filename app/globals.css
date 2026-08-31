@@ -384,6 +384,11 @@ h1, h2, p { margin-top: 0; }
 .continuous-timing strong { color: var(--sage); }
 .continuous-progress { height: 5px; overflow: hidden; background: var(--progress-bg); border-radius: 999px; }
 .continuous-progress span { display: block; height: 100%; background: var(--sage); border-radius: inherit; transition: width .1s linear; }
+.continuous-speed { margin-top: 5px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.continuous-speed button { min-height: 36px; padding: 8px 11px; color: var(--sage); background: var(--paper); border: 1px solid color-mix(in srgb, var(--sage) 40%, var(--line)); border-radius: 10px; font-size: 9px; font-weight: 900; cursor: pointer; }
+.continuous-speed button:last-child { justify-self: stretch; }
+.continuous-speed button:disabled { opacity: .35; cursor: default; }
+.continuous-speed strong { min-width: 42px; color: var(--ink); text-align: center; font-size: 11px; }
 .verse-paper::after { content: '“'; position: absolute; right: 24px; bottom: -36px; color: rgba(183, 137, 63, .08); font-family: Georgia, serif; font-size: 180px; }
 .verse-paper p { position: relative; z-index: 1; width: min(600px, 100%); margin: 0; text-align: center; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: clamp(21px, 3.2vw, 34px); line-height: 1.72; letter-spacing: -.025em; }
 .verse-number { position: absolute; top: 17px; left: 18px; width: 27px; height: 27px; display: grid; place-items: center; background: var(--gold); color: white; border-radius: 50% 50% 50% 15%; font-size: 11px; font-weight: 800; }
