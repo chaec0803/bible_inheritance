@@ -389,16 +389,16 @@ function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
   highPass.Q.value = 0.7;
 
   // Gentle speech levelling keeps softly and loudly read verses closer together.
-  leveler.threshold.value = -30;
-  leveler.knee.value = 24;
-  leveler.ratio.value = 5;
-  leveler.attack.value = 0.008;
-  leveler.release.value = 0.28;
-  makeupGain.gain.value = 1.3;
+  leveler.threshold.value = -18;
+  leveler.knee.value = 12;
+  leveler.ratio.value = 2;
+  leveler.attack.value = 0.015;
+  leveler.release.value = 0.22;
+  makeupGain.gain.value = 1;
   dryGain.gain.value = reverb === '원음' ? 1 : 0.94;
 
   // The final limiter protects the recorded file from clipping after make-up gain.
-  limiter.threshold.value = -3;
+  limiter.threshold.value = -1;
   limiter.knee.value = 0;
   limiter.ratio.value = 20;
   limiter.attack.value = 0.002;
@@ -445,13 +445,13 @@ export default function HomePage() {
   const [passageStartVerse, setPassageStartVerse] = useState(1);
   const [passageVerses, setPassageVerses] = useState(defaultVerses);
   const [recording, setRecording] = useState(false);
-  const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>('verse');
+  const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>('continuous');
   const [, setContinuousBoundaries] = useState<ContinuousVerseBoundary[]>([]);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => defaultVerses.map(() => null));
   const [saved, setSaved] = useState<boolean[]>(() => defaultVerses.map(() => false));
-  const [reverb, setReverb] = useState('따뜻하게');
+  const [reverb, setReverb] = useState('원음');
   const [bgm, setBgm] = useState('still-waters');
   const [volume, setVolume] = useState(12);
   const [notice, setNotice] = useState('');
@@ -1393,14 +1393,14 @@ export default function HomePage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          autoGainControl: true,
-          echoCancellation: true,
-          noiseSuppression: true,
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false,
         },
       });
       const audioGraph = createRecordingAudioGraph(stream, reverb);
       const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(audioGraph.stream, mimeType ? { mimeType } : undefined);
+      const recorder = new MediaRecorder(audioGraph.stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 192_000 });
       const targetVerseIndex = recordingMode === 'continuous' ? 0 : verseIndex;
 
       streamRef.current = stream;
@@ -2089,8 +2089,8 @@ export default function HomePage() {
 
         <section className="recording-card" aria-label="성경 녹음 화면">
           <div className="recording-mode-switch" aria-label="녹음 방식">
-            <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('verse'); }}>절별 녹음</button>
             <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('continuous'); setVerseIndex(0); }}>이어 녹음</button>
+            <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('verse'); }}>절별 수정</button>
           </div>
           <div className="recording-heading">
             <div>
@@ -2178,7 +2178,7 @@ export default function HomePage() {
 
           <fieldset className="setting-group">
             <legend>리버브</legend>
-            <p>녹음 파일에 자연스러운 공간감을 실제로 더해요.</p>
+            <p>깨끗한 원음을 기본으로 저장하고, 원할 때만 공간감을 더해요.</p>
             <div className="segment-control">
               {reverbOptions.map((option) => (
                 <button className={reverb === option ? 'selected' : ''} onClick={() => setReverb(option)} type="button" key={option}>{option}</button>
