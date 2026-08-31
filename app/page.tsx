@@ -249,15 +249,8 @@ type ContinuousVerseBoundary = {
   verseIndex: number;
   startMs: number;
   endMs: number;
-  transitionSource: 'timer' | 'manual' | 'silence' | 'stop';
+  transitionSource: 'manual' | 'stop';
 };
-
-function estimateVerseDurationMs(text: string) {
-  const readableCharacters = text.replace(/\s/g, '').length;
-  const commaPauses = (text.match(/[,，、]/g) ?? []).length * 400;
-  const sentencePauses = (text.match(/[.!?。？！]/g) ?? []).length * 800;
-  return Math.max(4_000, Math.round((readableCharacters / 4) * 1_000 + commaPauses + sentencePauses + 1_500));
-}
 
 function encodeAudioBufferAsWav(buffer: AudioBuffer, startMs: number, endMs: number) {
   const startFrame = Math.max(0, Math.floor((startMs / 1_000) * buffer.sampleRate));
@@ -388,7 +381,6 @@ function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
   const mix = context.createGain();
   const limiter = context.createDynamicsCompressor();
   const destination = context.createMediaStreamDestination();
-  const analyser = context.createAnalyser();
 
   highPass.type = 'highpass';
   highPass.frequency.value = 70;
@@ -411,7 +403,6 @@ function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
   limiter.release.value = 0.12;
 
   source.connect(highPass);
-  source.connect(analyser);
   highPass.connect(leveler);
   leveler.connect(makeupGain);
   makeupGain.connect(dryGain);
@@ -442,9 +433,7 @@ function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
   mix.connect(limiter);
   limiter.connect(destination);
 
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.35;
-  return { analyser, context, stream: destination.stream };
+  return { context, stream: destination.stream };
 }
 
 export default function HomePage() {
@@ -455,9 +444,7 @@ export default function HomePage() {
   const [passageVerses, setPassageVerses] = useState(defaultVerses);
   const [recording, setRecording] = useState(false);
   const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>('verse');
-  const [continuousProgress, setContinuousProgress] = useState(0);
-  const [continuousSpeed, setContinuousSpeed] = useState(1);
-  const [continuousBoundaries, setContinuousBoundaries] = useState<ContinuousVerseBoundary[]>([]);
+  const [, setContinuousBoundaries] = useState<ContinuousVerseBoundary[]>([]);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => defaultVerses.map(() => null));
@@ -521,9 +508,6 @@ export default function HomePage() {
   const continuousVerseStartedAtRef = useRef(0);
   const continuousVerseIndexRef = useRef(0);
   const continuousBoundariesRef = useRef<ContinuousVerseBoundary[]>([]);
-  const continuousAnalyserRef = useRef<AnalyserNode | null>(null);
-  const continuousHeardVoiceRef = useRef(false);
-  const continuousSilenceStartedAtRef = useRef(0);
   const objectUrlsRef = useRef(new Set<string>());
   const youtubeContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
@@ -540,13 +524,7 @@ export default function HomePage() {
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
-  const expectedVerseDurationMs = estimateVerseDurationMs(passageVerses[verseIndex] ?? '') / continuousSpeed;
-  const karaokeCharacters = Array.from(passageVerses[verseIndex] ?? '');
-  const karaokeReadCount = recording && recordingMode === 'continuous'
-    ? Math.ceil(continuousProgress * karaokeCharacters.length)
-    : 0;
-
-  const moveContinuousVerse = useCallback((nextIndex: number, source: 'timer' | 'manual' | 'silence') => {
+  const moveContinuousVerse = useCallback((nextIndex: number, source: 'manual') => {
     const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
     if (safeIndex === verseIndex) return;
     const now = performance.now();
@@ -561,16 +539,13 @@ export default function HomePage() {
     setContinuousBoundaries(continuousBoundariesRef.current);
     continuousVerseStartedAtRef.current = now;
     continuousVerseIndexRef.current = safeIndex;
-    setContinuousProgress(0);
     setVerseIndex(safeIndex);
   }, [passageVerses.length, verseIndex]);
 
-  const completeContinuousVerse = useCallback((source: 'manual' | 'silence') => {
+  const completeContinuousVerse = useCallback(() => {
     if (!recording || recordingMode !== 'continuous') return;
     if (verseIndex < passageVerses.length - 1) {
-      moveContinuousVerse(verseIndex + 1, source);
-      continuousHeardVoiceRef.current = false;
-      continuousSilenceStartedAtRef.current = 0;
+      moveContinuousVerse(verseIndex + 1, 'manual');
       return;
     }
     const now = performance.now();
@@ -578,7 +553,7 @@ export default function HomePage() {
       verseIndex,
       startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
       endMs: Math.max(0, Math.round(now - recordingStartedAtRef.current)),
-      transitionSource: source,
+      transitionSource: 'manual',
     };
     continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
     setContinuousBoundaries(continuousBoundariesRef.current);
@@ -589,26 +564,10 @@ export default function HomePage() {
   useEffect(() => {
     if (!recording || recordingMode !== 'continuous') return;
     const interval = window.setInterval(() => {
-      const elapsed = performance.now() - continuousVerseStartedAtRef.current;
-      const progress = Math.min(1, elapsed / expectedVerseDurationMs);
-      setContinuousProgress(progress);
       setSeconds(Math.max(0, Math.floor((performance.now() - recordingStartedAtRef.current) / 1_000)));
-      const analyser = continuousAnalyserRef.current;
-      if (analyser) {
-        const samples = new Uint8Array(analyser.fftSize);
-        analyser.getByteTimeDomainData(samples);
-        const rms = Math.sqrt(samples.reduce((sum, sample) => sum + Math.pow((sample - 128) / 128, 2), 0) / samples.length);
-        if (rms > .035) {
-          continuousHeardVoiceRef.current = true;
-          continuousSilenceStartedAtRef.current = 0;
-        } else if (continuousHeardVoiceRef.current && progress >= .65) {
-          if (!continuousSilenceStartedAtRef.current) continuousSilenceStartedAtRef.current = performance.now();
-          if (performance.now() - continuousSilenceStartedAtRef.current >= 1_100) completeContinuousVerse('silence');
-        }
-      }
-    }, 100);
+    }, 500);
     return () => window.clearInterval(interval);
-  }, [completeContinuousVerse, expectedVerseDurationMs, recording, recordingMode]);
+  }, [recording, recordingMode]);
 
   useEffect(() => {
     const completed = window.localStorage.getItem('verse-legacy-onboarding-complete') === 'true';
@@ -1362,7 +1321,6 @@ export default function HomePage() {
 
       streamRef.current = stream;
       recordingAudioContextRef.current = audioGraph.context;
-      continuousAnalyserRef.current = recordingMode === 'continuous' ? audioGraph.analyser : null;
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
       discardRecordingRef.current = false;
@@ -1374,10 +1332,7 @@ export default function HomePage() {
           continuousVerseStartedAtRef.current = event.timeStamp;
           continuousVerseIndexRef.current = 0;
           continuousBoundariesRef.current = [];
-          continuousHeardVoiceRef.current = false;
-          continuousSilenceStartedAtRef.current = 0;
           setContinuousBoundaries([]);
-          setContinuousProgress(0);
           setVerseIndex(0);
         }
       };
@@ -1393,7 +1348,6 @@ export default function HomePage() {
         void audioGraph.context.close();
         streamRef.current = null;
         recordingAudioContextRef.current = null;
-        continuousAnalyserRef.current = null;
         mediaRecorderRef.current = null;
         setRecording(false);
 
@@ -1439,7 +1393,6 @@ export default function HomePage() {
         stream.getTracks().forEach((track) => track.stop());
         void audioGraph.context.close();
         recordingAudioContextRef.current = null;
-        continuousAnalyserRef.current = null;
         setRecording(false);
         setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
       };
@@ -2069,24 +2022,12 @@ export default function HomePage() {
 
           <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
             <span className="verse-number">{currentVerseNumber}</span>
-            {recordingMode === 'continuous' ? <button className="karaoke-tap-area" type="button" disabled={!recording} onClick={() => completeContinuousVerse('manual')} aria-label={recording ? `${currentVerseNumber}절을 다 읽음, 다음 절로 이동` : '이어 녹음을 시작하면 화면을 눌러 다음 절로 이동할 수 있어요'}>
-              <p className="karaoke-verse" aria-label={passageVerses[verseIndex]}>
-                <span aria-hidden="true">{karaokeCharacters.map((character, index) => <span className={recording && index < karaokeReadCount ? 'read' : ''} key={`${character}-${index}`}>{character}</span>)}</span>
-              </p>
+            {recordingMode === 'continuous' ? <button className="karaoke-tap-area" type="button" disabled={!recording} onClick={completeContinuousVerse} aria-label={recording ? `${currentVerseNumber}절을 다 읽음, 다음 절로 이동` : '이어 녹음을 시작하면 화면을 눌러 다음 절로 이동할 수 있어요'}>
+              <p>{passageVerses[verseIndex]}</p>
               {verseIndex < passageVerses.length - 1 && <span className="next-verse-preview"><small>다음 {currentVerseNumber + 1}절</small><span>{passageVerses[verseIndex + 1]}</span></span>}
-              {recording && continuousProgress >= 1 && <strong className="tap-to-continue">다 읽었으면 화면을 탭하세요</strong>}
+              {recording && <strong className="tap-to-continue">다 읽었으면 화면을 탭하세요</strong>}
             </button> : <p>{passageVerses[verseIndex]}</p>}
           </article>
-
-          {recordingMode === 'continuous' && <div className="continuous-timing" aria-label="현재 절 자동 진행 시간">
-            <div><span>예상 낭독 시간 {Math.ceil(expectedVerseDurationMs / 1000)}초</span><strong>{recording ? continuousProgress >= 1 ? '탭 또는 잠시 멈추면 다음 절' : '읽기 가이드 진행 중' : continuousBoundaries.length ? `${continuousBoundaries.length}개 경계 기록됨` : '녹음 시작 전'}</strong></div>
-            <div className="continuous-progress"><span style={{ width: `${continuousProgress * 100}%` }} /></div>
-            <div className="continuous-speed" aria-label="자막 진행 속도">
-              <button type="button" onClick={() => setContinuousSpeed((speed) => Math.max(.5, speed - .25))} disabled={continuousSpeed <= .5}>− 느리게</button>
-              <strong>{continuousSpeed.toFixed(2).replace(/0$/, '')}×</strong>
-              <button type="button" onClick={() => setContinuousSpeed((speed) => Math.min(1.5, speed + .25))} disabled={continuousSpeed >= 1.5}>빠르게 +</button>
-            </div>
-          </div>}
 
           <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
             {Array.from({ length: 34 }).map((_, index) => (

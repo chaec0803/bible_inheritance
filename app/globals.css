@@ -374,24 +374,11 @@ h1, h2, p { margin-top: 0; }
 .verse-paper.continuous { align-content: center; gap: 26px; padding-bottom: 30px; }
 .karaoke-tap-area { width: 100%; display: grid; place-items: center; gap: 26px; color: inherit; background: transparent; border: 0; cursor: pointer; }
 .karaoke-tap-area:disabled { cursor: default; }
-.karaoke-verse { color: color-mix(in srgb, var(--muted) 48%, transparent); white-space: pre-wrap; }
-.karaoke-verse > span > span { transition: color .12s ease, background-color .12s ease, text-shadow .12s ease; }
-.karaoke-verse > span > span.read { color: var(--ink); }
 .next-verse-preview { width: min(620px, 100%); padding-top: 18px; display: grid; gap: 6px; color: var(--muted); border-top: 1px solid var(--paper-border); opacity: .62; }
 .next-verse-preview small { color: var(--sage); font-size: 9px; font-weight: 900; }
 .next-verse-preview span { font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 14px; line-height: 1.55; }
 .tap-to-continue { padding: 8px 12px; color: var(--sage); background: var(--sage-soft); border-radius: 999px; font-size: 9px; animation: tap-pulse 1.4s ease-in-out infinite; }
 @keyframes tap-pulse { 50% { opacity: .55; transform: scale(.98); } }
-.continuous-timing { margin: -20px 0 28px; display: grid; gap: 7px; }
-.continuous-timing > div:first-child { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 9px; }
-.continuous-timing strong { color: var(--sage); }
-.continuous-progress { height: 5px; overflow: hidden; background: var(--progress-bg); border-radius: 999px; }
-.continuous-progress span { display: block; height: 100%; background: var(--sage); border-radius: inherit; transition: width .1s linear; }
-.continuous-speed { margin-top: 5px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
-.continuous-speed button { min-height: 36px; padding: 8px 11px; color: var(--sage); background: var(--paper); border: 1px solid color-mix(in srgb, var(--sage) 40%, var(--line)); border-radius: 10px; font-size: 9px; font-weight: 900; cursor: pointer; }
-.continuous-speed button:last-child { justify-self: stretch; }
-.continuous-speed button:disabled { opacity: .35; cursor: default; }
-.continuous-speed strong { min-width: 42px; color: var(--ink); text-align: center; font-size: 11px; }
 .verse-paper::after { content: '“'; position: absolute; right: 24px; bottom: -36px; color: rgba(183, 137, 63, .08); font-family: Georgia, serif; font-size: 180px; }
 .verse-paper p { position: relative; z-index: 1; width: min(600px, 100%); margin: 0; text-align: center; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: clamp(21px, 3.2vw, 34px); line-height: 1.72; letter-spacing: -.025em; }
 .verse-number { position: absolute; top: 17px; left: 18px; width: 27px; height: 27px; display: grid; place-items: center; background: var(--gold); color: white; border-radius: 50% 50% 50% 15%; font-size: 11px; font-weight: 800; }
