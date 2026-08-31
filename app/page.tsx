@@ -441,6 +441,8 @@ function getSupportedMimeType() {
 }
 
 function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
+  if (reverb === '원음') return { context: null, stream };
+
   const context = new AudioContext();
   const source = context.createMediaStreamSource(stream);
   const highPass = context.createBiquadFilter();
@@ -932,8 +934,9 @@ export default function HomePage() {
     .filter((item) => Boolean(continuousPlaybackGroupId) && item.book === passageBook.name && item.chapter === passageChapter && item.recordingGroupId === continuousPlaybackGroupId)
     .sort((left, right) => left.verse - right.verse);
   const playbackRecording = recordingMode === 'continuous'
-    ? continuousPlaybackQueue.find((item) => item.id === continuousPlaybackRecordingId) ?? continuousPlaybackQueue[0] ?? null
+    ? continuousPlaybackQueue.find((item) => item.id === continuousPlaybackRecordingId) ?? continuousPlaybackQueue[0] ?? currentSavedRecording
     : currentSavedRecording;
+  const playingContinuousBlock = recordingMode === 'continuous' && continuousPlaybackQueue.length > 0;
   const savedPassageVerseNumbers = new Set(activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter).map((item) => item.verse));
   const currentVerseSaved = Boolean(currentSavedRecording);
   const completedProjectTaskIndexes = useMemo(() => {
@@ -1399,7 +1402,7 @@ export default function HomePage() {
       audio?.pause();
       return;
     }
-    if (recordingMode === 'continuous') {
+    if (playingContinuousBlock) {
       const first = continuousPlaybackQueue[0];
       if (!first) return;
       continuousPlaybackAutoplayRef.current = true;
@@ -1413,7 +1416,7 @@ export default function HomePage() {
 
   const handleSavedRecordingEnded = () => {
     setSavedRecordingPlaying(false);
-    if (recordingMode !== 'continuous' || !continuousPlaybackAutoplayRef.current || !playbackRecording) return;
+    if (!playingContinuousBlock || !continuousPlaybackAutoplayRef.current || !playbackRecording) return;
     const currentIndex = continuousPlaybackQueue.findIndex((item) => item.id === playbackRecording.id);
     const next = continuousPlaybackQueue[currentIndex + 1];
     if (!next) {
@@ -1486,14 +1489,17 @@ export default function HomePage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          autoGainControl: false,
-          echoCancellation: false,
-          noiseSuppression: false,
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 48_000 },
+          sampleSize: { ideal: 16 },
         },
       });
       const audioGraph = createRecordingAudioGraph(stream, reverb);
       const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(audioGraph.stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 192_000 });
+      const recorder = new MediaRecorder(audioGraph.stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 256_000 });
       const targetVerseIndex = verseIndex;
 
       streamRef.current = stream;
@@ -1523,7 +1529,7 @@ export default function HomePage() {
         const chunks = [...chunksRef.current];
         chunksRef.current = [];
         stream.getTracks().forEach((track) => track.stop());
-        void audioGraph.context.close();
+        void audioGraph.context?.close();
         streamRef.current = null;
         recordingAudioContextRef.current = null;
         mediaRecorderRef.current = null;
@@ -1570,7 +1576,7 @@ export default function HomePage() {
 
       recorder.onerror = () => {
         stream.getTracks().forEach((track) => track.stop());
-        void audioGraph.context.close();
+        void audioGraph.context?.close();
         recordingAudioContextRef.current = null;
         setRecording(false);
         setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
@@ -2232,11 +2238,11 @@ export default function HomePage() {
             </> : playbackRecording ? <>
               <button className="record-complete-button saved-listen" onClick={toggleSavedRecordingPlayback} type="button">
                 {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
-                <span>{savedRecordingPlaying ? '듣기 멈춤' : recordingMode === 'continuous' ? '이어 녹음 듣기' : '녹음 듣기'}</span>
+                <span>{savedRecordingPlaying ? '듣기 멈춤' : playingContinuousBlock ? '이어 녹음 듣기' : '녹음 듣기'}</span>
               </button>
-              <button className="record-complete-button restart" type="button" disabled={Boolean(deletingRecordingId)} onClick={() => recordingMode === 'continuous' ? void startContinuousRetake() : currentSavedRecording ? void startRetake(currentSavedRecording) : undefined}>
+              <button className="record-complete-button restart" type="button" disabled={Boolean(deletingRecordingId)} onClick={() => playingContinuousBlock ? void startContinuousRetake() : currentSavedRecording ? void startRetake(currentSavedRecording) : undefined}>
                 {deletingRecordingId ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
-                <span>{deletingRecordingId ? '삭제 중' : recordingMode === 'continuous' ? '전체 다시 녹음' : '다시 녹음'}</span>
+                <span>{deletingRecordingId ? '삭제 중' : playingContinuousBlock ? '전체 다시 녹음' : '다시 녹음'}</span>
               </button>
             </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
