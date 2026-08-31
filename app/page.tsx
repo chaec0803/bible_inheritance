@@ -540,7 +540,6 @@ export default function HomePage() {
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
-  const [deletingRecordingId, setDeletingRecordingId] = useState<string | null>(null);
   const [savedRecordingPlaying, setSavedRecordingPlaying] = useState(false);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
@@ -550,6 +549,8 @@ export default function HomePage() {
   const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
+  const [recordingManageOpen, setRecordingManageOpen] = useState(false);
+  const [fullRetakeActive, setFullRetakeActive] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
@@ -925,14 +926,7 @@ export default function HomePage() {
   const displayedProjectTask = activeProject?.tasks[displayedProjectDayIndex]
     ?? (activeProject && displayedProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
   const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
-  const continuousPlaybackGroupId = currentSavedRecording?.recordingMode === 'continuous' && currentSavedRecording.recordingGroupId
-    ? currentSavedRecording.recordingGroupId
-    : null;
-  const continuousPlaybackQueue = activeLibraryRecordings
-    .filter((item) => Boolean(continuousPlaybackGroupId) && item.book === passageBook.name && item.chapter === passageChapter && item.recordingGroupId === continuousPlaybackGroupId)
-    .sort((left, right) => left.verse - right.verse);
   const playbackRecording = currentSavedRecording;
-  const playingContinuousBlock = recordingMode === 'continuous' && continuousPlaybackQueue.length > 0;
   const savedPassageVerseNumbers = new Set(activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter).map((item) => item.verse));
   const currentVerseSaved = Boolean(currentSavedRecording);
   const completedProjectTaskIndexes = useMemo(() => {
@@ -1321,74 +1315,41 @@ export default function HomePage() {
     savedRecordingAudioRef.current?.pause();
     setSavedRecordingPlaying(false);
     const safeIndex = Math.min(Math.max(nextIndex, 0), passageVerses.length - 1);
+    setFullRetakeActive(false);
     if (replacingRecording?.verse !== safeIndex + 1) setReplacingRecording(null);
+    setRecordingMode('continuous');
     setVerseIndex(safeIndex);
     setSeconds(takes[safeIndex]?.duration ?? 0);
   };
 
-  const startRetake = async (item: SavedRecording) => {
-    if (deletingRecordingId) return;
+  const startRetake = (item: SavedRecording) => {
     stopChapterPlayback();
-    setDeletingRecordingId(item.id);
-    try {
-      const response = await fetch(`/api/recordings/${item.id}/audio`, {
-        method: 'DELETE',
-        headers: { 'x-verse-legacy-owner': ownerKeyRef.current },
-      });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || '녹음본을 삭제하지 못했어요.');
-      }
-
-      const remainingRecordings = libraryRecordings.filter((recording) => recording.id !== item.id);
-      setLibraryRecordings(remainingRecordings);
-      setSelectedLibraryRecordingId(null);
-      setReplacingRecording(null);
-      setBgm(item.bgmId);
-      setReverb(item.reverb);
-
-      if (item.book === passageBook.name && item.chapter === passageChapter) {
-        const targetIndex = item.verse - passageStartVerse;
-        if (targetIndex >= 0 && targetIndex < passageVerses.length) {
-          setTakes((current) => current.map((take, index) => {
-            if (index !== targetIndex || !take) return take;
-            URL.revokeObjectURL(take.url);
-            objectUrlsRef.current.delete(take.url);
-            return null;
-          }));
-          setSaved((current) => current.map((value, index) => index === targetIndex ? false : value));
-          setVerseIndex(targetIndex);
-        }
-      }
-
-      setSeconds(0);
-      setAppTab('recording');
-      setNotice('녹음본이 삭제되었습니다.');
-      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : '녹음본을 삭제하지 못했어요.');
-    } finally {
-      setDeletingRecordingId(null);
+    setSelectedLibraryRecordingId(null);
+    setReplacingRecording(item);
+    setFullRetakeActive(false);
+    setRecordingMode('verse');
+    setBgm(item.bgmId);
+    setReverb(item.reverb);
+    if (item.book === passageBook.name && item.chapter === passageChapter) {
+      const targetIndex = item.verse - passageStartVerse;
+      if (targetIndex >= 0 && targetIndex < passageVerses.length) setVerseIndex(targetIndex);
     }
+    setSeconds(0);
+    setAppTab('recording');
+    setNotice(`${item.verse}절만 새로 녹음할 수 있어요. 저장하기 전까지 기존 음성은 유지돼요.`);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   };
 
-  const startContinuousRetake = async () => {
-    if (!continuousPlaybackQueue.length || deletingRecordingId) return;
-    setDeletingRecordingId(continuousPlaybackQueue[0].recordingGroupId ?? continuousPlaybackQueue[0].id);
+  const startFullRetake = () => {
+    stopChapterPlayback();
     savedRecordingAudioRef.current?.pause();
-    try {
-      await Promise.all(continuousPlaybackQueue.map(async (item) => {
-        const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
-        if (!response.ok) throw new Error('이어 녹음 블록을 삭제하지 못했어요.');
-      }));
-      await refreshLibrary();
-      setVerseIndex(0);
-      setNotice('이어서 녹음한 블록을 지웠어요. 처음부터 다시 녹음할 수 있어요.');
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : '이어 녹음 블록을 삭제하지 못했어요.');
-    } finally {
-      setDeletingRecordingId(null);
-    }
+    setRecordingManageOpen(false);
+    setReplacingRecording(null);
+    setRecordingMode('continuous');
+    setFullRetakeActive(true);
+    setVerseIndex(0);
+    setSeconds(0);
+    setNotice('처음부터 다시 녹음해요. 새로 저장한 절만 기존 녹음에 안전하게 덮어씁니다.');
   };
 
   const toggleSavedRecordingPlayback = () => {
@@ -1433,6 +1394,7 @@ export default function HomePage() {
         if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
       }));
       await refreshLibrary();
+      setFullRetakeActive(false);
       setNotice(`${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
@@ -1663,6 +1625,7 @@ export default function HomePage() {
 
       await refreshLibrary();
       setReplacingRecording(null);
+      setRecordingMode('continuous');
       setTakes((current) => current.map((take, index) => {
         if (index !== verseIndex || !take) return take;
         URL.revokeObjectURL(take.url);
@@ -2164,17 +2127,14 @@ export default function HomePage() {
         </aside>
 
         <section className="recording-card" aria-label="성경 녹음 화면">
-          <div className="recording-mode-switch" aria-label="녹음 방식">
-            <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { savedRecordingAudioRef.current?.pause(); setRecordingMode('continuous'); }}>이어 녹음</button>
-            <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { savedRecordingAudioRef.current?.pause(); setRecordingMode('verse'); }}>절별 수정</button>
-          </div>
+          {savedPassageVerseNumbers.size > 0 && !recording && <button className="recording-manage-trigger" type="button" onClick={() => setRecordingManageOpen(true)}><RotateCcw size={15} /> 녹음 관리</button>}
           <div className="recording-heading">
             <div>
               <p className="eyebrow">{passageBook.name} {passageChapter}장 · {currentVerseNumber}절</p>
-              <h1>{recordingMode === 'continuous' ? '본문을 따라 자연스럽게 이어 읽어 주세요.' : '천천히, 평소 목소리로 읽어 주세요.'}</h1>
+              <h1>{recordingMode === 'continuous' ? fullRetakeActive ? '처음부터 새롭게 이어 읽어 주세요.' : `${currentVerseNumber}절부터 자연스럽게 이어 읽어 주세요.` : '이 절만 천천히 다시 읽어 주세요.'}</h1>
             </div>
             <span className={`status-pill ${recording ? 'live' : hasTake || currentVerseSaved ? 'ready' : ''}`}>
-              {recording ? '녹음 중' : hasTake ? '재생 가능' : currentVerseSaved ? '저장 완료' : replacingRecording ? '다시 녹음' : '녹음 전'}
+              {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : currentVerseSaved ? '저장 완료' : '녹음 전'}
             </span>
           </div>
 
@@ -2182,7 +2142,14 @@ export default function HomePage() {
             <div className="retake-banner">
               <RotateCcw size={18} />
               <p><strong>{currentVerseNumber}절을 다시 녹음하고 있어요.</strong><small>새 녹음을 저장하기 전까지 기존 보관함 음성은 그대로 유지됩니다.</small></p>
-              <button type="button" onClick={() => setReplacingRecording(null)}>취소</button>
+              <button type="button" onClick={() => { setReplacingRecording(null); setRecordingMode('continuous'); }}>취소</button>
+            </div>
+          )}
+          {fullRetakeActive && !recording && (
+            <div className="retake-banner">
+              <RotateCcw size={18} />
+              <p><strong>전체 다시 녹음을 준비했어요.</strong><small>첫 절부터 시작하며, 새로 저장하기 전까지 기존 음성은 그대로 유지됩니다.</small></p>
+              <button type="button" onClick={() => setFullRetakeActive(false)}>취소</button>
             </div>
           )}
 
@@ -2207,22 +2174,22 @@ export default function HomePage() {
 
           <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : currentVerseSaved ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
 
-          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${currentVerseSaved ? 'saved-recording-actions' : ''}`}>
+          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${currentVerseSaved && !replacingRecording && !fullRetakeActive ? 'saved-recording-actions' : ''}`}>
             {hasTake && !recording ? <>
               <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
               <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
-            </> : playbackRecording ? <>
+            </> : playbackRecording && !fullRetakeActive && !replacingRecording ? <>
               <button className="record-complete-button saved-listen" onClick={toggleSavedRecordingPlayback} type="button">
                 {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
                 <span>{savedRecordingPlaying ? '듣기 멈춤' : '이 절 듣기'}</span>
               </button>
-              <button className="record-complete-button restart" type="button" disabled={Boolean(deletingRecordingId)} onClick={() => playingContinuousBlock ? void startContinuousRetake() : currentSavedRecording ? void startRetake(currentSavedRecording) : undefined}>
-                {deletingRecordingId ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
-                <span>{deletingRecordingId ? '삭제 중' : playingContinuousBlock ? '전체 다시 녹음' : '다시 녹음'}</span>
+              <button className="record-complete-button restart" type="button" onClick={() => currentSavedRecording && startRetake(currentSavedRecording)}>
+                <RotateCcw size={21} />
+                <span>이 절 수정</span>
               </button>
             </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
-              {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : '녹음 시작'}
+              {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : replacingRecording ? '이 절 다시 녹음' : fullRetakeActive ? '처음부터 다시 녹음' : `${currentVerseNumber}절부터 이어 녹음`}
             </button>}
           </div>
 
@@ -2307,6 +2274,21 @@ export default function HomePage() {
           </div>
         </aside>
       </section>}
+
+      {recordingManageOpen && (
+        <div className="recording-manage-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRecordingManageOpen(false); }}>
+          <dialog className="recording-manage-sheet" open aria-labelledby="recording-manage-title">
+            <button className="recording-manage-close" type="button" onClick={() => setRecordingManageOpen(false)} aria-label="녹음 관리 닫기"><X size={21} /></button>
+            <p className="eyebrow">RECORDING OPTIONS</p>
+            <h2 id="recording-manage-title">어떻게 수정할까요?</h2>
+            <p>한 절만 바꾸려면 저장된 절을 선택해 주세요. 전체 재녹음은 첫 절부터 새롭게 이어 읽어요.</p>
+            <div className="recording-manage-options">
+              <button type="button" onClick={() => setRecordingManageOpen(false)}><span><AudioLines size={20} /></span><div><strong>절별로 수정</strong><small>목록에서 녹음된 절을 누른 뒤 ‘이 절 수정’을 선택해요.</small></div></button>
+              <button className="full-retake" type="button" onClick={startFullRetake}><span><RotateCcw size={20} /></span><div><strong>전체 다시 녹음</strong><small>기존 음성은 바로 지우지 않고 새로 녹음한 절부터 교체해요.</small></div></button>
+            </div>
+          </dialog>
+        </div>
+      )}
 
       {appTab === 'library' && <section className="library-section" id="library" aria-labelledby="library-title">
         <div className="library-heading">
@@ -2418,8 +2400,8 @@ export default function HomePage() {
                       ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
                       : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}
                   </p>
-                  <button className="library-retake-button" type="button" disabled={deletingRecordingId === item.id} onClick={() => void startRetake(item)}>
-                    {deletingRecordingId === item.id ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />} {deletingRecordingId === item.id ? '녹음본 삭제 중' : '이 절 다시 녹음'}
+                  <button className="library-retake-button" type="button" onClick={() => startRetake(item)}>
+                    <RotateCcw size={14} /> 이 절 다시 녹음
                   </button>
                 </article>
               );
