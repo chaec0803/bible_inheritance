@@ -542,7 +542,6 @@ export default function HomePage() {
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [deletingRecordingId, setDeletingRecordingId] = useState<string | null>(null);
   const [savedRecordingPlaying, setSavedRecordingPlaying] = useState(false);
-  const [continuousPlaybackRecordingId, setContinuousPlaybackRecordingId] = useState<string | null>(null);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
@@ -581,7 +580,6 @@ export default function HomePage() {
   const continuousVerseIndexRef = useRef(0);
   const continuousBoundariesRef = useRef<ContinuousVerseBoundary[]>([]);
   const continuousRecordingGroupIdRef = useRef<string | null>(null);
-  const continuousPlaybackAutoplayRef = useRef(false);
   const objectUrlsRef = useRef(new Set<string>());
   const youtubeContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
@@ -933,9 +931,7 @@ export default function HomePage() {
   const continuousPlaybackQueue = activeLibraryRecordings
     .filter((item) => Boolean(continuousPlaybackGroupId) && item.book === passageBook.name && item.chapter === passageChapter && item.recordingGroupId === continuousPlaybackGroupId)
     .sort((left, right) => left.verse - right.verse);
-  const playbackRecording = recordingMode === 'continuous'
-    ? continuousPlaybackQueue.find((item) => item.id === continuousPlaybackRecordingId) ?? continuousPlaybackQueue[0] ?? currentSavedRecording
-    : currentSavedRecording;
+  const playbackRecording = currentSavedRecording;
   const playingContinuousBlock = recordingMode === 'continuous' && continuousPlaybackQueue.length > 0;
   const savedPassageVerseNumbers = new Set(activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter).map((item) => item.verse));
   const currentVerseSaved = Boolean(currentSavedRecording);
@@ -1062,6 +1058,7 @@ export default function HomePage() {
   }, [chapterQueue, selectedLibraryGroup]);
   const selectedLibraryRecording = chapterQueue.find((item) => item.id === selectedLibraryRecordingId) ?? null;
   const currentlyPlayingRecording = chapterQueue.find((item) => item.id === activeLibraryId) ?? null;
+  const currentlyPlayingChapterIndex = currentlyPlayingRecording ? chapterQueue.findIndex((item) => item.id === currentlyPlayingRecording.id) : -1;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -1240,6 +1237,7 @@ export default function HomePage() {
     libraryAudioRefs.current.forEach((audio) => {
       audio.pause();
       audio.currentTime = 0;
+      audio.load();
     });
     stopPreview();
     const first = chapterQueue[0];
@@ -1377,7 +1375,6 @@ export default function HomePage() {
   const startContinuousRetake = async () => {
     if (!continuousPlaybackQueue.length || deletingRecordingId) return;
     setDeletingRecordingId(continuousPlaybackQueue[0].recordingGroupId ?? continuousPlaybackQueue[0].id);
-    continuousPlaybackAutoplayRef.current = false;
     savedRecordingAudioRef.current?.pause();
     try {
       await Promise.all(continuousPlaybackQueue.map(async (item) => {
@@ -1385,7 +1382,6 @@ export default function HomePage() {
         if (!response.ok) throw new Error('이어 녹음 블록을 삭제하지 못했어요.');
       }));
       await refreshLibrary();
-      setContinuousPlaybackRecordingId(null);
       setVerseIndex(0);
       setNotice('이어서 녹음한 블록을 지웠어요. 처음부터 다시 녹음할 수 있어요.');
     } catch (error) {
@@ -1398,17 +1394,7 @@ export default function HomePage() {
   const toggleSavedRecordingPlayback = () => {
     const audio = savedRecordingAudioRef.current;
     if (savedRecordingPlaying) {
-      continuousPlaybackAutoplayRef.current = false;
       audio?.pause();
-      return;
-    }
-    if (playingContinuousBlock) {
-      const first = continuousPlaybackQueue[0];
-      if (!first) return;
-      continuousPlaybackAutoplayRef.current = true;
-      setVerseIndex(Math.max(0, first.verse - passageStartVerse));
-      setContinuousPlaybackRecordingId(first.id);
-      if (playbackRecording?.id === first.id) void audio?.play();
       return;
     }
     void audio?.play();
@@ -1416,16 +1402,6 @@ export default function HomePage() {
 
   const handleSavedRecordingEnded = () => {
     setSavedRecordingPlaying(false);
-    if (!playingContinuousBlock || !continuousPlaybackAutoplayRef.current || !playbackRecording) return;
-    const currentIndex = continuousPlaybackQueue.findIndex((item) => item.id === playbackRecording.id);
-    const next = continuousPlaybackQueue[currentIndex + 1];
-    if (!next) {
-      continuousPlaybackAutoplayRef.current = false;
-      setContinuousPlaybackRecordingId(null);
-      return;
-    }
-    setVerseIndex(Math.max(0, next.verse - passageStartVerse));
-    setContinuousPlaybackRecordingId(next.id);
   };
 
   const saveCompletedContinuousVerses = async (sourceBlob: Blob, boundaries: ContinuousVerseBoundary[]) => {
@@ -2189,8 +2165,8 @@ export default function HomePage() {
 
         <section className="recording-card" aria-label="성경 녹음 화면">
           <div className="recording-mode-switch" aria-label="녹음 방식">
-            <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('continuous'); }}>이어 녹음</button>
-            <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { continuousPlaybackAutoplayRef.current = false; savedRecordingAudioRef.current?.pause(); setContinuousPlaybackRecordingId(null); setRecordingMode('verse'); }}>절별 수정</button>
+            <button className={recordingMode === 'continuous' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { savedRecordingAudioRef.current?.pause(); setRecordingMode('continuous'); }}>이어 녹음</button>
+            <button className={recordingMode === 'verse' ? 'selected' : ''} type="button" disabled={recording || requestingMic} onClick={() => { savedRecordingAudioRef.current?.pause(); setRecordingMode('verse'); }}>절별 수정</button>
           </div>
           <div className="recording-heading">
             <div>
@@ -2238,7 +2214,7 @@ export default function HomePage() {
             </> : playbackRecording ? <>
               <button className="record-complete-button saved-listen" onClick={toggleSavedRecordingPlayback} type="button">
                 {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
-                <span>{savedRecordingPlaying ? '듣기 멈춤' : playingContinuousBlock ? '이어 녹음 듣기' : '녹음 듣기'}</span>
+                <span>{savedRecordingPlaying ? '듣기 멈춤' : '이 절 듣기'}</span>
               </button>
               <button className="record-complete-button restart" type="button" disabled={Boolean(deletingRecordingId)} onClick={() => playingContinuousBlock ? void startContinuousRetake() : currentSavedRecording ? void startRetake(currentSavedRecording) : undefined}>
                 {deletingRecordingId ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
@@ -2252,7 +2228,7 @@ export default function HomePage() {
 
           {playbackRecording && (
             // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
-            <audio ref={savedRecordingAudioRef} preload="metadata" src={ownerKey ? `/api/recordings/${playbackRecording.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined} onCanPlay={() => { if (continuousPlaybackAutoplayRef.current) void savedRecordingAudioRef.current?.play(); }} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
+            <audio ref={savedRecordingAudioRef} preload="auto" src={ownerKey ? `/api/recordings/${playbackRecording.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
           )}
 
           {currentTake && !recording && (
@@ -2393,7 +2369,7 @@ export default function HomePage() {
                 {chapterQueue.map((item) => (
                   // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
                   <audio
-                    preload="metadata"
+                    preload="auto"
                     src={ownerKey ? `/api/recordings/${item.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined}
                     ref={(element) => {
                       if (element) libraryAudioRefs.current.set(item.id, element);
@@ -2451,6 +2427,25 @@ export default function HomePage() {
           </div>
               </div>}
             </div>}
+          </div>
+        )}
+
+        {chapterPlaying && currentlyPlayingRecording && (
+          <div className="continuous-player-backdrop" role="presentation">
+            <dialog className="continuous-player-modal" open aria-labelledby="continuous-player-title">
+              <button className="continuous-player-close" type="button" onClick={stopChapterPlayback} aria-label="이어듣기 닫기"><X size={22} /></button>
+              <p className="eyebrow">CONTINUOUS PLAYBACK</p>
+              <div className="continuous-player-progress"><span style={{ width: `${((currentlyPlayingChapterIndex + 1) / chapterQueue.length) * 100}%` }} /></div>
+              <small>{currentlyPlayingChapterIndex + 1} / {chapterQueue.length} · {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}{currentlyPlayingRecording.book === '시편' ? '편' : '장'}</small>
+              <div className="continuous-player-verse">
+                <span>{currentlyPlayingRecording.verse}</span>
+                <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
+              </div>
+              <div className="continuous-player-sequence" aria-label="이어듣기 절 진행 상황">
+                {chapterQueue.map((item, index) => <span className={index < currentlyPlayingChapterIndex ? 'completed' : index === currentlyPlayingChapterIndex ? 'playing' : ''} key={item.id}>{item.verse}절</span>)}
+              </div>
+              <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 이어듣기 멈춤</button>
+            </dialog>
           </div>
         )}
 
