@@ -245,6 +245,7 @@ type WordCard = {
   heading: string;
   detail: string;
   spriteIndex: number;
+  spriteSheet?: string;
 };
 
 type WordCardAward = {
@@ -270,6 +271,22 @@ const wordCards: readonly WordCard[] = [
   { id: 'magi-1', name: '동방박사 1', heading: '왕을 위한 황금을 준비한 지혜로운 여행자', detail: '황금은 왕에게 드리는 귀한 예물이었어요. 이 박사는 긴 여정 끝에 예수님을 참된 왕으로 높이며 자신의 가장 귀한 것을 기쁨으로 드렸어요.', spriteIndex: 10 },
   { id: 'magi-2', name: '동방박사 2', heading: '예배의 향기인 유향을 들고 온 여행자', detail: '유향은 하나님께 예배할 때 사용하던 향이었어요. 이 박사의 선물은 아기 예수님께 드리는 경배와 존경을 담고 있어요.', spriteIndex: 11 },
   { id: 'magi-3', name: '동방박사 3', heading: '깊은 의미를 품은 몰약을 준비한 여행자', detail: '몰약은 매우 귀한 향품이었어요. 이 선물은 예수님의 삶과 희생을 미리 떠올리게 하며, 동방박사들의 진심 어린 경배를 보여 줘요.', spriteIndex: 12 },
+  { id: 'abraham', name: '아브라함', heading: '믿음으로 익숙한 곳을 떠난 약속의 사람', detail: '아브라함은 하나님의 부르심을 따라 고향을 떠나 약속의 땅으로 갔어요. 모든 답을 알지 못했지만 하나님을 믿었고, 그의 삶은 믿음으로 한 걸음 내딛는 용기를 보여 줘요.', spriteIndex: 0, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'joseph', name: '요셉', heading: '상처를 용서와 구원으로 바꾼 사람', detail: '요셉은 형들에게 미움을 받아 먼 나라로 팔려 갔지만 하나님을 잊지 않았어요. 훗날 애굽의 지도자가 되어 가족과 많은 사람을 살리고, 자신을 해친 형들을 용서했어요.', spriteIndex: 1, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'moses', name: '모세', heading: '하나님의 백성을 자유로 이끈 지도자', detail: '모세는 자신의 부족함을 두려워했지만 하나님의 부르심에 응답했어요. 이스라엘 백성을 애굽에서 이끌어 내고, 광야에서 하나님의 말씀을 전했어요.', spriteIndex: 2, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'joshua', name: '여호수아', heading: '두려움보다 하나님의 약속을 붙든 지도자', detail: '여호수아는 모세의 뒤를 이어 이스라엘 백성을 이끌었어요. 강하고 담대하라는 말씀을 의지하며 약속의 땅을 향해 나아갔어요.', spriteIndex: 3, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'ruth', name: '룻', heading: '사랑과 신실함으로 새로운 가족을 선택한 사람', detail: '룻은 어려움 속에서도 시어머니 나오미를 떠나지 않았어요. 낯선 땅에서 성실하게 살아가며 사랑과 신실함을 보여 주었고, 다윗의 가문에 이어졌어요.', spriteIndex: 4, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'samuel', name: '사무엘', heading: '어린 시절부터 하나님의 음성을 들은 사람', detail: '사무엘은 어린 시절 성전에서 하나님의 부르심을 들었어요. “말씀하세요”라고 응답한 뒤 이스라엘을 바른 길로 이끄는 선지자가 되었어요.', spriteIndex: 5, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'elijah', name: '엘리야', heading: '홀로 서는 순간에도 하나님을 신뢰한 선지자', detail: '엘리야는 사람들이 하나님을 떠났을 때에도 믿음을 지켰어요. 갈멜산에서 참된 하나님을 증언했고, 지쳤을 때는 하나님의 조용한 위로를 경험했어요.', spriteIndex: 6, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'esther', name: '에스더', heading: '두려움을 넘어 백성을 위해 나아간 왕비', detail: '에스더는 위험을 무릅쓰고 왕 앞에 나아가 자기 민족을 살렸어요. 자신에게 주어진 자리와 용기를 다른 사람을 지키는 데 사용했어요.', spriteIndex: 7, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'john-baptist', name: '세례 요한', heading: '예수님의 길을 준비한 광야의 목소리', detail: '세례 요한은 광야에서 회개를 전하며 사람들의 마음을 준비시켰어요. 자신보다 예수님을 높이며 맡은 사명을 흔들림 없이 감당했어요.', spriteIndex: 8, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'martha', name: '마르다', heading: '섬김 속에서 가장 중요한 것을 배운 사람', detail: '마르다는 예수님과 사람들을 정성껏 섬겼어요. 바쁜 마음을 솔직히 말씀드렸고, 슬픔 속에서도 예수님이 부활과 생명이심을 믿는다고 고백했어요.', spriteIndex: 9, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'mary-magdalene', name: '막달라 마리아', heading: '부활하신 예수님을 가장 먼저 전한 제자', detail: '막달라 마리아는 예수님을 충실히 따르며 십자가 곁을 지켰어요. 부활하신 예수님을 만나 제자들에게 기쁜 소식을 전했어요.', spriteIndex: 10, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'paul', name: '바울', heading: '삶의 방향을 바꾸어 복음을 전한 사도', detail: '바울은 예수님을 만난 뒤 박해하던 사람에서 복음을 전하는 사도로 변화되었어요. 여러 지역을 여행하고 편지를 써서 많은 교회를 격려했어요.', spriteIndex: 11, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'barnabas', name: '바나바', heading: '사람의 가능성을 믿고 세워 준 위로의 사람', detail: '바나바는 새롭게 믿게 된 바울을 공동체에 소개하고 믿어 주었어요. 마가에게도 다시 기회를 주며 사람을 격려하고 함께 성장하도록 도왔어요.', spriteIndex: 12, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'stephen', name: '스데반', heading: '끝까지 사랑과 용서를 선택한 증인', detail: '스데반은 지혜와 믿음으로 예수님을 전했어요. 박해를 받는 마지막 순간에도 자신을 해치는 사람들을 용서해 달라고 기도했어요.', spriteIndex: 13, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'timothy', name: '디모데', heading: '배운 말씀을 삶으로 이어 간 젊은 동역자', detail: '디모데는 어머니와 외할머니에게 믿음을 배웠고 바울과 함께 복음을 전했어요. 젊지만 말과 행동과 사랑에서 본이 되도록 격려받았어요.', spriteIndex: 14, spriteSheet: '/cards/bible-character-sprite-v2.png' },
+  { id: 'zacchaeus', name: '삭개오', heading: '예수님을 만난 뒤 삶으로 돌이킨 사람', detail: '삭개오는 예수님을 보기 위해 나무에 올라갔어요. 예수님을 집에 모신 뒤 잘못을 바로잡고 가진 것을 나누겠다고 결단했어요.', spriteIndex: 15, spriteSheet: '/cards/bible-character-sprite-v2.png' },
 ];
 
 type RecordingTake = {
@@ -1889,7 +1906,7 @@ export default function HomePage() {
                     const column = card.spriteIndex % 4;
                     const row = Math.floor(card.spriteIndex / 4);
                     return <button className="word-card-collection-item" type="button" onClick={() => openCollectedWordCard(card)} key={card.id}>
-                      <span className="word-card-collection-art" style={{ backgroundImage: 'url(/cards/bible-character-sprite.png)', backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
+                      <span className="word-card-collection-art" style={{ backgroundImage: `url(${card.spriteSheet ?? '/cards/bible-character-sprite.png'})`, backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
                       <small>성경 속 말씀 인물</small><strong>{card.name}</strong>
                     </button>;
                   })}
@@ -2455,7 +2472,7 @@ export default function HomePage() {
               <div className={`word-card-scene ${wordCardFlipped ? 'flipped' : ''}`}>
                 <button className="word-card" type="button" aria-label={`${earnedCard.name} 말씀 카드 뒤집기`} onClick={() => setWordCardFlipped((current) => !current)}>
                   <section className="word-card-face word-card-front">
-                    <div className="word-card-art" style={{ backgroundImage: 'url(/cards/bible-character-sprite.png)', backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
+                    <div className="word-card-art" style={{ backgroundImage: `url(${earnedCard.spriteSheet ?? '/cards/bible-character-sprite.png'})`, backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
                     <small>성경 속 말씀 인물</small>
                     <strong>{earnedCard.name}</strong>
                     <span><Sparkles size={13} /> {wordCardCollectionMode ? '간직한 카드' : '오늘의 카드'}</span>
