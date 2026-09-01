@@ -561,11 +561,11 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .continuous-player-list-trigger span { font-size: 7px; }
 .continuous-player-list { margin-top: 10px; padding: 14px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 15px; }
 .continuous-player-list > strong { display: block; margin-bottom: 10px; color: rgba(255,255,255,.72); font-size: 9px; }
-.continuous-player-list > div { max-height: 180px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; overflow-y: auto; }
-.continuous-player-list button { padding: 9px 6px; color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; cursor: pointer; }
+.continuous-player-list > div { max-height: 240px; display: grid; grid-template-columns: 1fr; gap: 6px; overflow-y: auto; }
+.continuous-player-list button { width: 100%; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; text-align: left; cursor: pointer; }
 .continuous-player-list button span, .continuous-player-list button small { display: block; }
 .continuous-player-list button span { font-size: 10px; font-weight: 900; }
-.continuous-player-list button small { margin-top: 2px; color: rgba(255,255,255,.46); font-size: 7px; }
+.continuous-player-list button small { color: rgba(255,255,255,.46); font-size: 7px; text-align: right; }
 .continuous-player-list button.playing { color: #193b32; background: #f1d78e; border-color: #f1d78e; }
 .continuous-player-list button.playing small { color: rgba(25,59,50,.66); }
 .chapter-menu-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: end center; background: rgba(8, 15, 13, .58); backdrop-filter: blur(4px); }

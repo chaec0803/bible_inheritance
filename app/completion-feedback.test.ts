@@ -35,4 +35,10 @@ describe('완료 피드백과 재생 제어', () => {
     expect(page).toContain('openLibraryFromCompletion');
     expect(page).toContain('setEarnedCard(null);');
   });
+
+  it('이어듣기 목록에서 절을 선택해도 목록을 유지한다', () => {
+    const jumpHandler = page.slice(page.indexOf('const jumpToChapterRecording'), page.indexOf('const playSelectedBgm'));
+    expect(jumpHandler).not.toContain('setPlaybackListOpen(false)');
+    expect(page).toContain('setPlaybackListOpen((current) => !current)');
+  });
 });

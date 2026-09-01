@@ -1333,7 +1333,6 @@ export default function HomePage() {
   const jumpToChapterRecording = (recording: SavedRecording) => {
     const audio = libraryAudioRefs.current.get(recording.id);
     if (!audio) return;
-    setPlaybackListOpen(false);
     chapterPlayingRef.current = true;
     chapterPausedRef.current = false;
     setChapterPlaying(true);
