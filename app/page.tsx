@@ -561,7 +561,7 @@ export default function HomePage() {
   const [recordingManageOpen, setRecordingManageOpen] = useState(false);
   const [fullRetakeActive, setFullRetakeActive] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
-  const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'app'>('welcome');
+  const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('james-1-beginner');
@@ -1762,6 +1762,24 @@ export default function HomePage() {
     window.localStorage.removeItem('verse-legacy-free-passage');
   };
 
+  const openJourney = (project: ActiveProject) => {
+    activateProject(project);
+    if (project.kind === 'free' && project.passage) {
+      const bookIndex = bibleBooks.findIndex((book) => book.code === project.passage?.code);
+      const book = bibleBooks[bookIndex];
+      if (book) {
+        setBibleTestament(bookIndex < 39 ? 'old' : 'new');
+        setBibleSearch('');
+        chooseBibleBook(book);
+        setBibleBackTarget('projectHome');
+        setOnboardingStep('bible');
+        return;
+      }
+    }
+    setAppTab('recording');
+    setOnboardingStep('app');
+  };
+
   const startFreeChapter = () => {
     if (!selectedBibleVerses.length) return;
     const freeProject: ActiveProject = {
@@ -1939,7 +1957,7 @@ export default function HomePage() {
               <h1>어떤 말씀 여정을 이어갈까요?</h1>
               <p className="onboarding-lead">말씀 여정을 선택하면 해당 녹음 화면으로 바로 이어져요.</p>
               {journeyProjects.length ? <div className="running-project-list">
-                {journeyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => { activateProject(project); setAppTab('recording'); setOnboardingStep('app'); }} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                {journeyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
               </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
               <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 매일 말씀 읽기 시작 <ArrowRight size={16} /></button>
             </div>
@@ -1947,8 +1965,8 @@ export default function HomePage() {
             <div className="onboarding-card bible-browser-card">
               <button className="onboarding-back" type="button" onClick={() => setOnboardingStep(bibleBackTarget)}><ChevronLeft size={16} /> 이전</button>
               <p className="eyebrow">자유롭게 녹음하기</p>
-              <h1>어떤 말씀부터 읽어볼까요?</h1>
-              <p className="onboarding-lead">구약·신약 66권 전체에서 성경책과 장을 고르면 모든 절을 한눈에 볼 수 있어요.</p>
+              <h1>{activeProject?.kind === 'free' && activeProject.passage?.code === selectedBibleBook.code ? `${selectedBibleBook.name}에서 몇 장을 읽을까요?` : '어떤 말씀부터 읽어볼까요?'}</h1>
+              <p className="onboarding-lead">이미 진행 중인 장은 흰색으로 표시돼요. 새로 읽거나 이어갈 장을 선택해 주세요.</p>
               <div className="bible-browser-toolbar">
                 <div className="testament-tabs" aria-label="구약 또는 신약 선택">
                   <button className={bibleTestament === 'old' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('old'); setBibleSearch(''); chooseBibleBook(bibleBooks[0]); }}>구약 <small>39권</small></button>
