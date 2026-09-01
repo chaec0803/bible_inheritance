@@ -35,6 +35,7 @@ import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-polic
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
+import { themedProjects } from '@/lib/themed-projects';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -50,7 +51,7 @@ const reverbOptions = ['원음', '따뜻하게', '예배당'];
 type ProjectTemplate = {
   id: string;
   duration: 7 | 14;
-  level: '초급' | '중급' | '고급';
+  theme?: '믿음' | '소망' | '사랑';
   title: string;
   scope: string;
   minutes: string;
@@ -88,77 +89,10 @@ function getProjectDay(project: ActiveProject, today: string) {
   return Math.min(project.duration, Math.max(1, Math.floor((todayTime - startTime) / 86_400_000) + 1));
 }
 
-function getBookByName(name: string) {
-  const book = bibleBooks.find((item) => item.name === name);
-  if (!book) throw new Error(`${name} 메타데이터가 없습니다.`);
-  return book;
-}
-
-function makeChapterTasks(bookName: string, startChapter: number, chapterCount: number, chaptersPerDay: number) {
-  const book = getBookByName(bookName);
-  return Array.from({ length: Math.ceil(chapterCount / chaptersPerDay) }, (_, index) => {
-    const firstChapter = startChapter + index * chaptersPerDay;
-    const lastChapter = Math.min(startChapter + chapterCount - 1, firstChapter + chaptersPerDay - 1);
-    return firstChapter === lastChapter
-      ? `${bookName} ${firstChapter}장 1–${book.chapters[firstChapter - 1]}절`
-      : `${bookName} ${firstChapter}장 1절 ~ ${lastChapter}장 ${book.chapters[lastChapter - 1]}절`;
-  });
-}
-
-function makeVerseTasks(bookName: string, startChapter: number, startVerse: number, totalVerses: number, versesPerDay: number) {
-  const book = getBookByName(bookName);
-  const verses: VersePointer[] = [];
-  let chapter = startChapter;
-  let verse = startVerse;
-  while (verses.length < totalVerses && chapter <= book.chapters.length) {
-    verses.push({ chapter, verse });
-    verse += 1;
-    if (verse > book.chapters[chapter - 1]) {
-      chapter += 1;
-      verse = 1;
-    }
-  }
-  return Array.from({ length: Math.ceil(verses.length / versesPerDay) }, (_, index) => {
-    const portion = verses.slice(index * versesPerDay, (index + 1) * versesPerDay);
-    const first = portion[0];
-    const last = portion[portion.length - 1];
-    return first.chapter === last.chapter
-      ? `${bookName} ${first.chapter}장 ${first.verse}–${last.verse}절`
-      : `${bookName} ${first.chapter}장 ${first.verse}절 ~ ${last.chapter}장 ${last.verse}절`;
-  });
-}
-
 const projectTemplates: ProjectTemplate[] = [
-  {
-    id: 'james-1-beginner', duration: 7, level: '초급', title: '야고보서 1장 완성하기', scope: '총 27절 · 하루 약 5절', minutes: '하루 5–8분',
-    tasks: [...makeVerseTasks('야고보서', 1, 1, 27, 5), '전체 확인하고 완성하기'],
-  },
-  {
-    id: 'mark-1-6-medium', duration: 7, level: '중급', title: '마가복음 1–6장 읽기', scope: '총 6장 · 하루 1장', minutes: '하루 15–25분',
-    tasks: [...makeChapterTasks('마가복음', 1, 6, 1), '전체 확인하고 완성하기'],
-  },
-  {
-    id: 'genesis-1-18-advanced', duration: 7, level: '고급', title: '창세기 1–18장 읽기', scope: '총 18장 · 하루 3장', minutes: '하루 45–70분',
-    tasks: [...makeChapterTasks('창세기', 1, 18, 3), '전체 확인하고 완성하기'],
-  },
-  {
-    id: 'custom-7', duration: 7, level: '초급', title: '내가 직접 말씀 여정 만들기', scope: '성경 전체에서 원하는 범위를 6일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
-  },
-  {
-    id: 'matthew-5-6-beginner', duration: 14, level: '초급', title: '산상수훈 천천히 읽기', scope: '총 60절 · 하루 5절', minutes: '하루 5–8분',
-    tasks: [...makeVerseTasks('마태복음', 5, 1, 60, 5), '밀린 녹음과 다시 녹음', '전체 확인하고 완성하기'],
-  },
-  {
-    id: 'john-1-12-medium', duration: 14, level: '중급', title: '요한복음 1–12장 읽기', scope: '총 12장 · 하루 1장', minutes: '하루 15–25분',
-    tasks: [...makeChapterTasks('요한복음', 1, 12, 1), '밀린 녹음과 다시 녹음', '전체 확인하고 완성하기'],
-  },
-  {
-    id: 'genesis-1-36-advanced', duration: 14, level: '고급', title: '창세기 1–36장 읽기', scope: '총 36장 · 하루 3장', minutes: '하루 45–70분',
-    tasks: [...makeChapterTasks('창세기', 1, 36, 3), '밀린 녹음과 다시 녹음', '전체 확인하고 완성하기'],
-  },
-  {
-    id: 'custom-14', duration: 14, level: '초급', title: '내가 직접 말씀 여정 만들기', scope: '성경 전체에서 원하는 범위를 12일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
-  },
+  ...themedProjects,
+  { id: 'custom-7', duration: 7, title: '내가 직접 말씀 여정 만들기', scope: '성경 전체에서 원하는 범위를 7일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true },
+  { id: 'custom-14', duration: 14, title: '내가 직접 말씀 여정 만들기', scope: '성경 전체에서 원하는 범위를 14일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true },
 ];
 
 type SupportedBibleBook = {
@@ -558,7 +492,7 @@ export default function HomePage() {
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('james-1-beginner');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('theme-믿음-7');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 여정');
   const [customBookId, setCustomBookId] = useState(bibleBooks[0].code);
   const [customStartChapter, setCustomStartChapter] = useState(1);
@@ -1922,7 +1856,7 @@ export default function HomePage() {
       .map((item) => item.verse),
   );
   const customBook = supportedBibleBooks.find((item) => item.id === customBookId) ?? supportedBibleBooks[0];
-  const customRecordingDays = projectDuration === 7 ? 6 : 12;
+  const customRecordingDays = projectDuration;
   const customDailyTasks = useMemo(
     () => makeDailyTasks(
       customBook,
@@ -2160,8 +2094,8 @@ export default function HomePage() {
               <p className="eyebrow">말씀 여정 만들기</p>
               <h1>얼마 동안 함께 완성해볼까요?</h1>
               <div className="duration-picker" aria-label="말씀 여정 기간">
-                <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId('james-1-beginner'); }}>1주</button>
-                <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId('matthew-5-6-beginner'); }}>2주</button>
+                <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId('theme-믿음-7'); }}>1주</button>
+                <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId('theme-믿음-14'); }}>2주</button>
                 <span>1개월부터 3년 말씀 여정은 준비 중이에요.</span>
               </div>
               <div className="project-picker-layout">
@@ -2170,7 +2104,7 @@ export default function HomePage() {
                     const isActive = activeProjectIds.has(project.id);
                     return (
                     <button className={`${selectedTemplateId === project.id ? 'selected' : ''} ${isActive ? 'in-progress' : ''}`} type="button" onClick={() => setSelectedTemplateId(project.id)} disabled={isActive} key={project.id}>
-                      <span className={`difficulty difficulty-${project.level}`}>{isActive ? '진행 중' : project.custom ? '직접 구성' : project.level}</span>
+                      <span className={`difficulty ${project.theme ? `theme-${project.theme}` : ''}`}>{isActive ? '진행 중' : project.custom ? '직접 구성' : project.theme}</span>
                       <strong>{project.title}</strong>
                       <small>{project.scope}</small>
                       <em><CalendarDays size={13} /> {project.duration}일 · {project.minutes}</em>
