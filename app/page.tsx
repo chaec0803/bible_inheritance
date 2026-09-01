@@ -2486,6 +2486,10 @@ export default function HomePage() {
                 <span>{currentlyPlayingRecording.verse}</span>
                 <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
               </div>
+              <label className="continuous-player-volume">
+                <span><Volume2 size={15} /> BGM 볼륨 <strong>{volume}%</strong></span>
+                <input aria-label="이어듣기 재생 중 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+              </label>
               <div className="continuous-player-actions">
                 <button className="continuous-player-list-trigger" type="button" onClick={() => setPlaybackListOpen((current) => !current)} aria-expanded={playbackListOpen}><List size={19} /><span>목록</span></button>
                 <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 이어듣기 멈춤</button>
