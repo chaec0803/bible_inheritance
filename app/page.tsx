@@ -37,6 +37,7 @@ import { getBackStep } from '@/lib/navigation-policy';
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
+import { toggleAudioPlayback } from '@/lib/audio-playback';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -473,6 +474,8 @@ export default function HomePage() {
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [deletingVerseId, setDeletingVerseId] = useState<string | null>(null);
+  const [audioStartingId, setAudioStartingId] = useState<string | null>(null);
+  const [recentlyUpdatedReference, setRecentlyUpdatedReference] = useState<string | null>(null);
   const [savedRecordingPlaying, setSavedRecordingPlaying] = useState(false);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
@@ -1396,13 +1399,33 @@ export default function HomePage() {
     }
   };
 
-  const toggleSavedRecordingPlayback = () => {
+  const toggleSavedRecordingPlayback = async () => {
     const audio = savedRecordingAudioRef.current;
-    if (savedRecordingPlaying) {
-      audio?.pause();
+    if (!audio) {
+      setNotice('녹음 재생기를 준비하지 못했어요. 화면을 다시 열어 주세요.');
       return;
     }
-    void audio?.play();
+    try {
+      await toggleAudioPlayback(audio, savedRecordingPlaying);
+    } catch {
+      setNotice('이 절을 재생하지 못했어요. 잠시 후 다시 눌러 주세요.');
+    }
+  };
+
+  const toggleLibraryVersePlayback = async (item: SavedRecording) => {
+    const audio = libraryAudioRefs.current.get(item.id);
+    if (!audio) {
+      setNotice('녹음 재생기를 준비하지 못했어요. 듣기 화면을 다시 열어 주세요.');
+      return;
+    }
+    setAudioStartingId(item.id);
+    try {
+      await toggleAudioPlayback(audio, activeLibraryId === item.id);
+    } catch {
+      setNotice('이 절을 재생하지 못했어요. 잠시 후 다시 눌러 주세요.');
+    } finally {
+      setAudioStartingId(null);
+    }
   };
 
   const handleSavedRecordingEnded = () => {
@@ -1628,6 +1651,7 @@ export default function HomePage() {
 
   const saveVerse = async () => {
     if (!currentTake || savingLibrary) return;
+    const wasReplacement = Boolean(replacingRecording);
     setSavingLibrary(true);
     try {
       const extension = currentTake.mimeType.includes('mp4')
@@ -1676,7 +1700,9 @@ export default function HomePage() {
         return null;
       }));
       setSeconds(0);
-      setNotice('보관함에 저장되었어요.');
+      const reference = `${passageBook.name}-${passageChapter}-${currentVerseNumber}`;
+      setRecentlyUpdatedReference(wasReplacement ? reference : null);
+      setNotice(wasReplacement ? `${currentVerseNumber}절 수정 완료 · 새 녹음으로 교체했어요.` : '보관함에 저장되었어요.');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -2242,7 +2268,7 @@ export default function HomePage() {
               <h1>{recordingMode === 'continuous' ? fullRetakeActive ? '처음부터 새롭게 이어 읽어 주세요.' : `${currentVerseNumber}절부터 자연스럽게 이어 읽어 주세요.` : '이 절만 천천히 다시 읽어 주세요.'}</h1>
             </div>
             <span className={`status-pill ${recording ? 'live' : hasTake || currentVerseSaved ? 'ready' : ''}`}>
-              {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : currentVerseSaved ? '저장 완료' : '녹음 전'}
+              {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : recentlyUpdatedReference === `${passageBook.name}-${passageChapter}-${currentVerseNumber}` ? '수정 완료' : currentVerseSaved ? '저장 완료' : '녹음 전'}
             </span>
           </div>
 
@@ -2272,7 +2298,7 @@ export default function HomePage() {
               <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
               <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
             </> : playbackRecording && !fullRetakeActive && !replacingRecording ? <>
-              <button className="record-complete-button saved-listen" onClick={toggleSavedRecordingPlayback} type="button">
+              <button className="record-complete-button saved-listen" onClick={() => void toggleSavedRecordingPlayback()} type="button">
                 {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
                 <span>{savedRecordingPlaying ? '듣기 멈춤' : '이 절 듣기'}</span>
               </button>
@@ -2504,12 +2530,7 @@ export default function HomePage() {
                     <span><Sparkles size={13} /> {item.reverb}</span>
                     <span>{formatTime(item.durationSeconds)}</span>
                   </div>
-                  <button className="library-audio-button" type="button" onClick={() => {
-                    const audio = libraryAudioRefs.current.get(item.id);
-                    if (!audio) return;
-                    if (isPlaying && !audio.paused) audio.pause();
-                    else void audio.play();
-                  }}>{isPlaying ? <Pause size={16} /> : <Play size={16} />}{isPlaying ? '이 절 멈춤' : '이 절 듣기'}</button>
+                  <button className="library-audio-button" type="button" disabled={audioStartingId === item.id} onClick={() => void toggleLibraryVersePlayback(item)}>{audioStartingId === item.id ? <LoaderCircle className="spin" size={16} /> : isPlaying ? <Pause size={16} /> : <Play size={16} />}{audioStartingId === item.id ? '재생 준비 중' : isPlaying ? '이 절 멈춤' : '이 절 듣기'}</button>
                   <p className="library-playback-note">
                     {isPlaying
                       ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
