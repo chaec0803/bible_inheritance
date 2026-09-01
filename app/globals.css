@@ -90,7 +90,9 @@ button { color: inherit; }
 .word-card-library-entry strong { color: #173f50; font-size: 14px; }
 .word-card-library-entry small { margin-top: 4px; color: #776b5e; font-size: 9px; }
 .word-card-library-entry.journey-library-entry { background: linear-gradient(135deg, var(--sage-soft), color-mix(in srgb, var(--sage-soft) 48%, var(--paper))); border-color: color-mix(in srgb, var(--sage) 46%, var(--line)); }
-.word-card-library-entry.journey-library-entry > span { color: #315f50; background: color-mix(in srgb, var(--sage) 20%, var(--paper)); }
+.word-card-library-entry.journey-library-entry > span { color: var(--sage); background: color-mix(in srgb, var(--sage) 20%, var(--paper)); }
+.word-card-library-entry.journey-library-entry strong { color: var(--ink); }
+.word-card-library-entry.journey-library-entry small { color: var(--muted); }
 .word-card-library-card { max-width: 980px; }
 .pending-word-cards { max-width: 790px; margin: 26px auto 0; padding: 16px; display: grid; gap: 10px; background: #fff8ec; border: 1px solid #ddc69f; border-radius: 18px; }
 .pending-word-cards > div { display: flex; align-items: center; gap: 10px; }

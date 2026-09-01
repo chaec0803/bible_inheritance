@@ -1000,7 +1000,9 @@ export default function HomePage() {
       .map((item) => item.book),
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
-  const journeyProjects = activeProjects;
+  const journeyProjects = activeProjects.filter((project) =>
+    libraryRecordings.some((recording) => recordingBelongsToJourney(recording, project)),
+  );
   const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
