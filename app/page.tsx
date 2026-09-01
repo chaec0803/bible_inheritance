@@ -503,7 +503,7 @@ export default function HomePage() {
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('theme-믿음-7');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [customProjectName, setCustomProjectName] = useState('나의 말씀 여정');
   const [customBookId, setCustomBookId] = useState(bibleBooks[0].code);
   const [customStartChapter, setCustomStartChapter] = useState(1);
@@ -2063,7 +2063,7 @@ export default function HomePage() {
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
                   <em>성경 고르기 <ArrowRight size={15} /></em>
                 </button>
-                <button className="recommended" type="button" onClick={() => setOnboardingStep('projects')}>
+                <button className="recommended" type="button" onClick={() => { setSelectedTemplateId(''); setOnboardingStep('projects'); }}>
                   <i>추천</i><span><Target size={22} /></span>
                   <strong>매일 말씀 읽기 시작하기</strong>
                   <small>분량과 기간을 정해 매일 조금씩 말씀을 녹음해요.</small>
@@ -2228,8 +2228,8 @@ export default function HomePage() {
               <p className="eyebrow">말씀 여정 만들기</p>
               <h1>얼마 동안 함께 완성해볼까요?</h1>
               <div className="duration-picker" aria-label="말씀 여정 기간">
-                <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId('theme-믿음-7'); }}>1주</button>
-                <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId('theme-믿음-14'); }}>2주</button>
+                <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId(''); }}>1주</button>
+                <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId(''); }}>2주</button>
                 <span>1개월부터 3년 말씀 여정은 준비 중이에요.</span>
               </div>
               <div className="project-picker-layout">
@@ -2245,7 +2245,7 @@ export default function HomePage() {
                     </button>
                   )})}
                 </div>
-                <aside className="project-schedule-preview">
+                {selectedTemplateId && <aside className="project-schedule-preview selected-schedule-subtab">
                   <p className="eyebrow">자동으로 만든 일정</p>
                   <h2>{selectedTemplate.title}</h2>
                   {selectedTemplate.custom ? (
@@ -2295,7 +2295,7 @@ export default function HomePage() {
                     </ol>
                   )}
                   <button className="start-project-button" type="button" onClick={selectedTemplate.custom ? saveCustomProject : () => finishOnboarding(selectedTemplate.id)} disabled={activeProjectIds.has(selectedTemplate.id) || (selectedTemplate.custom && customTotalVerses === 0)}>{activeProjectIds.has(selectedTemplate.id) ? '이미 진행 중인 말씀 여정' : selectedTemplate.custom ? '이 일정으로 말씀 여정 만들기' : '이 말씀 여정 시작하기'} {!activeProjectIds.has(selectedTemplate.id) && <ArrowRight size={16} />}</button>
-                </aside>
+                </aside>}
               </div>
             </div>
           )}
