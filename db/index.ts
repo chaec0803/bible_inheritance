@@ -10,6 +10,7 @@ export function ensureDbSchema() {
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS recordings (
       id TEXT PRIMARY KEY NOT NULL,
       owner_key TEXT NOT NULL,
+      data_version TEXT NOT NULL DEFAULT 'legacy',
       project_id TEXT NOT NULL DEFAULT 'legacy',
       project_title TEXT NOT NULL DEFAULT '이전 녹음',
       recording_group_id TEXT,
@@ -31,12 +32,14 @@ export function ensureDbSchema() {
     const names = new Set(columns.results.map((column) => column.name));
     const additions = [];
     if (!names.has('project_id')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN project_id TEXT NOT NULL DEFAULT 'legacy'"));
+    if (!names.has('data_version')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN data_version TEXT NOT NULL DEFAULT 'legacy'"));
     if (!names.has('project_title')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN project_title TEXT NOT NULL DEFAULT '이전 녹음'"));
     if (!names.has('recording_group_id')) additions.push(env.DB.prepare('ALTER TABLE recordings ADD COLUMN recording_group_id TEXT'));
     if (!names.has('recording_mode')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN recording_mode TEXT NOT NULL DEFAULT 'verse'"));
     if (additions.length) await env.DB.batch(additions);
     await env.DB.batch([
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_created ON recordings(owner_key, created_at)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_version_created ON recordings(owner_key, data_version, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_project_created ON recordings(owner_key, project_id, created_at)'),
     ]);
   }).catch((error) => {

@@ -36,6 +36,7 @@ import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/li
 import { getBackStep } from '@/lib/navigation-policy';
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
 import { themedProjects } from '@/lib/themed-projects';
+import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -597,6 +598,9 @@ export default function HomePage() {
   }, [recording, recordingMode]);
 
   useEffect(() => {
+    const storedDataVersion = window.localStorage.getItem('verse-legacy-data-version');
+    getLegacyStorageKeysToClear(Object.keys(window.localStorage), storedDataVersion).forEach((key) => window.localStorage.removeItem(key));
+    window.localStorage.setItem('verse-legacy-data-version', CURRENT_DATA_VERSION);
     const completed = window.localStorage.getItem('verse-legacy-onboarding-complete') === 'true';
     const savedProjectId = window.localStorage.getItem('verse-legacy-project');
     const savedFreePassage = window.localStorage.getItem('verse-legacy-free-passage');

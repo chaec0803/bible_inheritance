@@ -22,6 +22,13 @@
       "when": 1788185269311,
       "tag": "0002_silky_red_wolf",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788276761995,
+      "tag": "0003_light_revanche",
+      "breakpoints": true
     }
   ]
 }

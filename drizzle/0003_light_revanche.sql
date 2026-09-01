@@ -1,0 +1,2 @@
+ALTER TABLE `recordings` ADD `data_version` text DEFAULT 'legacy' NOT NULL;--> statement-breakpoint
+CREATE INDEX `idx_recordings_owner_version_created` ON `recordings` (`owner_key`,`data_version`,`created_at`);

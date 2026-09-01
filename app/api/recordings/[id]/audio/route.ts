@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { and, eq } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
+import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -18,7 +19,7 @@ export async function GET(request: Request, context: RouteContext) {
   const [recording] = await getDb()
     .select({ objectKey: recordings.objectKey, mimeType: recordings.mimeType })
     .from(recordings)
-    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)))
+    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .limit(1);
 
   if (!recording) return Response.json({ error: '녹음을 찾을 수 없습니다.' }, { status: 404 });
@@ -49,7 +50,7 @@ export async function PUT(request: Request, context: RouteContext) {
   const [existing] = await getDb()
     .select({ objectKey: recordings.objectKey })
     .from(recordings)
-    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)))
+    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .limit(1);
 
   if (!existing) return Response.json({ error: '교체할 녹음을 찾을 수 없습니다.' }, { status: 404 });
@@ -97,6 +98,7 @@ export async function PUT(request: Request, context: RouteContext) {
       .update(recordings)
       .set({
         book,
+        dataVersion: CURRENT_DATA_VERSION,
         projectId,
         projectTitle,
         recordingGroupId,
@@ -112,7 +114,7 @@ export async function PUT(request: Request, context: RouteContext) {
         durationSeconds,
         createdAt,
       })
-      .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)));
+      .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)));
   } catch (error) {
     await env.FILES.delete(replacementObjectKey);
     throw error;
@@ -133,12 +135,12 @@ export async function DELETE(request: Request, context: RouteContext) {
   const [existing] = await getDb()
     .select({ objectKey: recordings.objectKey })
     .from(recordings)
-    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)))
+    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .limit(1);
 
   if (!existing) return Response.json({ error: '삭제할 녹음을 찾을 수 없습니다.' }, { status: 404 });
 
-  await getDb().delete(recordings).where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey)));
+  await getDb().delete(recordings).where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)));
   await env.FILES.delete(existing.objectKey);
   return Response.json({ id });
 }

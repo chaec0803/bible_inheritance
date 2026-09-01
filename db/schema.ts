@@ -5,6 +5,7 @@ export const recordings = sqliteTable(
   {
     id: text('id').primaryKey(),
     ownerKey: text('owner_key').notNull(),
+    dataVersion: text('data_version').notNull().default('legacy'),
     projectId: text('project_id').notNull().default('legacy'),
     projectTitle: text('project_title').notNull().default('이전 녹음'),
     recordingGroupId: text('recording_group_id'),
@@ -23,6 +24,7 @@ export const recordings = sqliteTable(
   },
   (table) => [
     index('idx_recordings_owner_created').on(table.ownerKey, table.createdAt),
+    index('idx_recordings_owner_version_created').on(table.ownerKey, table.dataVersion, table.createdAt),
     index('idx_recordings_owner_project_created').on(table.ownerKey, table.projectId, table.createdAt),
   ],
 );

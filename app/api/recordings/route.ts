@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
+import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 
 const OWNER_HEADER = 'x-verse-legacy-owner';
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
       createdAt: recordings.createdAt,
     })
     .from(recordings)
-    .where(eq(recordings.ownerKey, ownerKey))
+    .where(and(eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .orderBy(desc(recordings.createdAt));
 
   return Response.json({ recordings: rows });
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
   const existing = await getDb()
     .select({ id: recordings.id, objectKey: recordings.objectKey })
     .from(recordings)
-    .where(and(eq(recordings.ownerKey, ownerKey), eq(recordings.projectId, projectId), eq(recordings.book, book), eq(recordings.chapter, chapter), eq(recordings.verse, verse)));
+    .where(and(eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION), eq(recordings.projectId, projectId), eq(recordings.book, book), eq(recordings.chapter, chapter), eq(recordings.verse, verse)));
 
   await env.FILES.put(objectKey, audio.stream(), {
     httpMetadata: { contentType: mimeType },
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
     await getDb().insert(recordings).values({
       id,
       ownerKey,
+      dataVersion: CURRENT_DATA_VERSION,
       projectId,
       projectTitle,
       recordingGroupId,
