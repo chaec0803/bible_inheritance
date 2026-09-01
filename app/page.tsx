@@ -807,7 +807,7 @@ export default function HomePage() {
     fetchLibrary(ownerKey)
       .then((recordings) => {
         if (cancelled) return;
-        const passageSaved = passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
+        const passageSaved = passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
         setLibraryRecordings(recordings);
         setSaved(passageSaved);
         const firstUnrecordedIndex = passageSaved.findIndex((isSaved) => !isSaved);
@@ -906,7 +906,7 @@ export default function HomePage() {
   const currentPassageComplete = passageVerses.length > 0 && saved.length === passageVerses.length && saved.every(Boolean);
   const activeLibraryRecordings = useMemo(() => {
     if (!activeProject) return libraryRecordings;
-    if (activeProject.kind === 'free') return libraryRecordings.filter((item) => item.projectId.startsWith('free-'));
+    if (activeProject.kind === 'free') return libraryRecordings.filter((item) => item.projectId === activeProject.id);
 
     const targetChapters = getProjectChapterKeys(activeProject);
     return libraryRecordings.filter((item) => {
@@ -985,7 +985,7 @@ export default function HomePage() {
       .map((item) => item.book),
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
-  const guidedProjects = activeProjects.filter((project) => project.kind !== 'free');
+  const journeyProjects = activeProjects;
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
     activeLibraryRecordings.forEach((item) => {
@@ -1078,7 +1078,7 @@ export default function HomePage() {
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
-    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id || (activeProject.kind === 'free' && item.projectId.startsWith('free-'))) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
     return recordings;
   };
 
@@ -1740,10 +1740,9 @@ export default function HomePage() {
     setViewedProjectDay(null);
     setActiveProject(activatedProject);
     setActiveProjects((current) => {
-      const withoutPreviousFree = activatedProject.kind === 'free' ? current.filter((item) => item.kind !== 'free') : current;
-      const next = withoutPreviousFree.some((item) => item.id === activatedProject.id)
-        ? withoutPreviousFree.map((item) => item.id === activatedProject.id ? activatedProject : item)
-        : [...withoutPreviousFree, activatedProject];
+      const next = current.some((item) => item.id === activatedProject.id)
+        ? current.map((item) => item.id === activatedProject.id ? activatedProject : item)
+        : [...current, activatedProject];
       window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
       return next;
     });
@@ -1754,8 +1753,8 @@ export default function HomePage() {
   const startFreeChapter = () => {
     if (!selectedBibleVerses.length) return;
     const freeProject: ActiveProject = {
-      id: 'free-recording',
-      title: '자유 녹음',
+      id: `free-${selectedBibleBook.code}-${selectedBibleChapter}`,
+      title: `${selectedBibleBook.name} ${selectedBibleChapter}장`,
       duration: 0,
       scope: `총 ${selectedBibleVerses.length}절 · 일정 없이 자유롭게`,
       tasks: [`${selectedBibleBook.name} ${selectedBibleChapter}장 전체`],
@@ -1877,14 +1876,14 @@ export default function HomePage() {
                 </button>
                 <button className="recommended" type="button" onClick={() => setOnboardingStep('projects')}>
                   <i>추천</i><span><Target size={22} /></span>
-                  <strong>말씀 여정 시작하기</strong>
+                  <strong>매일 말씀 읽기 시작하기</strong>
                   <small>분량과 기간을 정해 매일 조금씩 말씀을 녹음해요.</small>
-                  <em>새 여정 고르기 <ArrowRight size={15} /></em>
+                  <em>읽기 일정 고르기 <ArrowRight size={15} /></em>
                 </button>
               </div>
               <button className="word-card-library-entry journey-library-entry" type="button" onClick={() => setOnboardingStep('projectHome')}>
                 <span><Target size={21} /></span>
-                <div><strong>내 말씀 여정</strong><small>{guidedProjects.length ? `진행 중인 말씀 여정 ${guidedProjects.length}개 · ${guidedProjects.slice(0, 2).map((project) => project.title).join(' · ')}` : '아직 진행 중인 말씀 여정이 없어요.'}</small></div>
+                <div><strong>내 말씀 여정</strong><small>{journeyProjects.length ? `진행 중인 말씀 여정 ${journeyProjects.length}개 · ${journeyProjects.slice(0, 2).map((project) => project.title).join(' · ')}` : '아직 진행 중인 말씀 여정이 없어요.'}</small></div>
                 <ArrowRight size={18} />
               </button>
               <button className="word-card-library-entry" type="button" onClick={() => setOnboardingStep('cards')}>
@@ -1927,10 +1926,10 @@ export default function HomePage() {
               <p className="eyebrow">MY PROJECTS</p>
               <h1>어떤 말씀 여정을 이어갈까요?</h1>
               <p className="onboarding-lead">말씀 여정을 선택하면 해당 녹음 화면으로 바로 이어져요.</p>
-              {guidedProjects.length ? <div className="running-project-list">
-                {guidedProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => { activateProject(project); setAppTab('recording'); setOnboardingStep('app'); }} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+              {journeyProjects.length ? <div className="running-project-list">
+                {journeyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => { activateProject(project); setAppTab('recording'); setOnboardingStep('app'); }} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
               </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
-              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 말씀 여정 시작하기 <ArrowRight size={16} /></button>
+              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 매일 말씀 읽기 시작 <ArrowRight size={16} /></button>
             </div>
           ) : onboardingStep === 'bible' ? (
             <div className="onboarding-card bible-browser-card">
