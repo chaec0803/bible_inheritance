@@ -560,6 +560,7 @@ export default function HomePage() {
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [recordingManageOpen, setRecordingManageOpen] = useState(false);
   const [fullRetakeActive, setFullRetakeActive] = useState(false);
+  const [clearingForRetake, setClearingForRetake] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
@@ -1365,16 +1366,31 @@ export default function HomePage() {
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   };
 
-  const startFullRetake = () => {
+  const startFullRetake = async () => {
+    if (clearingForRetake) return;
     stopChapterPlayback();
     savedRecordingAudioRef.current?.pause();
-    setRecordingManageOpen(false);
-    setReplacingRecording(null);
-    setRecordingMode('continuous');
-    setFullRetakeActive(true);
-    setVerseIndex(0);
-    setSeconds(0);
-    setNotice('처음부터 다시 녹음해요. 새로 저장한 절만 기존 녹음에 안전하게 덮어씁니다.');
+    const passageEndVerse = passageStartVerse + passageVerses.length - 1;
+    const recordingsToDelete = activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse >= passageStartVerse && item.verse <= passageEndVerse);
+    setClearingForRetake(true);
+    try {
+      await Promise.all(recordingsToDelete.map(async (item) => {
+        const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
+        if (!response.ok) throw new Error('기존 녹음을 모두 지우지 못했어요. 다시 시도해 주세요.');
+      }));
+      await refreshLibrary();
+      setRecordingManageOpen(false);
+      setReplacingRecording(null);
+      setRecordingMode('continuous');
+      setFullRetakeActive(true);
+      setVerseIndex(0);
+      setSeconds(0);
+      setNotice(`${passageBook.name} ${passageChapter}장의 기존 녹음을 모두 지웠어요. 1절부터 새로 녹음해 주세요.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '기존 녹음을 지우지 못했어요.');
+    } finally {
+      setClearingForRetake(false);
+    }
   };
 
   const toggleSavedRecordingPlayback = () => {
@@ -2195,7 +2211,7 @@ export default function HomePage() {
           {fullRetakeActive && !recording && (
             <div className="retake-banner">
               <RotateCcw size={18} />
-              <p><strong>전체 다시 녹음을 준비했어요.</strong><small>첫 절부터 시작하며, 새로 저장하기 전까지 기존 음성은 그대로 유지됩니다.</small></p>
+              <p><strong>새 녹음을 준비했어요.</strong><small>기존 녹음은 모두 삭제되었어요. 첫 절부터 새롭게 이어 읽어 주세요.</small></p>
               <button type="button" onClick={() => setFullRetakeActive(false)}>취소</button>
             </div>
           )}
@@ -2331,7 +2347,7 @@ export default function HomePage() {
             <p>한 절만 바꾸려면 저장된 절을 선택해 주세요. 전체 재녹음은 첫 절부터 새롭게 이어 읽어요.</p>
             <div className="recording-manage-options">
               <button type="button" onClick={() => setRecordingManageOpen(false)}><span><AudioLines size={20} /></span><div><strong>절별로 수정</strong><small>목록에서 녹음된 절을 누른 뒤 ‘이 절 수정’을 선택해요.</small></div></button>
-              <button className="full-retake" type="button" onClick={startFullRetake}><span><RotateCcw size={20} /></span><div><strong>전체 다시 녹음</strong><small>기존 음성은 바로 지우지 않고 새로 녹음한 절부터 교체해요.</small></div></button>
+              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => void startFullRetake()}><span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span><div><strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong><small>현재 장에 저장된 녹음을 모두 지우고 1절부터 다시 시작해요.</small></div></button>
             </div>
           </dialog>
         </div>
