@@ -2480,7 +2480,7 @@ export default function HomePage() {
       </footer>
 
       <nav className="mobile-nav" aria-label="주요 메뉴">
-        <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Home size={19} /><span>녹음</span></button>
+        <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={19} /><span>녹음</span></button>
         <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
         <button type="button"><Users size={19} /><span>가족</span></button>
       </nav>
