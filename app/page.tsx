@@ -548,6 +548,7 @@ export default function HomePage() {
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [savingLibrary, setSavingLibrary] = useState(false);
+  const [deletingVerseId, setDeletingVerseId] = useState<string | null>(null);
   const [savedRecordingPlaying, setSavedRecordingPlaying] = useState(false);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
@@ -1350,22 +1351,33 @@ export default function HomePage() {
     setSeconds(takes[safeIndex]?.duration ?? 0);
   };
 
-  const startRetake = (item: SavedRecording) => {
+  const startRetake = async (item: SavedRecording) => {
+    if (deletingVerseId) return;
     stopChapterPlayback();
-    setSelectedLibraryRecordingId(null);
-    setReplacingRecording(item);
-    setFullRetakeActive(false);
-    setRecordingMode('verse');
-    setBgm(item.bgmId);
-    setReverb(item.reverb);
-    if (item.book === passageBook.name && item.chapter === passageChapter) {
-      const targetIndex = item.verse - passageStartVerse;
-      if (targetIndex >= 0 && targetIndex < passageVerses.length) setVerseIndex(targetIndex);
+    setDeletingVerseId(item.id);
+    try {
+      const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
+      if (!response.ok) throw new Error(`${item.verse}절 녹음을 지우지 못했어요.`);
+      await refreshLibrary();
+      setSelectedLibraryRecordingId(null);
+      setReplacingRecording(item);
+      setFullRetakeActive(false);
+      setRecordingMode('verse');
+      setBgm(item.bgmId);
+      setReverb(item.reverb);
+      if (item.book === passageBook.name && item.chapter === passageChapter) {
+        const targetIndex = item.verse - passageStartVerse;
+        if (targetIndex >= 0 && targetIndex < passageVerses.length) setVerseIndex(targetIndex);
+      }
+      setSeconds(0);
+      setAppTab('recording');
+      setNotice(`${item.verse}절의 기존 녹음을 지웠어요. 같은 자리에서 다시 녹음해 주세요.`);
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '절별 녹음을 지우지 못했어요.');
+    } finally {
+      setDeletingVerseId(null);
     }
-    setSeconds(0);
-    setAppTab('recording');
-    setNotice(`${item.verse}절만 새로 녹음할 수 있어요. 저장하기 전까지 기존 음성은 유지돼요.`);
-    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   };
 
   const startFullRetake = async () => {
@@ -1653,11 +1665,10 @@ export default function HomePage() {
       formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
 
-      const isReplacingCurrentVerse = replacingRecording?.book === passageBook.name && replacingRecording.chapter === passageChapter && replacingRecording.verse === currentVerseNumber;
       const response = await fetch(
-        isReplacingCurrentVerse ? `/api/recordings/${replacingRecording.id}/audio` : '/api/recordings',
+        '/api/recordings',
         {
-        method: isReplacingCurrentVerse ? 'PUT' : 'POST',
+        method: 'POST',
         headers: { 'x-verse-legacy-owner': ownerKeyRef.current },
         body: formData,
         },
@@ -2204,14 +2215,6 @@ export default function HomePage() {
             </span>
           </div>
 
-          {replacingRecording && replacingRecording.book === passageBook.name && replacingRecording.chapter === passageChapter && replacingRecording.verse === currentVerseNumber && (
-            <div className="retake-banner">
-              <RotateCcw size={18} />
-              <p><strong>{currentVerseNumber}절을 다시 녹음하고 있어요.</strong><small>새 녹음을 저장하기 전까지 기존 보관함 음성은 그대로 유지됩니다.</small></p>
-              <button type="button" onClick={() => { setReplacingRecording(null); setRecordingMode('continuous'); }}>취소</button>
-            </div>
-          )}
-
           <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
             <span className="verse-number">{currentVerseNumber}</span>
             {recordingMode === 'continuous' ? <div className="continuous-verse-copy">
@@ -2242,9 +2245,9 @@ export default function HomePage() {
                 {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
                 <span>{savedRecordingPlaying ? '듣기 멈춤' : '이 절 듣기'}</span>
               </button>
-              <button className="record-complete-button restart" type="button" onClick={() => currentSavedRecording && startRetake(currentSavedRecording)}>
-                <RotateCcw size={21} />
-                <span>이 절 수정</span>
+              <button className="record-complete-button restart" type="button" disabled={Boolean(deletingVerseId)} onClick={() => currentSavedRecording && void startRetake(currentSavedRecording)}>
+                {deletingVerseId === currentSavedRecording?.id ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
+                <span>{deletingVerseId === currentSavedRecording?.id ? '삭제 중' : '이 절 수정'}</span>
               </button>
             </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
               <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
@@ -2470,8 +2473,8 @@ export default function HomePage() {
                       ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
                       : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}
                   </p>
-                  <button className="library-retake-button" type="button" onClick={() => startRetake(item)}>
-                    <RotateCcw size={14} /> 이 절 다시 녹음
+                  <button className="library-retake-button" type="button" disabled={Boolean(deletingVerseId)} onClick={() => void startRetake(item)}>
+                    {deletingVerseId === item.id ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />} {deletingVerseId === item.id ? '삭제 중' : '이 절 다시 녹음'}
                   </button>
                 </article>
               );
