@@ -144,7 +144,7 @@ const projectTemplates: ProjectTemplate[] = [
     tasks: [...makeChapterTasks('창세기', 1, 18, 3), '전체 확인하고 완성하기'],
   },
   {
-    id: 'custom-7', duration: 7, level: '초급', title: '내가 직접 프로젝트 만들기', scope: '성경 전체에서 원하는 범위를 6일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
+    id: 'custom-7', duration: 7, level: '초급', title: '내가 직접 말씀 여정 만들기', scope: '성경 전체에서 원하는 범위를 6일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
   },
   {
     id: 'matthew-5-6-beginner', duration: 14, level: '초급', title: '산상수훈 천천히 읽기', scope: '총 60절 · 하루 5절', minutes: '하루 5–8분',
@@ -159,7 +159,7 @@ const projectTemplates: ProjectTemplate[] = [
     tasks: [...makeChapterTasks('창세기', 1, 36, 3), '밀린 녹음과 다시 녹음', '전체 확인하고 완성하기'],
   },
   {
-    id: 'custom-14', duration: 14, level: '초급', title: '내가 직접 프로젝트 만들기', scope: '성경 전체에서 원하는 범위를 12일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
+    id: 'custom-14', duration: 14, level: '초급', title: '내가 직접 말씀 여정 만들기', scope: '성경 전체에서 원하는 범위를 12일 분량으로 자동 배정', minutes: '분량에 따라 자동 계산', tasks: [], custom: true,
   },
 ];
 
@@ -557,7 +557,7 @@ export default function HomePage() {
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('james-1-beginner');
-  const [customProjectName, setCustomProjectName] = useState('나의 말씀 프로젝트');
+  const [customProjectName, setCustomProjectName] = useState('나의 말씀 여정');
   const [customBookId, setCustomBookId] = useState(bibleBooks[0].code);
   const [customStartChapter, setCustomStartChapter] = useState(1);
   const [customStartVerse, setCustomStartVerse] = useState(1);
@@ -1723,7 +1723,7 @@ export default function HomePage() {
       setSaved(selectedVerses.map(() => false));
       setReplacingRecording(null);
     } catch {
-      setNotice('프로젝트 본문을 불러오지 못했어요. 다시 선택해 주세요.');
+      setNotice('말씀 여정의 본문을 불러오지 못했어요. 다시 선택해 주세요.');
     }
   }
 
@@ -1789,7 +1789,7 @@ export default function HomePage() {
       } else if (project) {
         activateProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks });
       }
-      setNotice(project?.custom ? '직접 프로젝트를 만들 준비가 됐어요.' : `‘${project?.title}’ 프로젝트를 시작했어요.`);
+      setNotice(project?.custom ? '직접 말씀 여정을 만들 준비가 됐어요.' : `‘${project?.title}’ 말씀 여정을 시작했어요.`);
     } else {
       window.localStorage.removeItem('verse-legacy-project');
       setActiveProject(null);
@@ -1839,13 +1839,13 @@ export default function HomePage() {
     setCustomStartVerse(1);
     setCustomEndChapter(book.verseCounts.length);
     setCustomEndVerse(book.verseCounts[book.verseCounts.length - 1]);
-    setCustomProjectName(`${book.name} 목소리 프로젝트`);
+    setCustomProjectName(`${book.name} 목소리 여정`);
   };
 
   const saveCustomProject = () => {
     const project = {
       id: `custom-${crypto.randomUUID()}`,
-      title: customProjectName.trim() || `${customBook.name} 프로젝트`,
+      title: customProjectName.trim() || `${customBook.name} 말씀 여정`,
       duration: projectDuration,
       bookId: customBook.id,
       scope: `${customBook.name} · 총 ${customTotalVerses}절`,
@@ -1867,7 +1867,7 @@ export default function HomePage() {
             <div className="onboarding-card welcome-card">
               <p className="eyebrow">{returningHome ? '말씀유산 홈' : '소중한 목소리를 오래 간직해요'}</p>
               <h1>{returningHome ? '무엇을 선택할까요?' : '어떤 방식으로 시작할까요?'}</h1>
-              <p className="onboarding-lead">{returningHome ? '진행 중인 프로젝트를 열거나, 원하는 말씀을 골라 자유롭게 녹음하세요.' : '지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.'}</p>
+              <p className="onboarding-lead">{returningHome ? '진행 중인 말씀 여정을 열거나, 원하는 말씀을 골라 자유롭게 녹음하세요.' : '지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.'}</p>
               <div className="start-choice-grid">
                 <button type="button" onClick={() => { setBibleBackTarget('welcome'); setOnboardingStep('bible'); }}>
                   <span><Sparkles size={22} /></span>
@@ -1877,9 +1877,9 @@ export default function HomePage() {
                 </button>
                 <button className="recommended" type="button" onClick={() => setOnboardingStep('projectHome')}>
                   <i>추천</i><span><Target size={22} /></span>
-                  <strong>프로젝트 보기</strong>
-                  <small>진행 중인 프로젝트를 골라 이어서 녹음하거나 새 프로젝트를 시작해요.</small>
-                  <em>내 프로젝트 보기 <ArrowRight size={15} /></em>
+                  <strong>말씀 여정</strong>
+                  <small>{guidedProjects.length ? `${guidedProjects.slice(0, 2).map((project) => project.title).join(' · ')}${guidedProjects.length > 2 ? ` 외 ${guidedProjects.length - 2}개` : ''}` : '매일 조금씩 이어갈 새로운 말씀 여정을 시작해요.'}</small>
+                  <em>{guidedProjects.length ? '내 말씀 여정 보기' : '새 말씀 여정 시작'} <ArrowRight size={15} /></em>
                 </button>
               </div>
               <button className="word-card-library-entry" type="button" onClick={() => setOnboardingStep('cards')}>
@@ -1893,7 +1893,7 @@ export default function HomePage() {
               <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 홈으로</button>
               <p className="eyebrow">MY WORD CARDS</p>
               <h1>내 카드 보관함</h1>
-              <p className="onboarding-lead">프로젝트의 하루 과제를 마치고 직접 간직한 카드들이에요. 카드를 누르면 자세히 볼 수 있어요.</p>
+              <p className="onboarding-lead">말씀 여정의 하루 분량을 마치고 직접 간직한 카드들이에요. 카드를 누르면 자세히 볼 수 있어요.</p>
               {pendingWordCards.length > 0 && <section className="pending-word-cards" aria-label="아직 간직하지 않은 받은 카드">
                 <div><span><Sparkles size={18} /></span><div><strong>오늘 받은 카드가 기다리고 있어요</strong><small>다시 팝업으로 띄우지 않았어요. 여기서 간직하면 아래 보관함에 들어가요.</small></div></div>
                 {pendingWordCards.map(({ award, card }) => <article key={award.key}>
@@ -1913,19 +1913,19 @@ export default function HomePage() {
                   })}
                 </div>
               ) : pendingWordCards.length === 0 ? (
-                <div className="word-card-collection-empty"><Sparkles size={28} /><strong>아직 간직한 카드가 없어요</strong><p>프로젝트의 하루 과제를 완료한 뒤<br />‘내 카드로 간직하기’를 눌러보세요.</p></div>
+                <div className="word-card-collection-empty"><Sparkles size={28} /><strong>아직 간직한 카드가 없어요</strong><p>말씀 여정의 하루 분량을 완료한 뒤<br />‘내 카드로 간직하기’를 눌러보세요.</p></div>
               ) : null}
             </div>
           ) : onboardingStep === 'projectHome' ? (
             <div className="onboarding-card project-home-card">
               <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 홈으로</button>
               <p className="eyebrow">MY PROJECTS</p>
-              <h1>어떤 프로젝트를 이어갈까요?</h1>
-              <p className="onboarding-lead">프로젝트를 선택하면 다른 항목 없이 그 프로젝트의 녹음 화면만 열려요.</p>
+              <h1>어떤 말씀 여정을 이어갈까요?</h1>
+              <p className="onboarding-lead">말씀 여정을 선택하면 해당 녹음 화면으로 바로 이어져요.</p>
               {guidedProjects.length ? <div className="running-project-list">
-                {guidedProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => { activateProject(project); setAppTab('recording'); setOnboardingStep('app'); }} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 프로젝트`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
-              </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 프로젝트가 없어요</strong><p>첫 프로젝트를 만들고 매일 조금씩 완성해보세요.</p></div>}
-              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 프로젝트 시작하기 <ArrowRight size={16} /></button>
+                {guidedProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => { activateProject(project); setAppTab('recording'); setOnboardingStep('app'); }} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+              </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
+              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 말씀 여정 시작하기 <ArrowRight size={16} /></button>
             </div>
           ) : onboardingStep === 'bible' ? (
             <div className="onboarding-card bible-browser-card">
@@ -1974,14 +1974,14 @@ export default function HomePage() {
             </div>
           ) : onboardingStep === 'schedule' && activeProject ? (
             <div className="onboarding-card project-schedule-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('app')}><ChevronLeft size={16} /> 프로젝트로 돌아가기</button>
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('app')}><ChevronLeft size={16} /> 말씀 여정으로 돌아가기</button>
               <p className="eyebrow">PROJECT SCHEDULE</p>
               <h1>{activeProject.title}</h1>
               <p className="onboarding-lead">{activeProject.scope}</p>
               <div className="project-schedule-only">
                 <div className="schedule-summary">
                   <span><CalendarDays size={20} /></span>
-                  <div><small>{activeProject.kind === 'free' ? '자유 녹음' : `총 ${activeProject.duration}일`}</small><strong>프로젝트 전체 일정</strong></div>
+                  <div><small>{activeProject.kind === 'free' ? '자유 녹음' : `총 ${activeProject.duration}일`}</small><strong>말씀 여정 전체 일정</strong></div>
                 </div>
                 <ol>
                   {activeProject.tasks.map((task, index) => {
@@ -1995,17 +1995,17 @@ export default function HomePage() {
                   })}
                 </ol>
               </div>
-              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('app')}>이 프로젝트 계속하기 <ArrowRight size={16} /></button>
+              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('app')}>이 말씀 여정 계속하기 <ArrowRight size={16} /></button>
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
               <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('projectHome')}><ChevronLeft size={16} /> 이전</button>
-              <p className="eyebrow">완성 프로젝트</p>
+              <p className="eyebrow">말씀 여정 만들기</p>
               <h1>얼마 동안 함께 완성해볼까요?</h1>
-              <div className="duration-picker" aria-label="프로젝트 기간">
+              <div className="duration-picker" aria-label="말씀 여정 기간">
                 <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId('james-1-beginner'); }}>1주</button>
                 <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId('matthew-5-6-beginner'); }}>2주</button>
-                <span>1개월부터 3년 프로젝트는 준비 중이에요.</span>
+                <span>1개월부터 3년 말씀 여정은 준비 중이에요.</span>
               </div>
               <div className="project-picker-layout">
                 <div className="project-template-list">
@@ -2025,7 +2025,7 @@ export default function HomePage() {
                   <h2>{selectedTemplate.title}</h2>
                   {selectedTemplate.custom ? (
                     <div className="custom-project-builder">
-                      <label><span>프로젝트 이름</span><input value={customProjectName} onChange={(event) => setCustomProjectName(event.target.value)} maxLength={50} /></label>
+                      <label><span>말씀 여정 이름</span><input value={customProjectName} onChange={(event) => setCustomProjectName(event.target.value)} maxLength={50} /></label>
                       <label><span>성경 선택</span><select value={customBookId} onChange={(event) => changeCustomBook(event.target.value)}>{supportedBibleBooks.map((book) => <option value={book.id} key={book.id}>{book.name}</option>)}</select></label>
                       <div className="range-row">
                         <label><span>시작 장</span><select value={customStartChapter} onChange={(event) => {
@@ -2069,7 +2069,7 @@ export default function HomePage() {
                       ))}
                     </ol>
                   )}
-                  <button className="start-project-button" type="button" onClick={selectedTemplate.custom ? saveCustomProject : () => finishOnboarding(selectedTemplate.id)} disabled={activeProjectIds.has(selectedTemplate.id) || (selectedTemplate.custom && customTotalVerses === 0)}>{activeProjectIds.has(selectedTemplate.id) ? '이미 진행 중인 프로젝트' : selectedTemplate.custom ? '이 일정으로 프로젝트 만들기' : '이 프로젝트 시작하기'} {!activeProjectIds.has(selectedTemplate.id) && <ArrowRight size={16} />}</button>
+                  <button className="start-project-button" type="button" onClick={selectedTemplate.custom ? saveCustomProject : () => finishOnboarding(selectedTemplate.id)} disabled={activeProjectIds.has(selectedTemplate.id) || (selectedTemplate.custom && customTotalVerses === 0)}>{activeProjectIds.has(selectedTemplate.id) ? '이미 진행 중인 말씀 여정' : selectedTemplate.custom ? '이 일정으로 말씀 여정 만들기' : '이 말씀 여정 시작하기'} {!activeProjectIds.has(selectedTemplate.id) && <ArrowRight size={16} />}</button>
                 </aside>
               </div>
             </div>
@@ -2099,13 +2099,13 @@ export default function HomePage() {
       {appTab === 'recording' && <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>}
 
       {appTab === 'recording' && <section className="workspace" id="recording">
-        <aside className="chapter-panel" aria-label="프로젝트 정보">
+        <aside className="chapter-panel" aria-label="말씀 여정 정보">
           <div>
-            <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 프로젝트' : `${activeProject.duration}일 완성 프로젝트`) : '우리 가족 첫 번째 낭독'}</p>
+            <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 여정' : `${activeProject.duration}일 말씀 여정`) : '우리 가족 첫 번째 낭독'}</p>
             <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
             <p className="muted">{activeProject?.tasks[0] ? `${displayedProjectDay === currentProjectDay ? '오늘' : '지난 과제'} · ${displayedProjectDay}일차: ${displayedProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
           </div>
-          {activeProject && activeProject.kind !== 'free' && <div className="project-day-progress" aria-label={`${activeProject.duration}일 프로젝트 진행 상황`}>
+          {activeProject && activeProject.kind !== 'free' && <div className="project-day-progress" aria-label={`${activeProject.duration}일 말씀 여정 진행 상황`}>
             <div><strong>{displayedProjectDay === currentProjectDay ? `${currentProjectDay}일차 진행 중` : `${displayedProjectDay}일차 다시 보기`}</strong><span>{completedProjectTaskIndexes.size}/{activeProject.duration}일 완료</span></div>
             <div className="project-day-badges">
               {Array.from({ length: activeProject.duration }, (_, index) => {
@@ -2308,7 +2308,7 @@ export default function HomePage() {
           <div>
             <p className="eyebrow">나중에도 다시 듣기</p>
             <h2 id="library-title">{activeProject ? `${activeProject.title} 보관함` : '말씀 보관함'}</h2>
-            <p className="muted">현재 선택한 프로젝트의 녹음만 모아 보여드려요. 프로젝트 탭을 바꾸면 보관함도 함께 바뀝니다.</p>
+            <p className="muted">현재 선택한 말씀 여정의 녹음만 모아 보여드려요. 말씀 여정을 바꾸면 보관함도 함께 바뀝니다.</p>
           </div>
           <span className="library-count"><Archive size={15} /> {activeLibraryRecordings.length}개 보관</span>
         </div>
@@ -2319,7 +2319,7 @@ export default function HomePage() {
           <div className="library-state empty">
             <span><Archive size={28} /></span>
             <strong>{activeProject ? `‘${activeProject.title}’에 저장된 녹음이 없어요` : '아직 저장된 녹음이 없어요'}</strong>
-            <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요. 다른 프로젝트의 녹음과 섞이지 않아요.</p>
+            <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요. 다른 말씀 여정의 녹음과 섞이지 않아요.</p>
             <button className="library-empty-action" type="button" onClick={openRecordingTab}>첫 녹음 시작하기</button>
           </div>
         ) : (
@@ -2485,7 +2485,7 @@ export default function HomePage() {
         <button type="button"><Users size={19} /><span>가족</span></button>
       </nav>
 
-      <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="프로젝트와 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+      <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="말씀 여정과 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
 
       {headphoneWarningOpen && (
         <div className="headphone-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHeadphoneWarningOpen(false); }}>
