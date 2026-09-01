@@ -70,6 +70,7 @@ button { color: inherit; }
 
 .onboarding-overlay { position: fixed; inset: 0; z-index: 100; min-height: 100dvh; padding: 28px clamp(18px, 4vw, 56px) 44px; overflow-y: auto; background: radial-gradient(circle at 15% 10%, var(--sage-soft), transparent 34%), var(--canvas); }
 .onboarding-brand { width: min(1120px, 100%); margin: 0 auto 22px; display: flex; align-items: center; gap: 10px; }
+.onboarding-theme-button { margin-left: auto; color: var(--ink); }
 .onboarding-card { width: min(1120px, 100%); margin: 0 auto; padding: clamp(28px, 5vw, 58px); background: var(--paper); border: 1px solid var(--line); border-radius: 28px; box-shadow: var(--shadow); }
 .onboarding-card > h1 { max-width: 680px; margin: 7px auto 10px; font-size: clamp(29px, 4vw, 48px); line-height: 1.12; letter-spacing: -.055em; text-align: center; }
 .onboarding-card > .eyebrow, .onboarding-lead { text-align: center; }

@@ -64,6 +64,8 @@ type ActiveProject = {
   kind?: 'guided' | 'free';
   passage?: ProjectPassage;
   startedOn?: string;
+  readingDay?: number;
+  readingDayDate?: string;
 };
 
 type ProjectPassage = { code: string; name: string; chapter: number; startVerse: number; endVerse: number };
@@ -75,6 +77,7 @@ function getKstDateKey(date = new Date()) {
 }
 
 function getProjectDay(project: ActiveProject, today: string) {
+  if (project.readingDay) return Math.min(project.duration, Math.max(1, project.readingDay));
   if (!project.startedOn || project.kind === 'free' || project.duration < 1) return 1;
   const startTime = Date.parse(`${project.startedOn}T00:00:00Z`);
   const todayTime = Date.parse(`${today}T00:00:00Z`);
@@ -699,7 +702,15 @@ export default function HomePage() {
       let restoredProjects: ActiveProject[] = [];
       if (savedActiveProjects) {
         try {
-          const parsedProjects = (JSON.parse(savedActiveProjects) as ActiveProject[]).map((project) => ({ ...project, startedOn: project.startedOn ?? getKstDateKey() }));
+          const parsedProjects = (JSON.parse(savedActiveProjects) as ActiveProject[]).map((project) => {
+            const startedOn = project.startedOn ?? getKstDateKey();
+            return {
+              ...project,
+              startedOn,
+              readingDay: project.kind === 'free' ? undefined : project.readingDay ?? getProjectDay({ ...project, startedOn }, getKstDateKey()),
+              readingDayDate: project.kind === 'free' ? undefined : project.readingDayDate ?? getKstDateKey(),
+            };
+          });
           const freeProjectsByBook = new Map<string, ActiveProject>();
           parsedProjects.filter((project) => project.kind === 'free' && project.passage).forEach((project) => {
             const passage = project.passage!;
@@ -761,7 +772,7 @@ export default function HomePage() {
           window.localStorage.removeItem('verse-legacy-free-passage');
         }
       }
-      if (completed) setOnboardingStep('app');
+      if (completed) setReturningHome(true);
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -989,6 +1000,23 @@ export default function HomePage() {
     return completed;
   }, [activeLibraryRecordings, activeProject, currentPassageComplete]);
   const displayedProjectDayComplete = completedProjectTaskIndexes.has(displayedProjectDayIndex);
+
+  useEffect(() => {
+    if (!activeProject || activeProject.kind === 'free' || activeProject.readingDayDate === kstToday) return;
+    const currentDay = getProjectDay(activeProject, kstToday);
+    const nextDay = completedProjectTaskIndexes.has(currentDay - 1)
+      ? Math.min(activeProject.duration, currentDay + 1)
+      : currentDay;
+    const updatedProject = { ...activeProject, readingDay: nextDay, readingDayDate: kstToday };
+    queueMicrotask(() => {
+      setActiveProject(updatedProject);
+      setActiveProjects((current) => {
+        const next = current.map((project) => project.id === updatedProject.id ? updatedProject : project);
+        window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
+        return next;
+      });
+    });
+  }, [activeProject, completedProjectTaskIndexes, kstToday]);
   const freeRecordingChapterKeys = useMemo(() => new Set(
     libraryRecordings
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
@@ -1780,7 +1808,12 @@ export default function HomePage() {
 
   const activateProject = (project: ActiveProject) => {
     const existingProject = activeProjects.find((item) => item.id === project.id);
-    const activatedProject = { ...project, startedOn: project.startedOn ?? existingProject?.startedOn ?? getKstDateKey() };
+    const activatedProject = {
+      ...project,
+      startedOn: project.startedOn ?? existingProject?.startedOn ?? getKstDateKey(),
+      readingDay: project.kind === 'free' ? undefined : project.readingDay ?? existingProject?.readingDay ?? 1,
+      readingDayDate: project.kind === 'free' ? undefined : project.readingDayDate ?? existingProject?.readingDayDate ?? getKstDateKey(),
+    };
     setViewedProjectDay(null);
     setActiveProject(activatedProject);
     setActiveProjects((current) => {
@@ -1923,7 +1956,12 @@ export default function HomePage() {
       <div className="persistent-youtube-host" aria-hidden="true"><div ref={youtubeContainerRef} /></div>
       {onboardingStep !== 'app' && (
         <section className="onboarding-overlay" aria-label="말씀유산 시작 설정">
-          <div className="onboarding-brand"><span className="brand-mark"><BookOpen size={20} /></span><strong>말씀유산</strong></div>
+          <div className="onboarding-brand">
+            <span className="brand-mark"><BookOpen size={20} /></span><strong>말씀유산</strong>
+            <button className="icon-button onboarding-theme-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
           {onboardingStep === 'welcome' ? (
             <div className="onboarding-card welcome-card">
               <p className="eyebrow">{returningHome ? '말씀유산 홈' : '소중한 목소리를 오래 간직해요'}</p>
