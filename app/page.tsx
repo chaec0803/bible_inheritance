@@ -34,7 +34,7 @@ import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
-import { getJourneyRecordingIds, removeJourney, restoreJourney } from '@/lib/journey-policy';
+import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney } from '@/lib/journey-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -1027,6 +1027,17 @@ export default function HomePage() {
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const journeyProjects = activeProjects;
+  const chapterCountsByBook = useMemo(() => Object.fromEntries(bibleBooks.map((book) => [book.name, book.chapters])), []);
+  const completedJourneyIds = useMemo(() => new Set(activeProjects.filter((project) => {
+    if (project.kind === 'free') return false;
+    const required = getRequiredJourneyReferences(project.tasks, chapterCountsByBook);
+    const recorded = new Set(libraryRecordings
+      .filter((recording) => recordingBelongsToJourney(recording, project))
+      .map((recording) => `${recording.book}-${recording.chapter}-${recording.verse}`));
+    return isJourneyCompleted(required, recorded);
+  }).map((project) => project.id)), [activeProjects, chapterCountsByBook, libraryRecordings]);
+  const ongoingJourneyProjects = journeyProjects.filter((project) => !completedJourneyIds.has(project.id));
+  const completedJourneyProjects = journeyProjects.filter((project) => completedJourneyIds.has(project.id));
   const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
@@ -2057,8 +2068,19 @@ export default function HomePage() {
               <p className="eyebrow">MY PROJECTS</p>
               <h1>어떤 말씀 여정을 이어갈까요?</h1>
               <p className="onboarding-lead">말씀 여정을 선택하면 해당 녹음 화면으로 바로 이어져요.</p>
-              {journeyProjects.length ? <div className="running-project-list">
-                {journeyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+              {journeyProjects.length ? <div className="journey-status-sections">
+                <section aria-labelledby="ongoing-journeys-title">
+                  <div className="journey-status-heading"><h2 id="ongoing-journeys-title">진행 중</h2><span>{ongoingJourneyProjects.length}</span></div>
+                  {ongoingJourneyProjects.length ? <div className="running-project-list">
+                    {ongoingJourneyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                  </div> : <p className="journey-status-empty">진행 중인 말씀 여정이 없어요.</p>}
+                </section>
+                {completedJourneyProjects.length > 0 && <section aria-labelledby="completed-journeys-title">
+                  <div className="journey-status-heading completed"><h2 id="completed-journeys-title">완료</h2><span>{completedJourneyProjects.length}</span></div>
+                  <div className="running-project-list completed-project-list">
+                    {completedJourneyProjects.map((project, index) => <button className={`project-color-${(ongoingJourneyProjects.length + index) % 5}`} type="button" onClick={() => { openJourney(project); setAppTab('library'); }} key={project.id}><span><Check size={20} /></span><div><small>말씀 여정 완료</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                  </div>
+                </section>}
               </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
             </div>
           ) : onboardingStep === 'bible' ? (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getJourneyRecordingIds, removeJourney, restoreJourney } from './journey-policy';
+import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney } from './journey-policy';
 
 describe('매일 말씀 읽기 그만하기', () => {
   it('선택한 여정의 녹음만 삭제 대상으로 정한다', () => {
@@ -30,5 +30,23 @@ describe('매일 말씀 읽기 그만하기', () => {
   it('이미 복원된 여정은 중복해서 추가하지 않는다', () => {
     const journey = { id: 'james' };
     expect(restoreJourney([journey], journey)).toEqual([journey]);
+  });
+
+  it('여정의 모든 녹음 대상 절을 기록했을 때만 완료로 분류한다', () => {
+    const required = getRequiredJourneyReferences(
+      ['야고보서 1장 1–2절', '야고보서 1장 3–4절', '전체 확인하고 완성하기'],
+      { 야고보서: [4] },
+    );
+    expect(isJourneyCompleted(required, new Set(['야고보서-1-1', '야고보서-1-2', '야고보서-1-3']))).toBe(false);
+    expect(isJourneyCompleted(required, new Set(['야고보서-1-1', '야고보서-1-2', '야고보서-1-3', '야고보서-1-4']))).toBe(true);
+  });
+
+  it('여러 장에 걸친 하루 분량의 중간 장 전체 절도 완료 대상에 포함한다', () => {
+    const required = getRequiredJourneyReferences(['창세기 1장 1절 ~ 3장 2절'], { 창세기: [2, 3, 2] });
+    expect([...required]).toEqual([
+      '창세기-1-1', '창세기-1-2',
+      '창세기-2-1', '창세기-2-2', '창세기-2-3',
+      '창세기-3-1', '창세기-3-2',
+    ]);
   });
 });
