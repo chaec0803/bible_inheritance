@@ -26,5 +26,13 @@ describe('완료 피드백과 재생 제어', () => {
   it('저장 중에는 로딩 상태를 표시하고 재실행을 막는다', () => {
     expect(page).toContain("disabled={requestingMic || savingLibrary}");
     expect(page).toContain("savingLibrary ? '녹음 저장 중'");
+    expect(page).toContain('if (savingLibrary || requestingMic) return;');
+  });
+
+  it('장과 하루 읽기 완료 후 보관함으로 바로 이동할 수 있다', () => {
+    expect(page).toContain('showLibraryAction: true');
+    expect(page).toContain('보관함 가기');
+    expect(page).toContain('openLibraryFromCompletion');
+    expect(page).toContain('setEarnedCard(null);');
   });
 });

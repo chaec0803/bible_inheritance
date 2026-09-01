@@ -457,7 +457,7 @@ export default function HomePage() {
   const [bgm, setBgm] = useState('still-waters');
   const [volume, setVolume] = useState(12);
   const [notice, setNotice] = useState('');
-  const [completionModal, setCompletionModal] = useState<{ title: string; description: string } | null>(null);
+  const [completionModal, setCompletionModal] = useState<{ title: string; description: string; showLibraryAction?: boolean } | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [playerReady, setPlayerReady] = useState(false);
   const [activePreview, setActivePreview] = useState<string | null>(null);
@@ -1081,7 +1081,7 @@ export default function HomePage() {
     if (!card) return;
     window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
     setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), result.award!]);
-    setCompletionModal({ title: '하루 읽기 완료', description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.` });
+    setCompletionModal({ title: '하루 읽기 완료', description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.`, showLibraryAction: true });
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
@@ -1156,6 +1156,13 @@ export default function HomePage() {
     setSavedRecordingPlaying(false);
     setAppTab('library');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openLibraryFromCompletion = () => {
+    setCompletionModal(null);
+    setEarnedCard(null);
+    setWordCardCollectionMode(false);
+    openLibraryTab();
   };
 
   const openLibraryVerse = (recording: SavedRecording) => {
@@ -1517,6 +1524,7 @@ export default function HomePage() {
       setCompletionModal({
         title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
         description: `${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
+        showLibraryAction: lastVerse >= passageStartVerse + passageVerses.length - 1,
       });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
@@ -1670,6 +1678,7 @@ export default function HomePage() {
   };
 
   const toggleRecording = () => {
+    if (savingLibrary || requestingMic) return;
     if (recording) {
       if (recordingMode === 'continuous') {
         stopContinuousAndSaveCurrent();
@@ -1707,6 +1716,7 @@ export default function HomePage() {
   const saveVerse = async () => {
     if (!currentTake || savingLibrary) return;
     const wasReplacement = Boolean(replacingRecording);
+    const completesPassage = !wasReplacement && passageVerses.every((_, index) => index === verseIndex || saved[index]);
     setSavingLibrary(true);
     try {
       const decodeContext = new AudioContext();
@@ -1757,6 +1767,7 @@ export default function HomePage() {
       setCompletionModal({
         title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
         description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 보관함에 안전하게 저장했어요.',
+        showLibraryAction: completesPassage,
       });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
@@ -2681,7 +2692,10 @@ export default function HomePage() {
             <p className="eyebrow">COMPLETED</p>
             <h2 id="completion-modal-title">{completionModal.title}</h2>
             <p>{completionModal.description}</p>
-            <button type="button" onClick={() => setCompletionModal(null)}>확인</button>
+            <div className="completion-modal-actions">
+              <button type="button" onClick={() => setCompletionModal(null)}>확인하기</button>
+              {completionModal.showLibraryAction && <button className="primary" type="button" onClick={openLibraryFromCompletion}><Headphones size={17} /> 보관함 가기</button>}
+            </div>
           </dialog>
         </div>
       )}
