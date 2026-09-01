@@ -17,6 +17,12 @@ describe('완료 피드백과 재생 제어', () => {
     expect(page).toContain("chapterPaused ? '계속 듣기' : '일시정지'");
   });
 
+  it('아이폰의 일시적인 오디오 중단이 이어듣기 모달을 닫지 않는다', () => {
+    expect(page).toContain('if (chapterPlayingRef.current) {');
+    expect(page).toContain('chapterPausedRef.current = true;');
+    expect(page).not.toContain('if (chapterPlayingRef.current) stopChapterPlayback();');
+  });
+
   it('저장 중에는 로딩 상태를 표시하고 재실행을 막는다', () => {
     expect(page).toContain("disabled={requestingMic || savingLibrary}");
     expect(page).toContain("savingLibrary ? '녹음 저장 중'");

@@ -2557,8 +2557,11 @@ export default function HomePage() {
                     onPause={(event) => {
                       if (chapterPausedRef.current) return;
                       if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
-                        if (chapterPlayingRef.current) stopChapterPlayback();
-                        else stopLibraryPlayback(item.id);
+                        if (chapterPlayingRef.current) {
+                          chapterPausedRef.current = true;
+                          setChapterPaused(true);
+                          youtubePlayerRef.current?.pauseVideo();
+                        } else stopLibraryPlayback(item.id);
                       }
                     }}
                     onEnded={() => handleLibraryEnded(item.id)}
