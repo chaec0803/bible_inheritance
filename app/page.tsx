@@ -34,7 +34,7 @@ import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
-import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney } from '@/lib/journey-policy';
+import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -86,15 +86,6 @@ function getProjectDay(project: ActiveProject, today: string) {
   const startTime = Date.parse(`${project.startedOn}T00:00:00Z`);
   const todayTime = Date.parse(`${today}T00:00:00Z`);
   return Math.min(project.duration, Math.max(1, Math.floor((todayTime - startTime) / 86_400_000) + 1));
-}
-
-function getProjectChapterKeys(project: Pick<ActiveProject, 'tasks' | 'passage'>) {
-  const keys = new Set<string>();
-  if (project.passage) keys.add(`${project.passage.name}-${project.passage.chapter}`);
-  project.tasks.forEach((task) => {
-    for (const match of task.matchAll(/([가-힣]+)\s+(\d+)(?:장|편)/g)) keys.add(`${match[1]}-${Number(match[2])}`);
-  });
-  return keys;
 }
 
 function getBookByName(name: string) {
@@ -933,21 +924,8 @@ export default function HomePage() {
   const currentPassageComplete = passageVerses.length > 0 && saved.length === passageVerses.length && saved.every(Boolean);
   const activeLibraryRecordings = useMemo(() => {
     if (!activeProject) return libraryRecordings;
-    if (activeProject.kind === 'free') return libraryRecordings.filter((item) => recordingBelongsToJourney(item, activeProject));
-
-    const targetChapters = getProjectChapterKeys(activeProject);
-    return libraryRecordings.filter((item) => {
-      const recordingChapter = `${item.book}-${item.chapter}`;
-      if (item.projectId === activeProject.id) return targetChapters.size === 0 || targetChapters.has(recordingChapter);
-      if (!targetChapters.has(recordingChapter)) return false;
-
-      const sourceProject = activeProjects.find((project) => project.id === item.projectId)
-        ?? projectTemplates.find((project) => project.id === item.projectId);
-      if (!sourceProject) return false;
-      const sourceChapters = getProjectChapterKeys(sourceProject);
-      return sourceChapters.size > 0 && !sourceChapters.has(recordingChapter);
-    });
-  }, [activeProject, activeProjects, libraryRecordings]);
+    return libraryRecordings.filter((item) => recordingBelongsToJourney(item, activeProject));
+  }, [activeProject, libraryRecordings]);
   const currentProjectDay = activeProject ? getProjectDay(activeProject, kstToday) : 1;
   const displayedProjectDay = viewedProjectDay ?? currentProjectDay;
   const displayedProjectDayIndex = Math.max(0, displayedProjectDay - 1);
@@ -1037,6 +1015,7 @@ export default function HomePage() {
     return isJourneyCompleted(required, recorded);
   }).map((project) => project.id)), [activeProjects, chapterCountsByBook, libraryRecordings]);
   const ongoingJourneyProjects = journeyProjects.filter((project) => !completedJourneyIds.has(project.id));
+  const ongoingJourneyGroups = splitOngoingJourneys(ongoingJourneyProjects);
   const completedJourneyProjects = journeyProjects.filter((project) => completedJourneyIds.has(project.id));
   const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
   const libraryChapterGroups = useMemo(() => {
@@ -2071,8 +2050,19 @@ export default function HomePage() {
               {journeyProjects.length ? <div className="journey-status-sections">
                 <section aria-labelledby="ongoing-journeys-title">
                   <div className="journey-status-heading"><h2 id="ongoing-journeys-title">진행 중</h2><span>{ongoingJourneyProjects.length}</span></div>
-                  {ongoingJourneyProjects.length ? <div className="running-project-list">
-                    {ongoingJourneyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                  {ongoingJourneyProjects.length ? <div className="ongoing-journey-groups">
+                    <section aria-labelledby="guided-ongoing-title">
+                      <h3 id="guided-ongoing-title">매일 말씀 읽기</h3>
+                      {ongoingJourneyGroups.guided.length ? <div className="running-project-list">
+                        {ongoingJourneyGroups.guided.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                      </div> : <p className="journey-status-empty compact">진행 중인 매일 말씀 읽기가 없어요.</p>}
+                    </section>
+                    <section aria-labelledby="free-ongoing-title">
+                      <h3 id="free-ongoing-title">자유롭게 · 성경책별</h3>
+                      {ongoingJourneyGroups.free.length ? <div className="running-project-list">
+                        {ongoingJourneyGroups.free.map((project, index) => <button className={`project-color-${(ongoingJourneyGroups.guided.length + index) % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><BookOpen size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 읽는 중' : '자유롭게 읽기'}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                      </div> : <p className="journey-status-empty compact">진행 중인 자유 읽기가 없어요.</p>}
+                    </section>
                   </div> : <p className="journey-status-empty">진행 중인 말씀 여정이 없어요.</p>}
                 </section>
                 {completedJourneyProjects.length > 0 && <section aria-labelledby="completed-journeys-title">

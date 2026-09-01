@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney } from './journey-policy';
+import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from './journey-policy';
 
 describe('매일 말씀 읽기 그만하기', () => {
   it('선택한 여정의 녹음만 삭제 대상으로 정한다', () => {
@@ -48,5 +48,15 @@ describe('매일 말씀 읽기 그만하기', () => {
       '창세기-2-1', '창세기-2-2', '창세기-2-3',
       '창세기-3-1', '창세기-3-2',
     ]);
+  });
+
+  it('같은 성경책이어도 매일 읽기와 자유 읽기를 서로 다른 여정으로 분리한다', () => {
+    const daily = { id: 'daily-matthew', kind: 'guided' as const, book: '마태복음' };
+    const free = { id: 'free-MAT', kind: 'free' as const, book: '마태복음' };
+    expect(splitOngoingJourneys([daily, free])).toEqual({ guided: [daily], free: [free] });
+    expect(getJourneyRecordingIds([
+      { id: 'daily-audio', projectId: daily.id },
+      { id: 'free-audio', projectId: free.id },
+    ], daily.id)).toEqual(['daily-audio']);
   });
 });

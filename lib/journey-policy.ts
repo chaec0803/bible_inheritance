@@ -1,5 +1,6 @@
 type JourneyIdentity = { id: string };
 type JourneyRecording = { id: string; projectId: string };
+type JourneyWithKind = JourneyIdentity & { kind?: 'guided' | 'free' };
 
 export function getJourneyRecordingIds(recordings: readonly JourneyRecording[], journeyId: string) {
   return recordings.filter((recording) => recording.projectId === journeyId).map((recording) => recording.id);
@@ -35,4 +36,11 @@ export function getRequiredJourneyReferences(tasks: readonly string[], chapterCo
 
 export function isJourneyCompleted(requiredReferences: ReadonlySet<string>, recordedReferences: ReadonlySet<string>) {
   return requiredReferences.size > 0 && [...requiredReferences].every((reference) => recordedReferences.has(reference));
+}
+
+export function splitOngoingJourneys<T extends JourneyWithKind>(journeys: readonly T[]) {
+  return {
+    guided: journeys.filter((journey) => journey.kind !== 'free'),
+    free: journeys.filter((journey) => journey.kind === 'free'),
+  };
 }
