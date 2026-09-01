@@ -559,6 +559,7 @@ export default function HomePage() {
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
   const [replacingRecording, setReplacingRecording] = useState<SavedRecording | null>(null);
   const [recordingManageOpen, setRecordingManageOpen] = useState(false);
+  const [confirmFullRetakeOpen, setConfirmFullRetakeOpen] = useState(false);
   const [fullRetakeActive, setFullRetakeActive] = useState(false);
   const [clearingForRetake, setClearingForRetake] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
@@ -999,6 +1000,7 @@ export default function HomePage() {
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const journeyProjects = activeProjects;
+  const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
     activeLibraryRecordings.forEach((item) => {
@@ -1379,6 +1381,7 @@ export default function HomePage() {
         if (!response.ok) throw new Error('기존 녹음을 모두 지우지 못했어요. 다시 시도해 주세요.');
       }));
       await refreshLibrary();
+      setConfirmFullRetakeOpen(false);
       setRecordingManageOpen(false);
       setReplacingRecording(null);
       setRecordingMode('continuous');
@@ -1983,15 +1986,15 @@ export default function HomePage() {
               <p className="eyebrow">자유롭게 녹음하기</p>
               <h1>{activeProject?.kind === 'free' && activeProject.passage?.code === selectedBibleBook.code ? `${selectedBibleBook.name}에서 몇 장을 읽을까요?` : '어떤 말씀부터 읽어볼까요?'}</h1>
               <p className="onboarding-lead">이미 진행 중인 장은 흰색으로 표시돼요. 새로 읽거나 이어갈 장을 선택해 주세요.</p>
-              <div className="bible-browser-toolbar">
+              {!journeyBookLocked && <div className="bible-browser-toolbar">
                 <div className="testament-tabs" aria-label="구약 또는 신약 선택">
                   <button className={bibleTestament === 'old' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('old'); setBibleSearch(''); chooseBibleBook(bibleBooks[0]); }}>구약 <small>39권</small></button>
                   <button className={bibleTestament === 'new' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('new'); setBibleSearch(''); chooseBibleBook(bibleBooks[39]); }}>신약 <small>27권</small></button>
                 </div>
                 <label className="bible-search"><Search size={16} /><input value={bibleSearch} onChange={(event) => setBibleSearch(event.target.value)} placeholder="성경책 이름 검색" /></label>
-              </div>
-              <div className="bible-browser-layout">
-                <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
+              </div>}
+              <div className={`bible-browser-layout ${journeyBookLocked ? 'book-locked' : ''}`}>
+                {!journeyBookLocked && <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
                   <div className="pane-heading"><span>1</span><div><strong>성경책</strong><small>{bibleTestament === 'old' ? '구약 39권' : '신약 27권'}</small></div></div>
                   <div className="bible-book-grid">
                     {visibleBibleBooks.map((book) => {
@@ -1999,7 +2002,7 @@ export default function HomePage() {
                       return <button className={`${selectedBibleBook.code === book.code ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => chooseBibleBook(book)} key={book.code}><strong>{book.name}</strong><small>{inProgress ? `진행 중 · ${book.chapters.length}장` : `${book.chapters.length}장`}</small></button>;
                     })}
                   </div>
-                </section>
+                </section>}
                 <section className="bible-chapter-pane" aria-label={`${selectedBibleBook.name} 장 선택`}>
                   <div className="pane-heading"><span>2</span><div><strong>장 선택</strong><small>{selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장</small></div></div>
                   <div className="bible-chapter-grid">
@@ -2208,13 +2211,6 @@ export default function HomePage() {
               <button type="button" onClick={() => { setReplacingRecording(null); setRecordingMode('continuous'); }}>취소</button>
             </div>
           )}
-          {fullRetakeActive && !recording && (
-            <div className="retake-banner">
-              <RotateCcw size={18} />
-              <p><strong>새 녹음을 준비했어요.</strong><small>기존 녹음은 모두 삭제되었어요. 첫 절부터 새롭게 이어 읽어 주세요.</small></p>
-              <button type="button" onClick={() => setFullRetakeActive(false)}>취소</button>
-            </div>
-          )}
 
           <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
             <span className="verse-number">{currentVerseNumber}</span>
@@ -2347,8 +2343,19 @@ export default function HomePage() {
             <p>한 절만 바꾸려면 저장된 절을 선택해 주세요. 전체 재녹음은 첫 절부터 새롭게 이어 읽어요.</p>
             <div className="recording-manage-options">
               <button type="button" onClick={() => setRecordingManageOpen(false)}><span><AudioLines size={20} /></span><div><strong>절별로 수정</strong><small>목록에서 녹음된 절을 누른 뒤 ‘이 절 수정’을 선택해요.</small></div></button>
-              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => void startFullRetake()}><span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span><div><strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong><small>현재 장에 저장된 녹음을 모두 지우고 1절부터 다시 시작해요.</small></div></button>
+              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => setConfirmFullRetakeOpen(true)}><span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span><div><strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong><small>현재 장에 저장된 녹음을 모두 지우고 1절부터 다시 시작해요.</small></div></button>
             </div>
+          </dialog>
+        </div>
+      )}
+
+      {confirmFullRetakeOpen && (
+        <div className="recording-manage-backdrop confirm-retake-backdrop" role="presentation">
+          <dialog className="confirm-retake-dialog" open aria-labelledby="confirm-retake-title">
+            <span><RotateCcw size={24} /></span>
+            <h2 id="confirm-retake-title">기존 {passageBook.name} {passageChapter}장 녹음본을 전부 삭제하시겠습니까?</h2>
+            <p>삭제한 녹음은 복구할 수 없어요. 삭제 후 1절부터 새로 녹음하게 됩니다.</p>
+            <div><button type="button" onClick={() => setConfirmFullRetakeOpen(false)} disabled={clearingForRetake}>돌아가기</button><button className="delete" type="button" onClick={() => void startFullRetake()} disabled={clearingForRetake}>{clearingForRetake ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{clearingForRetake ? '삭제 중' : '삭제하고 새로 녹음'}</button></div>
           </dialog>
         </div>
       )}
