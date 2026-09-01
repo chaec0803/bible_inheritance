@@ -33,6 +33,7 @@ import {
 import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
+import { getBackStep } from '@/lib/navigation-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -2104,7 +2105,7 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('projectHome')}><ChevronLeft size={16} /> 이전</button>
+              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep(getBackStep('projects'))}><ChevronLeft size={16} /> 이전</button>
               <p className="eyebrow">말씀 여정 만들기</p>
               <h1>얼마 동안 함께 완성해볼까요?</h1>
               <div className="duration-picker" aria-label="말씀 여정 기간">
