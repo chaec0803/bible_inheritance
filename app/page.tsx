@@ -1216,9 +1216,16 @@ export default function HomePage() {
     chapterBgmIdRef.current = bgm;
     setChapterPlaying(true);
     playLibraryBgm(first);
-    window.setTimeout(() => {
-      void libraryAudioRefs.current.get(first.id)?.play();
-    }, 0);
+    const firstAudio = libraryAudioRefs.current.get(first.id);
+    if (!firstAudio) {
+      stopChapterPlayback();
+      setNotice('첫 녹음 재생기를 준비하지 못했어요. 듣기 화면을 다시 열어 주세요.');
+      return;
+    }
+    void firstAudio.play().catch(() => {
+      stopChapterPlayback();
+      setNotice('아이폰이 재생을 시작하지 못했어요. 다시 한 번 눌러 주세요.');
+    });
   };
 
   const handleLibraryEnded = (recordingId: string) => {
@@ -1241,7 +1248,10 @@ export default function HomePage() {
       return;
     }
     nextAudio.currentTime = 0;
-    void nextAudio.play();
+    void nextAudio.play().catch(() => {
+      stopChapterPlayback();
+      setNotice('다음 절을 자동 재생하지 못했어요. 이어듣기를 다시 눌러 주세요.');
+    });
   };
 
   const jumpToChapterRecording = (recording: SavedRecording) => {
@@ -1252,7 +1262,10 @@ export default function HomePage() {
     setChapterPlaying(true);
     playLibraryBgm(recording);
     audio.currentTime = 0;
-    void audio.play();
+    void audio.play().catch(() => {
+      stopChapterPlayback();
+      setNotice('선택한 절을 재생하지 못했어요. 다시 눌러 주세요.');
+    });
   };
 
   const playSelectedBgm = (option: BgmOption) => {
@@ -1654,17 +1667,14 @@ export default function HomePage() {
     const wasReplacement = Boolean(replacingRecording);
     setSavingLibrary(true);
     try {
-      const extension = currentTake.mimeType.includes('mp4')
-        ? 'm4a'
-        : currentTake.mimeType.includes('ogg')
-          ? 'ogg'
-          : 'webm';
+      const decodeContext = new AudioContext();
+      const decoded = await decodeContext.decodeAudioData(await currentTake.blob.arrayBuffer());
+      const uploadAudio = encodeAudioBufferAsWav(decoded, 0, decoded.duration * 1_000);
+      await decodeContext.close();
       const formData = new FormData();
       formData.append(
         'audio',
-        new File([currentTake.blob], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${extension}`, {
-          type: currentTake.mimeType,
-        }),
+        new File([uploadAudio], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.wav`, { type: 'audio/wav' }),
       );
       formData.append('book', passageBook.name);
       formData.append('chapter', String(passageChapter));

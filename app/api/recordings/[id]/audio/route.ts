@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
+import { parseByteRange } from '@/lib/http-range';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -24,19 +25,24 @@ export async function GET(request: Request, context: RouteContext) {
 
   if (!recording) return Response.json({ error: '녹음을 찾을 수 없습니다.' }, { status: 404 });
 
-  const object = await env.FILES.get(recording.objectKey);
+  const metadata = await env.FILES.head(recording.objectKey);
+  if (!metadata) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404 });
+  const range = parseByteRange(request.headers.get('range'), metadata.size);
+  const object = await env.FILES.get(recording.objectKey, range ? { range: { offset: range.start, length: range.end - range.start + 1 } } : undefined);
   if (!object) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404 });
 
   const headers = new Headers({
+    'Accept-Ranges': 'bytes',
     'Cache-Control': 'private, no-store',
     'Content-Disposition': 'inline',
-    'Content-Length': String(object.size),
+    'Content-Length': String(range ? range.end - range.start + 1 : metadata.size),
     'Content-Type': recording.mimeType,
     ETag: object.httpEtag,
   });
   object.writeHttpMetadata(headers);
+  if (range) headers.set('Content-Range', `bytes ${range.start}-${range.end}/${metadata.size}`);
 
-  return new Response(object.body, { headers });
+  return new Response(object.body, { headers, status: range ? 206 : 200 });
 }
 
 export async function PUT(request: Request, context: RouteContext) {
