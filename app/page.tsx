@@ -1330,19 +1330,23 @@ export default function HomePage() {
     });
   };
 
-  const jumpToChapterRecording = (recording: SavedRecording) => {
+  const jumpToChapterRecording = async (recording: SavedRecording) => {
     const audio = libraryAudioRefs.current.get(recording.id);
     if (!audio) return;
     chapterPlayingRef.current = true;
-    chapterPausedRef.current = false;
     setChapterPlaying(true);
-    setChapterPaused(false);
     playLibraryBgm(recording);
     audio.currentTime = 0;
-    void audio.play().catch(() => {
-      stopChapterPlayback();
+    try {
+      await playbackAudioContextRef.current?.resume();
+      await audio.play();
+      chapterPausedRef.current = false;
+      setChapterPaused(false);
+    } catch {
+      chapterPausedRef.current = true;
+      setChapterPaused(true);
       setNotice('선택한 절을 재생하지 못했어요. 다시 눌러 주세요.');
-    });
+    }
   };
 
   const playSelectedBgm = (option: BgmOption) => {
@@ -2674,7 +2678,7 @@ export default function HomePage() {
               </div>
               {playbackListOpen && <div className="continuous-player-list" aria-label="녹음된 절 목록">
                 <strong>녹음된 절</strong>
-                <div>{chapterQueue.map((item, index) => <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => jumpToChapterRecording(item)} key={item.id}><span>{item.verse}절</span><small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>
+                <div>{chapterQueue.map((item, index) => <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => void jumpToChapterRecording(item)} key={item.id}><span>{item.verse}절</span><small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>
               </div>}
             </dialog>
           </div>
