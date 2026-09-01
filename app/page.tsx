@@ -422,6 +422,14 @@ function formatSavedDate(timestamp: number) {
   }).format(new Date(timestamp));
 }
 
+function recordingBelongsToJourney(recording: SavedRecording, project: ActiveProject | null) {
+  if (!project) return true;
+  if (recording.projectId === project.id) return true;
+  if (project.kind !== 'free' || !project.passage) return false;
+  return recording.projectId.startsWith(`free-${project.passage.code}-`)
+    || (recording.projectId === 'free-recording' && recording.book === project.passage.name);
+}
+
 async function fetchLibrary(ownerKey: string) {
   const response = await fetch('/api/recordings', {
     headers: { 'x-verse-legacy-owner': ownerKey },
@@ -689,10 +697,14 @@ export default function HomePage() {
       if (savedActiveProjects) {
         try {
           const parsedProjects = (JSON.parse(savedActiveProjects) as ActiveProject[]).map((project) => ({ ...project, startedOn: project.startedOn ?? getKstDateKey() }));
-          const latestFreeProject = [...parsedProjects].reverse().find((project) => project.kind === 'free');
+          const freeProjectsByBook = new Map<string, ActiveProject>();
+          parsedProjects.filter((project) => project.kind === 'free' && project.passage).forEach((project) => {
+            const passage = project.passage!;
+            freeProjectsByBook.set(passage.code, { ...project, id: `free-${passage.code}`, title: `${passage.name} 녹음` });
+          });
           restoredProjects = [
             ...parsedProjects.filter((project) => project.kind !== 'free'),
-            ...(latestFreeProject ? [{ ...latestFreeProject, id: 'free-recording', title: '자유 녹음' }] : []),
+            ...freeProjectsByBook.values(),
           ];
           setActiveProjects(restoredProjects);
           window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(restoredProjects));
@@ -704,7 +716,7 @@ export default function HomePage() {
         setSelectedTemplateId(savedProjectId);
         const template = projectTemplates.find((item) => item.id === savedProjectId);
         const restoredActiveProject = restoredProjects.find((item) => item.id === savedProjectId)
-          ?? (savedProjectId.startsWith('free-') ? restoredProjects.find((item) => item.kind === 'free') : undefined);
+          ?? (savedProjectId.startsWith('free-') ? restoredProjects.find((item) => item.kind === 'free' && savedProjectId.startsWith(item.id)) : undefined);
         if (restoredActiveProject) {
           setActiveProject(restoredActiveProject);
           window.localStorage.setItem('verse-legacy-project', restoredActiveProject.id);
@@ -807,7 +819,7 @@ export default function HomePage() {
     fetchLibrary(ownerKey)
       .then((recordings) => {
         if (cancelled) return;
-        const passageSaved = passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
+        const passageSaved = passageVerses.map((_, index) => recordings.some((item) => recordingBelongsToJourney(item, activeProject) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
         setLibraryRecordings(recordings);
         setSaved(passageSaved);
         const firstUnrecordedIndex = passageSaved.findIndex((isSaved) => !isSaved);
@@ -906,7 +918,7 @@ export default function HomePage() {
   const currentPassageComplete = passageVerses.length > 0 && saved.length === passageVerses.length && saved.every(Boolean);
   const activeLibraryRecordings = useMemo(() => {
     if (!activeProject) return libraryRecordings;
-    if (activeProject.kind === 'free') return libraryRecordings.filter((item) => item.projectId === activeProject.id);
+    if (activeProject.kind === 'free') return libraryRecordings.filter((item) => recordingBelongsToJourney(item, activeProject));
 
     const targetChapters = getProjectChapterKeys(activeProject);
     return libraryRecordings.filter((item) => {
@@ -1078,7 +1090,7 @@ export default function HomePage() {
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary(ownerKeyRef.current);
     setLibraryRecordings(recordings);
-    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!activeProject || item.projectId === activeProject.id) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => recordingBelongsToJourney(item, activeProject) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
     return recordings;
   };
 
@@ -1753,8 +1765,8 @@ export default function HomePage() {
   const startFreeChapter = () => {
     if (!selectedBibleVerses.length) return;
     const freeProject: ActiveProject = {
-      id: `free-${selectedBibleBook.code}-${selectedBibleChapter}`,
-      title: `${selectedBibleBook.name} ${selectedBibleChapter}장`,
+      id: `free-${selectedBibleBook.code}`,
+      title: `${selectedBibleBook.name} 녹음`,
       duration: 0,
       scope: `총 ${selectedBibleVerses.length}절 · 일정 없이 자유롭게`,
       tasks: [`${selectedBibleBook.name} ${selectedBibleChapter}장 전체`],
