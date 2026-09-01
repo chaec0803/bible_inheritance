@@ -391,7 +391,7 @@ h1, h2, p { margin-top: 0; }
 .recording-manage-options small { margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .recording-manage-options > button.full-retake { border-color: color-mix(in srgb, var(--coral) 38%, var(--line)); }
 .recording-manage-options > button.full-retake > span { color: var(--coral); background: color-mix(in srgb, var(--coral) 12%, var(--paper)); }
-.confirm-retake-backdrop { z-index: 95; place-items: center; padding: 20px; }
+.confirm-retake-backdrop { z-index: 125; place-items: center; padding: 20px; }
 .confirm-retake-dialog { width: min(460px, 100%); margin: 0; padding: 30px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 28px 80px rgba(8,15,13,.32); text-align: center; }
 .confirm-retake-dialog > span { width: 50px; height: 50px; margin: 0 auto 17px; display: grid; place-items: center; color: var(--coral); background: color-mix(in srgb, var(--coral) 12%, var(--paper)); border-radius: 16px; }
 .confirm-retake-dialog h2 { margin-bottom: 10px; font-size: 20px; line-height: 1.4; letter-spacing: -.035em; }
