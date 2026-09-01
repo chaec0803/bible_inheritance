@@ -34,7 +34,7 @@ import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
-import { getJourneyRecordingIds, removeJourney } from '@/lib/journey-policy';
+import { getJourneyRecordingIds, isJourneyVisible, removeJourney } from '@/lib/journey-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -1023,7 +1023,7 @@ export default function HomePage() {
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const journeyProjects = activeProjects.filter((project) =>
-    libraryRecordings.some((recording) => recordingBelongsToJourney(recording, project)),
+    isJourneyVisible(project, libraryRecordings.some((recording) => recordingBelongsToJourney(recording, project))),
   );
   const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
   const libraryChapterGroups = useMemo(() => {
