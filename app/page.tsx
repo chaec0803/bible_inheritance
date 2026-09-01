@@ -138,6 +138,7 @@ type BgmOption = {
   description: string;
   videoId: string | null;
   startSeconds: number;
+  audioSrc: string | null;
   recommended?: boolean;
 };
 
@@ -148,6 +149,7 @@ const bgmOptions: readonly BgmOption[] = [
     description: '잔잔한 묵상 피아노',
     videoId: 'DBVSSzzSlVw',
     startSeconds: 3371,
+    audioSrc: '/bgm/still-waters.wav',
   },
   {
     id: 'peaceful-morning',
@@ -155,6 +157,7 @@ const bgmOptions: readonly BgmOption[] = [
     description: '따뜻한 아침의 선율',
     videoId: 'WDkUGO7qWOQ',
     startSeconds: 0,
+    audioSrc: '/bgm/peaceful-morning.wav',
   },
   {
     id: 'word-breath',
@@ -162,6 +165,7 @@ const bgmOptions: readonly BgmOption[] = [
     description: 'AI 추천 · 시편 23편과 어울리는 음악',
     videoId: 'TkodnfN4kUQ',
     startSeconds: 0,
+    audioSrc: '/bgm/breath-of-word.wav',
     recommended: true,
   },
   {
@@ -170,6 +174,7 @@ const bgmOptions: readonly BgmOption[] = [
     description: '목소리만 녹음',
     videoId: null,
     startSeconds: 0,
+    audioSrc: null,
   },
 ];
 
@@ -536,6 +541,11 @@ export default function HomePage() {
   const chapterPlayingRef = useRef(false);
   const chapterPausedRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
+  const playbackAudioContextRef = useRef<AudioContext | null>(null);
+  const playbackBgmSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const playbackBgmGainRef = useRef<GainNode | null>(null);
+  const playbackBgmBuffersRef = useRef(new Map<string, AudioBuffer>());
+  const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
   const verseMenuListRef = useRef<HTMLDivElement | null>(null);
@@ -847,6 +857,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (typeof youtubePlayerRef.current?.setVolume === 'function') youtubePlayerRef.current.setVolume(volume);
+    if (playbackBgmGainRef.current) playbackBgmGainRef.current.gain.value = volume / 100;
   }, [volume]);
 
   useEffect(() => {
@@ -1120,6 +1131,47 @@ export default function HomePage() {
     queueMicrotask(() => awardDailyWordCard());
   }, [activeProject, awardDailyWordCard, displayedProjectDayComplete]);
 
+  const prepareChapterAudio = async () => {
+    let context = playbackAudioContextRef.current;
+    if (!context || context.state === 'closed') {
+      context = new AudioContext();
+      playbackAudioContextRef.current = context;
+    }
+    chapterQueue.forEach((recording) => {
+      const audio = libraryAudioRefs.current.get(recording.id);
+      if (!audio || libraryAudioSourceRefs.current.has(audio)) return;
+      const source = context!.createMediaElementSource(audio);
+      source.connect(context!.destination);
+      libraryAudioSourceRefs.current.set(audio, source);
+    });
+    await context.resume();
+    return context;
+  };
+
+  const startInternalChapterBgm = async (context: AudioContext, bgmId: string) => {
+    playbackBgmSourceRef.current?.stop();
+    playbackBgmSourceRef.current = null;
+    playbackBgmGainRef.current = null;
+    const option = bgmOptions.find((item) => item.id === bgmId);
+    if (!option?.audioSrc) return;
+    let buffer = playbackBgmBuffersRef.current.get(option.audioSrc);
+    if (!buffer) {
+      const response = await fetch(option.audioSrc);
+      if (!response.ok) throw new Error('BGM 파일을 불러오지 못했어요.');
+      buffer = await context.decodeAudioData(await response.arrayBuffer());
+      playbackBgmBuffersRef.current.set(option.audioSrc, buffer);
+    }
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    gain.gain.value = volume / 100;
+    source.connect(gain).connect(context.destination);
+    playbackBgmSourceRef.current = source;
+    playbackBgmGainRef.current = gain;
+    source.start();
+  };
+
   const stopLibraryPlayback = (recordingId?: string) => {
     if (recordingId && activeLibraryRef.current !== recordingId) return;
     youtubePlayerRef.current?.stopVideo();
@@ -1136,6 +1188,10 @@ export default function HomePage() {
     setChapterPlaying(false);
     setChapterPaused(false);
     setPlaybackListOpen(false);
+    playbackBgmSourceRef.current?.stop();
+    playbackBgmSourceRef.current = null;
+    playbackBgmGainRef.current = null;
+    void playbackAudioContextRef.current?.suspend();
     libraryAudioRefs.current.forEach((audio) => {
       if (!audio.paused) audio.pause();
     });
@@ -1187,36 +1243,11 @@ export default function HomePage() {
       if (id !== recording.id && !audio.paused) audio.pause();
     });
 
-    if (!chapterPlayingRef.current) {
-      youtubePlayerRef.current?.stopVideo();
-      setActivePreview(null);
-      return;
-    }
-
-    const playbackBgmId = chapterBgmIdRef.current ?? recording.bgmId;
-    const option = bgmOptions.find((item) => item.id === playbackBgmId);
-    if (!option?.videoId) {
-      youtubePlayerRef.current?.stopVideo();
-      setActivePreview(null);
-      return;
-    }
-    if (!playerReady || !youtubePlayerRef.current) {
-      setNotice('목소리는 재생 중이에요. BGM 플레이어가 준비되면 다시 재생해 주세요.');
-      return;
-    }
-
-    if (chapterPlayingRef.current && activePreview === `chapter-${playbackBgmId}`) return;
-
-    youtubePlayerRef.current.setVolume(volume);
-    youtubePlayerRef.current.loadVideoById({
-      videoId: option.videoId,
-      startSeconds: option.startSeconds,
-    });
-    setActivePreview(chapterPlayingRef.current ? `chapter-${playbackBgmId}` : `library-${recording.id}`);
-    setBgmPaused(false);
+    youtubePlayerRef.current?.stopVideo();
+    setActivePreview(chapterPlayingRef.current ? `chapter-${chapterBgmIdRef.current ?? recording.bgmId}` : null);
   };
 
-  const startChapterPlayback = () => {
+  const startChapterPlayback = async () => {
     if (chapterQueue.length === 0) return;
     libraryAudioRefs.current.forEach((audio) => {
       audio.pause();
@@ -1237,10 +1268,14 @@ export default function HomePage() {
       setNotice('첫 녹음 재생기를 준비하지 못했어요. 듣기 화면을 다시 열어 주세요.');
       return;
     }
-    void firstAudio.play().catch(() => {
+    try {
+      const context = await prepareChapterAudio();
+      await startInternalChapterBgm(context, bgm);
+      await firstAudio.play();
+    } catch {
       stopChapterPlayback();
-      setNotice('아이폰이 재생을 시작하지 못했어요. 다시 한 번 눌러 주세요.');
-    });
+      setNotice('목소리와 BGM을 함께 재생하지 못했어요. 다시 한 번 눌러 주세요.');
+    }
   };
 
   const pauseChapterPlayback = () => {
@@ -1249,7 +1284,7 @@ export default function HomePage() {
     setChapterPaused(true);
     const audio = activeLibraryRef.current ? libraryAudioRefs.current.get(activeLibraryRef.current) : undefined;
     audio?.pause();
-    youtubePlayerRef.current?.pauseVideo();
+    void playbackAudioContextRef.current?.suspend();
   };
 
   const resumeChapterPlayback = () => {
@@ -1262,7 +1297,7 @@ export default function HomePage() {
     }
     chapterPausedRef.current = false;
     setChapterPaused(false);
-    void audio.play().then(() => youtubePlayerRef.current?.playVideo()).catch(() => {
+    void playbackAudioContextRef.current?.resume().then(() => audio.play()).catch(() => {
       chapterPausedRef.current = true;
       setChapterPaused(true);
       setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
@@ -2571,7 +2606,7 @@ export default function HomePage() {
                         if (chapterPlayingRef.current) {
                           chapterPausedRef.current = true;
                           setChapterPaused(true);
-                          youtubePlayerRef.current?.pauseVideo();
+                          void playbackAudioContextRef.current?.suspend();
                         } else stopLibraryPlayback(item.id);
                       }
                     }}
