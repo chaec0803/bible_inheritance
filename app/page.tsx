@@ -544,6 +544,7 @@ export default function HomePage() {
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
+  const [playbackListOpen, setPlaybackListOpen] = useState(false);
   const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
   const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
@@ -1153,6 +1154,7 @@ export default function HomePage() {
     chapterPlayingRef.current = false;
     chapterBgmIdRef.current = null;
     setChapterPlaying(false);
+    setPlaybackListOpen(false);
     libraryAudioRefs.current.forEach((audio) => {
       if (!audio.paused) audio.pause();
     });
@@ -1265,6 +1267,17 @@ export default function HomePage() {
     }
     nextAudio.currentTime = 0;
     void nextAudio.play();
+  };
+
+  const jumpToChapterRecording = (recording: SavedRecording) => {
+    const audio = libraryAudioRefs.current.get(recording.id);
+    if (!audio) return;
+    setPlaybackListOpen(false);
+    chapterPlayingRef.current = true;
+    setChapterPlaying(true);
+    playLibraryBgm(recording);
+    audio.currentTime = 0;
+    void audio.play();
   };
 
   const playSelectedBgm = (option: BgmOption) => {
@@ -2423,10 +2436,14 @@ export default function HomePage() {
                 <span>{currentlyPlayingRecording.verse}</span>
                 <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
               </div>
-              <div className="continuous-player-sequence" aria-label="이어듣기 절 진행 상황">
-                {chapterQueue.map((item, index) => <span className={index < currentlyPlayingChapterIndex ? 'completed' : index === currentlyPlayingChapterIndex ? 'playing' : ''} key={item.id}>{item.verse}절</span>)}
+              <div className="continuous-player-actions">
+                <button className="continuous-player-list-trigger" type="button" onClick={() => setPlaybackListOpen((current) => !current)} aria-expanded={playbackListOpen}><List size={19} /><span>목록</span></button>
+                <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 이어듣기 멈춤</button>
               </div>
-              <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 이어듣기 멈춤</button>
+              {playbackListOpen && <div className="continuous-player-list" aria-label="녹음된 절 목록">
+                <strong>녹음된 절</strong>
+                <div>{chapterQueue.map((item, index) => <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => jumpToChapterRecording(item)} key={item.id}><span>{item.verse}절</span><small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>
+              </div>}
             </dialog>
           </div>
         )}
