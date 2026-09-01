@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
+import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -77,7 +78,7 @@ function getKstDateKey(date = new Date()) {
 }
 
 function getProjectDay(project: ActiveProject, today: string) {
-  if (project.readingDay) return Math.min(project.duration, Math.max(1, project.readingDay));
+  if (project.readingDay) return normalizeReadingDay(project);
   if (!project.startedOn || project.kind === 'free' || project.duration < 1) return 1;
   const startTime = Date.parse(`${project.startedOn}T00:00:00Z`);
   const todayTime = Date.parse(`${today}T00:00:00Z`);
@@ -1003,11 +1004,8 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!activeProject || activeProject.kind === 'free' || activeProject.readingDayDate === kstToday) return;
-    const currentDay = getProjectDay(activeProject, kstToday);
-    const nextDay = completedProjectTaskIndexes.has(currentDay - 1)
-      ? Math.min(activeProject.duration, currentDay + 1)
-      : currentDay;
-    const updatedProject = { ...activeProject, readingDay: nextDay, readingDayDate: kstToday };
+    const nextSchedule = advanceReadingSchedule(activeProject, completedProjectTaskIndexes, kstToday);
+    const updatedProject = { ...activeProject, ...nextSchedule };
     queueMicrotask(() => {
       setActiveProject(updatedProject);
       setActiveProjects((current) => {
