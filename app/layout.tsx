@@ -9,6 +9,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko">
+      <head>
+        <link rel="prefetch" href="/cards/bible-character-sprite.webp" as="image" type="image/webp" />
+        <link rel="prefetch" href="/cards/bible-character-sprite-v2.webp" as="image" type="image/webp" />
+        <link rel="prefetch" href="/cards/bible-character-sprite-v3.webp" as="image" type="image/webp" />
+      </head>
       <body>{children}</body>
     </html>
   );
