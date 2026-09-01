@@ -1989,7 +1989,6 @@ export default function HomePage() {
               {journeyProjects.length ? <div className="running-project-list">
                 {journeyProjects.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : project.kind === 'free' ? '자유롭게 읽기' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
               </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
-              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('projects')}>새 매일 말씀 읽기 시작 <ArrowRight size={16} /></button>
             </div>
           ) : onboardingStep === 'bible' ? (
             <div className="onboarding-card bible-browser-card">
