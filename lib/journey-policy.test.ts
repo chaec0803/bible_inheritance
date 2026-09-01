@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getJourneyRecordingIds, isJourneyVisible, removeJourney } from './journey-policy';
+import { getJourneyRecordingIds, removeJourney, restoreJourney } from './journey-policy';
 
 describe('매일 말씀 읽기 그만하기', () => {
   it('선택한 여정의 녹음만 삭제 대상으로 정한다', () => {
@@ -16,9 +16,10 @@ describe('매일 말씀 읽기 그만하기', () => {
     expect(removeJourney(journeys, 'james')).toEqual([{ id: 'matthew', title: '마태복음' }]);
   });
 
-  it('녹음본을 모두 지워도 매일 말씀 읽기 여정은 계속 보인다', () => {
-    expect(isJourneyVisible({ kind: 'guided' }, false)).toBe(true);
-    expect(isJourneyVisible({}, false)).toBe(true);
+  it('다른 여정이 있어도 저장된 매일 말씀 읽기 여정을 복원한다', () => {
+    const freeJourney = { id: 'free-psa', kind: 'free' };
+    const guidedJourney = { id: 'james', kind: 'guided' };
+    expect(restoreJourney([freeJourney], guidedJourney)).toEqual([freeJourney, guidedJourney]);
   });
 
   it('그만한 여정은 활성 목록에서 빠져 다시 시작할 수 있다', () => {
@@ -26,8 +27,8 @@ describe('매일 말씀 읽기 그만하기', () => {
     expect(new Set(activeJourneys.map((journey) => journey.id)).has('james')).toBe(false);
   });
 
-  it('자유 녹음 여정은 녹음본이 없으면 목록에서 정리한다', () => {
-    expect(isJourneyVisible({ kind: 'free' }, false)).toBe(false);
-    expect(isJourneyVisible({ kind: 'free' }, true)).toBe(true);
+  it('이미 복원된 여정은 중복해서 추가하지 않는다', () => {
+    const journey = { id: 'james' };
+    expect(restoreJourney([journey], journey)).toEqual([journey]);
   });
 });

@@ -34,7 +34,7 @@ import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
-import { getJourneyRecordingIds, isJourneyVisible, removeJourney } from '@/lib/journey-policy';
+import { getJourneyRecordingIds, removeJourney, restoreJourney } from '@/lib/journey-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -745,9 +745,13 @@ export default function HomePage() {
             }
           }
         } else if (template) {
-          const restoredProject = { id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks, startedOn: getKstDateKey() };
+          const restoredProject: ActiveProject = { id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks, kind: 'guided', startedOn: getKstDateKey(), readingDay: 1, readingDayDate: getKstDateKey() };
           setActiveProject(restoredProject);
-          setActiveProjects((current) => current.length ? current : [restoredProject]);
+          setActiveProjects((current) => {
+            const next = restoreJourney(current, restoredProject);
+            window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
+            return next;
+          });
         }
       }
       if (!savedProjectId && savedFreePassage) {
@@ -1022,9 +1026,7 @@ export default function HomePage() {
       .map((item) => item.book),
   ), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
-  const journeyProjects = activeProjects.filter((project) =>
-    isJourneyVisible(project, libraryRecordings.some((recording) => recordingBelongsToJourney(recording, project))),
-  );
+  const journeyProjects = activeProjects;
   const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
   const libraryChapterGroups = useMemo(() => {
     const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
@@ -1909,7 +1911,7 @@ export default function HomePage() {
         const savedCustomProject = window.localStorage.getItem('verse-legacy-custom-project');
         if (savedCustomProject) activateProject(JSON.parse(savedCustomProject) as ActiveProject);
       } else if (project) {
-        activateProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks });
+        activateProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks, kind: 'guided' });
       }
       setNotice(project?.custom ? '직접 말씀 여정을 만들 준비가 됐어요.' : `‘${project?.title}’ 말씀 여정을 시작했어요.`);
     } else {
@@ -1969,6 +1971,7 @@ export default function HomePage() {
       id: `custom-${crypto.randomUUID()}`,
       title: customProjectName.trim() || `${customBook.name} 말씀 여정`,
       duration: projectDuration,
+      kind: 'guided' as const,
       bookId: customBook.id,
       scope: `${customBook.name} · 총 ${customTotalVerses}절`,
       totalVerses: customTotalVerses,
