@@ -1875,13 +1875,18 @@ export default function HomePage() {
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
                   <em>성경 고르기 <ArrowRight size={15} /></em>
                 </button>
-                <button className="recommended" type="button" onClick={() => setOnboardingStep('projectHome')}>
+                <button className="recommended" type="button" onClick={() => setOnboardingStep('projects')}>
                   <i>추천</i><span><Target size={22} /></span>
-                  <strong>말씀 여정</strong>
-                  <small>{guidedProjects.length ? `${guidedProjects.slice(0, 2).map((project) => project.title).join(' · ')}${guidedProjects.length > 2 ? ` 외 ${guidedProjects.length - 2}개` : ''}` : '매일 조금씩 이어갈 새로운 말씀 여정을 시작해요.'}</small>
-                  <em>내 말씀 여정 보기 <ArrowRight size={15} /></em>
+                  <strong>말씀 여정 시작하기</strong>
+                  <small>분량과 기간을 정해 매일 조금씩 말씀을 녹음해요.</small>
+                  <em>새 여정 고르기 <ArrowRight size={15} /></em>
                 </button>
               </div>
+              <button className="word-card-library-entry journey-library-entry" type="button" onClick={() => setOnboardingStep('projectHome')}>
+                <span><Target size={21} /></span>
+                <div><strong>내 말씀 여정</strong><small>{guidedProjects.length ? `진행 중인 말씀 여정 ${guidedProjects.length}개 · ${guidedProjects.slice(0, 2).map((project) => project.title).join(' · ')}` : '아직 진행 중인 말씀 여정이 없어요.'}</small></div>
+                <ArrowRight size={18} />
+              </button>
               <button className="word-card-library-entry" type="button" onClick={() => setOnboardingStep('cards')}>
                 <span><Sparkles size={21} /></span>
                 <div><strong>내 카드 보관함</strong><small>간직한 말씀 카드 {collectedWordCards.length}장을 모아봐요.</small></div>
