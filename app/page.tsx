@@ -34,6 +34,7 @@ import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
+import { getJourneyRecordingIds, removeJourney } from '@/lib/journey-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -560,6 +561,8 @@ export default function HomePage() {
   const [confirmFullRetakeOpen, setConfirmFullRetakeOpen] = useState(false);
   const [fullRetakeActive, setFullRetakeActive] = useState(false);
   const [clearingForRetake, setClearingForRetake] = useState(false);
+  const [confirmQuitJourneyOpen, setConfirmQuitJourneyOpen] = useState(false);
+  const [deletingJourney, setDeletingJourney] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
@@ -1431,6 +1434,38 @@ export default function HomePage() {
     }
   };
 
+  const quitDailyJourney = async () => {
+    if (!activeProject || activeProject.kind === 'free' || deletingJourney) return;
+    const journey = activeProject;
+    const recordingIds = getJourneyRecordingIds(libraryRecordings, journey.id);
+    setDeletingJourney(true);
+    try {
+      await Promise.all(recordingIds.map(async (recordingId) => {
+        const response = await fetch(`/api/recordings/${recordingId}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
+        if (!response.ok) throw new Error('말씀 여정의 녹음본을 모두 지우지 못했어요. 다시 시도해 주세요.');
+      }));
+      const remainingRecordings = await fetchLibrary(ownerKeyRef.current);
+      setLibraryRecordings(remainingRecordings);
+      setActiveProjects((current) => {
+        const next = removeJourney(current, journey.id);
+        window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
+        return next;
+      });
+      window.localStorage.removeItem('verse-legacy-project');
+      stopChapterPlayback();
+      setActiveProject(null);
+      setViewedProjectDay(null);
+      setConfirmQuitJourneyOpen(false);
+      setOnboardingStep('welcome');
+      setReturningHome(true);
+      setNotice(`‘${journey.title}’ 말씀 읽기와 녹음본을 모두 삭제했어요.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '말씀 읽기를 그만두지 못했어요. 다시 시도해 주세요.');
+    } finally {
+      setDeletingJourney(false);
+    }
+  };
+
   const toggleSavedRecordingPlayback = () => {
     const audio = savedRecordingAudioRef.current;
     if (savedRecordingPlaying) {
@@ -2102,6 +2137,7 @@ export default function HomePage() {
                 </ol>
               </div>
               <button className="start-project-button" type="button" onClick={() => setOnboardingStep('app')}>이 말씀 여정 계속하기 <ArrowRight size={16} /></button>
+              {activeProject.kind !== 'free' && <button className="quit-journey-button" type="button" onClick={() => setConfirmQuitJourneyOpen(true)}>말씀 읽기 그만하기</button>}
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
@@ -2401,6 +2437,17 @@ export default function HomePage() {
             <h2 id="confirm-retake-title">기존 {passageBook.name} {passageChapter}장 녹음본을 전부 삭제하시겠습니까?</h2>
             <p>삭제한 녹음은 복구할 수 없어요. 삭제 후 1절부터 새로 녹음하게 됩니다.</p>
             <div><button type="button" onClick={() => setConfirmFullRetakeOpen(false)} disabled={clearingForRetake}>돌아가기</button><button className="delete" type="button" onClick={() => void startFullRetake()} disabled={clearingForRetake}>{clearingForRetake ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{clearingForRetake ? '삭제 중' : '삭제하고 새로 녹음'}</button></div>
+          </dialog>
+        </div>
+      )}
+
+      {confirmQuitJourneyOpen && activeProject?.kind !== 'free' && (
+        <div className="recording-manage-backdrop confirm-retake-backdrop" role="presentation">
+          <dialog className="confirm-retake-dialog" open aria-labelledby="confirm-quit-journey-title">
+            <span><X size={24} /></span>
+            <h2 id="confirm-quit-journey-title">‘{activeProject?.title}’ 말씀 읽기를 그만할까요?</h2>
+            <p>이 여정의 모든 녹음본과 진행 기록이 삭제되고 내 말씀 여정에서도 사라져요.<br />이미 간직한 말씀카드는 그대로 남아요.</p>
+            <div><button type="button" onClick={() => setConfirmQuitJourneyOpen(false)} disabled={deletingJourney}>돌아가기</button><button className="delete" type="button" onClick={() => void quitDailyJourney()} disabled={deletingJourney}>{deletingJourney ? <LoaderCircle className="spin" size={17} /> : <X size={17} />}{deletingJourney ? '삭제 중' : '그만하고 모두 삭제'}</button></div>
           </dialog>
         </div>
       )}
