@@ -555,7 +555,7 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .continuous-player-volume > span { display: flex; align-items: center; gap: 6px; color: rgba(255,255,255,.7); font-size: 9px; font-weight: 800; }
 .continuous-player-volume strong { margin-left: auto; color: #f1d78e; }
 .continuous-player-volume input { width: 100%; accent-color: #f1d78e; cursor: pointer; }
-.continuous-player-actions { display: grid; grid-template-columns: 52px 1fr; gap: 9px; }
+.continuous-player-actions { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 9px; }
 .continuous-player-list-trigger, .continuous-player-stop { min-height: 50px; display: flex; align-items: center; justify-content: center; gap: 7px; color: white; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 14px; font-size: 10px; font-weight: 900; cursor: pointer; }
 .continuous-player-list-trigger { display: grid; place-items: center; align-content: center; gap: 1px; padding: 5px; }
 .continuous-player-list-trigger span { font-size: 7px; }
@@ -638,6 +638,12 @@ html[data-theme='dark'] .library-audio { color-scheme: dark; }
 .floating-home-button span { font-size: 7px; font-weight: 900; }
 .toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 12px 16px; color: var(--paper); background: var(--toast-bg); border-radius: 13px; box-shadow: 0 18px 50px rgba(24,48,68,.23); font-size: 12px; font-weight: 700; animation: toast-in .2s ease-out; }
 html[data-theme='dark'] .toast { color: #17221f; }
+.completion-modal-backdrop { position: fixed; inset: 0; z-index: 140; display: grid; place-items: center; padding: 20px; background: rgba(8, 15, 13, .66); backdrop-filter: blur(7px); }
+.completion-modal { width: min(430px, 100%); margin: 0; padding: 32px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 25px; box-shadow: 0 30px 90px rgba(8,15,13,.36); text-align: center; }
+.completion-modal-icon { width: 62px; height: 62px; margin: 0 auto 15px; display: grid; place-items: center; color: var(--action-ink); background: var(--action-bg); border-radius: 50%; }
+.completion-modal h2 { margin: 5px 0 10px; font-size: 24px; line-height: 1.35; letter-spacing: -.04em; }
+.completion-modal > p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.completion-modal > button { width: 100%; min-height: 47px; margin-top: 22px; color: var(--action-ink); background: var(--action-bg); border: 0; border-radius: 13px; font-size: 11px; font-weight: 900; cursor: pointer; }
 .headphone-modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(8, 15, 13, .62); backdrop-filter: blur(5px); }
 .headphone-modal { width: min(430px, 100%); margin: 0; padding: 30px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 28px 90px rgba(8, 15, 13, .32); text-align: center; }
 .headphone-modal-icon { width: 58px; height: 58px; margin: 0 auto 16px; display: grid; place-items: center; color: var(--sage); background: var(--sage-soft); border-radius: 18px; }

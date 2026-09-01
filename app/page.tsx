@@ -457,6 +457,7 @@ export default function HomePage() {
   const [bgm, setBgm] = useState('still-waters');
   const [volume, setVolume] = useState(12);
   const [notice, setNotice] = useState('');
+  const [completionModal, setCompletionModal] = useState<{ title: string; description: string } | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [playerReady, setPlayerReady] = useState(false);
   const [activePreview, setActivePreview] = useState<string | null>(null);
@@ -480,6 +481,7 @@ export default function HomePage() {
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
   const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
+  const [chapterPaused, setChapterPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
   const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
@@ -532,6 +534,7 @@ export default function HomePage() {
   const savedRecordingAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeLibraryRef = useRef<string | null>(null);
   const chapterPlayingRef = useRef(false);
+  const chapterPausedRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
@@ -1078,6 +1081,7 @@ export default function HomePage() {
     if (!card) return;
     window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
     setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), result.award!]);
+    setCompletionModal({ title: '하루 읽기 완료', description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.` });
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
@@ -1127,8 +1131,10 @@ export default function HomePage() {
 
   const stopChapterPlayback = () => {
     chapterPlayingRef.current = false;
+    chapterPausedRef.current = false;
     chapterBgmIdRef.current = null;
     setChapterPlaying(false);
+    setChapterPaused(false);
     setPlaybackListOpen(false);
     libraryAudioRefs.current.forEach((audio) => {
       if (!audio.paused) audio.pause();
@@ -1213,8 +1219,10 @@ export default function HomePage() {
     stopPreview();
     const first = chapterQueue[0];
     chapterPlayingRef.current = true;
+    chapterPausedRef.current = false;
     chapterBgmIdRef.current = bgm;
     setChapterPlaying(true);
+    setChapterPaused(false);
     playLibraryBgm(first);
     const firstAudio = libraryAudioRefs.current.get(first.id);
     if (!firstAudio) {
@@ -1225,6 +1233,32 @@ export default function HomePage() {
     void firstAudio.play().catch(() => {
       stopChapterPlayback();
       setNotice('아이폰이 재생을 시작하지 못했어요. 다시 한 번 눌러 주세요.');
+    });
+  };
+
+  const pauseChapterPlayback = () => {
+    if (!chapterPlayingRef.current || chapterPausedRef.current) return;
+    chapterPausedRef.current = true;
+    setChapterPaused(true);
+    const audio = activeLibraryRef.current ? libraryAudioRefs.current.get(activeLibraryRef.current) : undefined;
+    audio?.pause();
+    youtubePlayerRef.current?.pauseVideo();
+  };
+
+  const resumeChapterPlayback = () => {
+    if (!chapterPlayingRef.current || !chapterPausedRef.current) return;
+    const audio = activeLibraryRef.current ? libraryAudioRefs.current.get(activeLibraryRef.current) : undefined;
+    if (!audio) {
+      stopChapterPlayback();
+      setNotice('멈춘 위치의 녹음을 찾지 못했어요. 이어듣기를 다시 시작해 주세요.');
+      return;
+    }
+    chapterPausedRef.current = false;
+    setChapterPaused(false);
+    void audio.play().then(() => youtubePlayerRef.current?.playVideo()).catch(() => {
+      chapterPausedRef.current = true;
+      setChapterPaused(true);
+      setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
     });
   };
 
@@ -1259,7 +1293,9 @@ export default function HomePage() {
     if (!audio) return;
     setPlaybackListOpen(false);
     chapterPlayingRef.current = true;
+    chapterPausedRef.current = false;
     setChapterPlaying(true);
+    setChapterPaused(false);
     playLibraryBgm(recording);
     audio.currentTime = 0;
     void audio.play().catch(() => {
@@ -1475,7 +1511,13 @@ export default function HomePage() {
       }));
       await refreshLibrary();
       setFullRetakeActive(false);
-      setNotice(`${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`);
+      const verseNumbers = boundaries.map((boundary) => passageStartVerse + boundary.verseIndex);
+      const firstVerse = Math.min(...verseNumbers);
+      const lastVerse = Math.max(...verseNumbers);
+      setCompletionModal({
+        title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
+        description: `${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
+      });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
     } finally {
@@ -1712,7 +1754,10 @@ export default function HomePage() {
       setSeconds(0);
       const reference = `${passageBook.name}-${passageChapter}-${currentVerseNumber}`;
       setRecentlyUpdatedReference(wasReplacement ? reference : null);
-      setNotice(wasReplacement ? `${currentVerseNumber}절 수정 완료 · 새 녹음으로 교체했어요.` : '보관함에 저장되었어요.');
+      setCompletionModal({
+        title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
+        description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 보관함에 안전하게 저장했어요.',
+      });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -2316,9 +2361,9 @@ export default function HomePage() {
                 {deletingVerseId === currentSavedRecording?.id ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
                 <span>{deletingVerseId === currentSavedRecording?.id ? '삭제 중' : '이 절 수정'}</span>
               </button>
-            </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic} type="button">
-              <span>{recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
-              {requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : replacingRecording ? '이 절 다시 녹음' : fullRetakeActive ? '처음부터 다시 녹음' : `${currentVerseNumber}절부터 이어 녹음`}
+            </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic || savingLibrary} type="button">
+              <span>{requestingMic || savingLibrary ? <LoaderCircle className="spin" size={27} /> : recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
+              {savingLibrary ? '녹음 저장 중' : requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : replacingRecording ? '이 절 다시 녹음' : fullRetakeActive ? '처음부터 다시 녹음' : `${currentVerseNumber}절부터 이어 녹음`}
             </button>}
           </div>
 
@@ -2491,10 +2536,10 @@ export default function HomePage() {
                     <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
                     <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
                   </label>
-                  <button type="button" onClick={chapterPlaying ? stopChapterPlayback : startChapterPlayback}>
-                    {chapterPlaying ? <CircleStop size={17} /> : <Play size={17} />}
-                    {chapterPlaying ? '이어듣기 멈춤' : '전체 이어듣기'}
-                  </button>
+                  {!chapterPlaying ? <button type="button" onClick={startChapterPlayback}><Play size={17} />전체 이어듣기</button> : <>
+                    <button type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>{chapterPaused ? <Play size={17} /> : <Pause size={17} />}{chapterPaused ? '계속 듣기' : '일시정지'}</button>
+                    <button type="button" onClick={stopChapterPlayback}><CircleStop size={17} />종료</button>
+                  </>}
                   </div>
                 </div>
               </div>
@@ -2510,6 +2555,7 @@ export default function HomePage() {
                     }}
                     onPlay={() => playLibraryBgm(item)}
                     onPause={(event) => {
+                      if (chapterPausedRef.current) return;
                       if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
                         if (chapterPlayingRef.current) stopChapterPlayback();
                         else stopLibraryPlayback(item.id);
@@ -2575,7 +2621,8 @@ export default function HomePage() {
               </label>
               <div className="continuous-player-actions">
                 <button className="continuous-player-list-trigger" type="button" onClick={() => setPlaybackListOpen((current) => !current)} aria-expanded={playbackListOpen}><List size={19} /><span>목록</span></button>
-                <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 이어듣기 멈춤</button>
+                <button className="continuous-player-stop" type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>{chapterPaused ? <Play size={18} /> : <Pause size={18} />}{chapterPaused ? '계속 듣기' : '일시정지'}</button>
+                <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 종료</button>
               </div>
               {playbackListOpen && <div className="continuous-player-list" aria-label="녹음된 절 목록">
                 <strong>녹음된 절</strong>
@@ -2623,6 +2670,18 @@ export default function HomePage() {
       </nav>
 
       <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="말씀 여정과 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+
+      {completionModal && (
+        <div className="completion-modal-backdrop" role="presentation">
+          <dialog className="completion-modal" open aria-labelledby="completion-modal-title">
+            <span className="completion-modal-icon"><Check size={30} /></span>
+            <p className="eyebrow">COMPLETED</p>
+            <h2 id="completion-modal-title">{completionModal.title}</h2>
+            <p>{completionModal.description}</p>
+            <button type="button" onClick={() => setCompletionModal(null)}>확인</button>
+          </dialog>
+        </div>
+      )}
 
       {headphoneWarningOpen && (
         <div className="headphone-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHeadphoneWarningOpen(false); }}>
