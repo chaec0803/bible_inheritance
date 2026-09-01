@@ -1710,7 +1710,7 @@ export default function HomePage() {
       if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
       const chapters = await response.json() as string[][];
       setSelectedBibleVerses(chapters[chapter - 1] ?? []);
-      window.requestAnimationFrame(() => bibleVersePaneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      if (!journeyBookLocked) window.requestAnimationFrame(() => bibleVersePaneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     } catch {
       setSelectedBibleVerses([]);
       setNotice('성경 본문을 불러오지 못했어요. 다시 시도해 주세요.');
@@ -2004,7 +2004,17 @@ export default function HomePage() {
                 </div>
                 <label className="bible-search"><Search size={16} /><input value={bibleSearch} onChange={(event) => setBibleSearch(event.target.value)} placeholder="성경책 이름 검색" /></label>
               </div>}
-              <div className={`bible-browser-layout ${journeyBookLocked ? 'book-locked' : ''}`}>
+              {journeyBookLocked ? <section className="journey-chapter-picker" aria-label={`${selectedBibleBook.name} 장 선택`}>
+                <div className="pane-heading"><span>1</span><div><strong>장 선택</strong><small>{selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장</small></div></div>
+                <div className="bible-chapter-grid">
+                  {selectedBibleBook.chapters.map((verseCount, index) => {
+                    const chapter = index + 1;
+                    const inProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${chapter}`);
+                    return <button className={`${selectedBibleChapter === chapter && selectedBibleVerses.length ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => void chooseBibleChapter(chapter)} key={index}><strong>{chapter}</strong><small>{inProgress ? `진행 중 · ${verseCount}절` : `${verseCount}절`}</small></button>;
+                  })}
+                </div>
+                <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={bibleLoading || !selectedBibleVerses.length}>{bibleLoading ? <><LoaderCircle className="spin" size={16} /> 불러오는 중</> : <>{selectedBibleBook.name} {selectedBibleChapter}장 확인 <ArrowRight size={16} /></>}</button>
+              </section> : <div className="bible-browser-layout">
                 {!journeyBookLocked && <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
                   <div className="pane-heading"><span>1</span><div><strong>성경책</strong><small>{bibleTestament === 'old' ? '구약 39권' : '신약 27권'}</small></div></div>
                   <div className="bible-book-grid">
@@ -2033,7 +2043,7 @@ export default function HomePage() {
                   })}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
                   <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}장 {selectedFreeChapterInProgress ? '계속하기' : '녹음 시작'} <ArrowRight size={16} /></button>
                 </aside>
-              </div>
+              </div>}
               <p className="bible-credit">본문: PLAY X 번역(플레이엑스) · 번역 김무송 · CC BY 4.0</p>
             </div>
           ) : onboardingStep === 'schedule' && activeProject ? (
