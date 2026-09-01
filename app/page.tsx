@@ -1982,6 +1982,7 @@ export default function HomePage() {
 
   const selectedTemplate = projectTemplates.find((item) => item.id === selectedTemplateId) ?? projectTemplates[0];
   const visibleTemplates = projectTemplates.filter((item) => item.duration === projectDuration);
+  const selectedVisibleTemplateIndex = visibleTemplates.findIndex((item) => item.id === selectedTemplateId);
   const visibleBibleBooks = bibleBooks.filter((book) => book.testament === bibleTestament && book.name.includes(bibleSearch.trim()));
   const selectedFreeChapterInProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`);
   const selectedFreeRecordedVerses = new Set(
@@ -2234,10 +2235,10 @@ export default function HomePage() {
               </div>
               <div className="project-picker-layout">
                 <div className="project-template-list">
-                  {visibleTemplates.map((project) => {
+                  {visibleTemplates.map((project, index) => {
                     const isActive = activeProjectIds.has(project.id);
                     return (
-                    <button className={`${selectedTemplateId === project.id ? 'selected' : ''} ${isActive ? 'in-progress' : ''}`} type="button" onClick={() => setSelectedTemplateId(project.id)} disabled={isActive} key={project.id}>
+                    <button className={`${selectedTemplateId === project.id ? 'selected' : ''} ${isActive ? 'in-progress' : ''}`} style={{ gridRow: index * 2 + 1 }} type="button" onClick={() => setSelectedTemplateId((current) => current === project.id ? '' : project.id)} aria-expanded={selectedTemplateId === project.id} disabled={isActive} key={project.id}>
                       <span className={`difficulty ${project.theme ? `theme-${project.theme}` : ''}`}>{isActive ? '진행 중' : project.custom ? '직접 구성' : project.theme}</span>
                       <strong>{project.title}</strong>
                       <small>{project.scope}</small>
@@ -2245,7 +2246,7 @@ export default function HomePage() {
                     </button>
                   )})}
                 </div>
-                {selectedTemplateId && <aside className="project-schedule-preview selected-schedule-subtab">
+                {selectedTemplateId && <aside className="project-schedule-preview selected-schedule-subtab" style={{ gridRow: selectedVisibleTemplateIndex * 2 + 2 }}>
                   <p className="eyebrow">자동으로 만든 일정</p>
                   <h2>{selectedTemplate.title}</h2>
                   {selectedTemplate.custom ? (
