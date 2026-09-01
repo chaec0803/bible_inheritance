@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
 import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
+import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -250,15 +251,6 @@ type WordCard = {
   detail: string;
   spriteIndex: number;
   spriteSheet?: string;
-};
-
-type WordCardAward = {
-  key: string;
-  cardId: string;
-  completionSignature?: string;
-  presented: boolean;
-  collected: boolean;
-  claimed?: boolean;
 };
 
 const wordCards: readonly WordCard[] = [
@@ -1138,15 +1130,17 @@ export default function HomePage() {
     } catch {
       awards = [];
     }
-    const existingAward = awards.find((award) => award.key === awardKey);
-    if (existingAward) return;
-
-    const ownedIds = new Set(awards.map((award) => award.cardId));
-    const availableCards = wordCards.filter((card) => !ownedIds.has(card.id));
-    const pool = availableCards.length ? availableCards : wordCards;
-    const card = pool[Math.floor(Math.random() * pool.length)];
-    window.localStorage.setItem(storageKey, JSON.stringify([...awards.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, presented: true, collected: false }]));
-    setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), { key: awardKey, cardId: card.id, completionSignature, presented: true, collected: false }]);
+    const result = createDailyAward(awards, {
+      projectId: activeProject.id,
+      day: displayedProjectDay,
+      completionSignature,
+      cardIds: wordCards.map((card) => card.id),
+    });
+    if (!result.created || !result.award) return;
+    const card = wordCards.find((item) => item.id === result.award?.cardId);
+    if (!card) return;
+    window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
+    setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), result.award!]);
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
@@ -1162,7 +1156,7 @@ export default function HomePage() {
     const storageKey = 'verse-legacy-word-card-awards';
     try {
       const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as WordCardAward[];
-      window.localStorage.setItem(storageKey, JSON.stringify(awards.map((award) => award.key === awardKey && award.cardId === cardId ? { ...award, presented: true, collected: true } : award)));
+      window.localStorage.setItem(storageKey, JSON.stringify(collectWordCardAward(awards, awardKey, cardId)));
       setCollectedCardIds((current) => current.includes(cardId) ? current : [...current, cardId]);
       setPendingCardAwards((current) => current.filter((award) => !(award.key === awardKey && award.cardId === cardId)));
       setNotice('내 카드 보관함에 간직했어요.');
