@@ -1879,7 +1879,7 @@ export default function HomePage() {
                   <i>추천</i><span><Target size={22} /></span>
                   <strong>말씀 여정</strong>
                   <small>{guidedProjects.length ? `${guidedProjects.slice(0, 2).map((project) => project.title).join(' · ')}${guidedProjects.length > 2 ? ` 외 ${guidedProjects.length - 2}개` : ''}` : '매일 조금씩 이어갈 새로운 말씀 여정을 시작해요.'}</small>
-                  <em>{guidedProjects.length ? '내 말씀 여정 보기' : '새 말씀 여정 시작'} <ArrowRight size={15} /></em>
+                  <em>내 말씀 여정 보기 <ArrowRight size={15} /></em>
                 </button>
               </div>
               <button className="word-card-library-entry" type="button" onClick={() => setOnboardingStep('cards')}>
