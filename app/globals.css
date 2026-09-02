@@ -173,7 +173,7 @@ button { color: inherit; }
 .running-project-list > button.project-color-2 { --project-accent: #6c6fa8; }
 .running-project-list > button.project-color-3 { --project-accent: #a65e66; }
 .running-project-list > button.project-color-4 { --project-accent: #477a91; }
-.running-project-list > button.current { box-shadow: inset 4px 0 0 var(--project-accent), 0 10px 25px color-mix(in srgb, var(--project-accent) 12%, transparent); }
+.running-project-list > button.current { box-shadow: none; }
 .running-project-list > button > span { width: 44px; height: 44px; display: grid; place-items: center; color: white; background: var(--project-accent); border-radius: 13px; }
 .running-project-list small, .running-project-list strong { display: block; }
 .running-project-list small { color: var(--project-accent); font-size: 8px; font-weight: 900; }
