@@ -39,6 +39,7 @@ import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyComplete
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
 import { toggleAudioPlayback } from '@/lib/audio-playback';
+import { recoverJourneyProjects } from '@/lib/user-state-policy';
 import { AuthGate } from './auth-gate';
 
 const defaultVerses = [
@@ -322,42 +323,6 @@ async function saveUserState(state: UserStateSnapshot) {
     body: JSON.stringify(state),
   });
   if (!response.ok) throw new Error('말씀 여정 상태를 저장하지 못했어요.');
-}
-
-function recoverProjectsFromRecordings(recordings: readonly SavedRecording[]) {
-  const recovered = new Map<string, ActiveProject>();
-  recordings.forEach((recording) => {
-    if (recovered.has(recording.projectId)) return;
-    const template = projectTemplates.find((item) => item.id === recording.projectId && !item.custom);
-    if (template) {
-      recovered.set(template.id, {
-        id: template.id,
-        title: template.title,
-        duration: template.duration,
-        scope: template.scope,
-        tasks: template.tasks,
-        kind: 'guided',
-        startedOn: getKstDateKey(),
-        readingDay: 1,
-        readingDayDate: getKstDateKey(),
-      });
-      return;
-    }
-    if (recording.projectId === 'free-recording' || recording.projectId.startsWith('free-')) {
-      const book = bibleBooks.find((item) => item.name === recording.book);
-      recovered.set(`free-${book?.code ?? recording.book}`, {
-        id: `free-${book?.code ?? recording.book}`,
-        title: `${recording.book} 녹음`,
-        duration: 0,
-        scope: `${recording.book} 자유 녹음`,
-        tasks: [`${recording.book} ${recording.chapter}장`],
-        kind: 'free',
-        passage: { code: book?.code ?? recording.book, name: recording.book, chapter: recording.chapter, startVerse: 1, endVerse: recording.verse },
-        startedOn: getKstDateKey(),
-      });
-    }
-  });
-  return [...recovered.values()];
 }
 
 type YouTubePlayer = {
@@ -857,7 +822,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               restoredAwards = [];
             }
           }
-          if (!restoredProjects.length) restoredProjects = recoverProjectsFromRecordings(recordings);
+          if (!restoredProjects.length) restoredProjects = recoverJourneyProjects(recordings, projectTemplates, bibleBooks, getKstDateKey()) as ActiveProject[];
           const restoredActiveProject = restoredProjects.find((project) => project.id === restoredActiveProjectId) ?? restoredProjects[0] ?? null;
           setActiveProjects(restoredProjects);
           setActiveProject(restoredActiveProject);

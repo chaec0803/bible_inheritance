@@ -18,7 +18,6 @@ describe('로그인 사용자 말씀 여정 서버 저장', () => {
   });
 
   it('상태 행이 없으면 남아 있는 녹음 메타데이터로 여정을 복구한다', () => {
-    expect(page).toContain('recoverProjectsFromRecordings(recordings)');
-    expect(page).toContain("projectTemplates.find((item) => item.id === recording.projectId");
+    expect(page).toContain('recoverJourneyProjects(recordings, projectTemplates, bibleBooks');
   });
 });
