@@ -520,8 +520,6 @@ html[data-theme='dark'] .recording-preview { color-scheme: dark; }
 .music-list small { margin-top: 2px; color: var(--muted); font-size: 8px; }
 .radio-dot { width: 12px; height: 12px; border: 1px solid #bdb9af; border-radius: 50%; }
 .music-option.selected .radio-dot { border: 4px solid var(--sage); }
-.persistent-youtube-host { position: fixed; left: -10000px; bottom: 0; width: 320px; height: 180px; overflow: hidden; opacity: .01; pointer-events: none; }
-.persistent-youtube-host > div, .persistent-youtube-host iframe { width: 320px !important; height: 180px !important; }
 .bgm-transport { margin-top: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .bgm-transport button { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 5px; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 11px; font-size: 9px; font-weight: 900; cursor: pointer; transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease; }
 .bgm-transport button:not(:disabled):hover { color: var(--sage); border-color: color-mix(in srgb, var(--sage) 55%, var(--line)); }

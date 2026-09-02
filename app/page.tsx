@@ -39,6 +39,7 @@ import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyComplete
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
 import { toggleAudioPlayback } from '@/lib/audio-playback';
+import { createLatestAudioRequestGate } from '@/lib/audio-request-gate';
 import { recoverJourneyProjects } from '@/lib/user-state-policy';
 import { AuthGate } from './auth-gate';
 
@@ -139,8 +140,6 @@ type BgmOption = {
   id: string;
   name: string;
   description: string;
-  videoId: string | null;
-  startSeconds: number;
   audioSrc: string | null;
   recommended?: boolean;
 };
@@ -150,24 +149,18 @@ const bgmOptions: readonly BgmOption[] = [
     id: 'still-waters',
     name: 'Aeternum',
     description: 'Christoffer Moe Ditlevsen',
-    videoId: 'DBVSSzzSlVw',
-    startSeconds: 3371,
     audioSrc: '/api/bgm/aeternum',
   },
   {
     id: 'peaceful-morning',
     name: 'Unto Thee',
     description: 'JOYSPRING',
-    videoId: 'WDkUGO7qWOQ',
-    startSeconds: 0,
     audioSrc: '/api/bgm/unto-thee',
   },
   {
     id: 'word-breath',
     name: "The King's Return",
     description: 'Adriel Fair',
-    videoId: 'TkodnfN4kUQ',
-    startSeconds: 0,
     audioSrc: '/api/bgm/the-kings-return',
     recommended: true,
   },
@@ -175,8 +168,6 @@ const bgmOptions: readonly BgmOption[] = [
     id: 'none',
     name: '음악 없음',
     description: '목소리만 녹음',
-    videoId: null,
-    startSeconds: 0,
     audioSrc: null,
   },
 ];
@@ -323,42 +314,6 @@ async function saveUserState(state: UserStateSnapshot) {
     body: JSON.stringify(state),
   });
   if (!response.ok) throw new Error('말씀 여정 상태를 저장하지 못했어요.');
-}
-
-type YouTubePlayer = {
-  destroy: () => void;
-  loadVideoById: (options: {
-    videoId: string;
-    startSeconds: number;
-    endSeconds?: number;
-  }) => void;
-  setVolume: (volume: number) => void;
-  playVideo: () => void;
-  pauseVideo: () => void;
-  stopVideo: () => void;
-};
-
-type YouTubeNamespace = {
-  Player: new (
-    element: HTMLElement,
-    options: {
-      height: string;
-      width: string;
-      videoId: string;
-      playerVars: Record<string, string | number>;
-      events: {
-        onReady: (event: { target: YouTubePlayer }) => void;
-        onStateChange: (event: { data: number }) => void;
-      };
-    },
-  ) => YouTubePlayer;
-};
-
-declare global {
-  interface Window {
-    YT?: YouTubeNamespace;
-    onYouTubeIframeAPIReady?: () => void;
-  }
 }
 
 function formatTime(seconds: number) {
@@ -557,8 +512,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const continuousBoundariesRef = useRef<ContinuousVerseBoundary[]>([]);
   const continuousRecordingGroupIdRef = useRef<string | null>(null);
   const objectUrlsRef = useRef(new Set<string>());
-  const youtubeContainerRef = useRef<HTMLDivElement | null>(null);
-  const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const restartBgmOnNextPlayRef = useRef(false);
   const themeInitializedRef = useRef(false);
   const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
@@ -571,6 +524,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const playbackBgmSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackBgmGainRef = useRef<GainNode | null>(null);
   const playbackBgmBuffersRef = useRef(new Map<string, AudioBuffer>());
+  const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
   const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
@@ -869,64 +823,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, [activeProject?.id, activeProjects, collectedCardIds, pendingCardAwards, userStateReady]);
 
   useEffect(() => {
-    let disposed = false;
-    const previousReadyHandler = window.onYouTubeIframeAPIReady;
-
-    const createPlayer = () => {
-      if (disposed || !youtubeContainerRef.current || !window.YT?.Player || youtubePlayerRef.current) return;
-      youtubePlayerRef.current = new window.YT.Player(youtubeContainerRef.current, {
-        height: '158',
-        width: '100%',
-        videoId: bgmOptions[0].videoId ?? '',
-        playerVars: {
-          controls: 0,
-          disablekb: 1,
-          playsinline: 1,
-          rel: 0,
-          start: bgmOptions[0].startSeconds,
-        },
-        events: {
-          onReady: (event) => {
-            event.target.setVolume(12);
-            event.target.stopVideo();
-          },
-          onStateChange: (event) => {
-            if (event.data === 0) {
-              setActivePreview(null);
-              setBgmPaused(false);
-            }
-            if (event.data === 1) setBgmPaused(false);
-            if (event.data === 2) setBgmPaused(true);
-          },
-        },
-      });
-    };
-
-    if (window.YT?.Player) {
-      createPlayer();
-    } else {
-      window.onYouTubeIframeAPIReady = () => {
-        previousReadyHandler?.();
-        createPlayer();
-      };
-      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-        const script = document.createElement('script');
-        script.src = 'https://www.youtube.com/iframe_api';
-        script.async = true;
-        document.head.appendChild(script);
-      }
-    }
-
-    return () => {
-      disposed = true;
-      if (typeof youtubePlayerRef.current?.destroy === 'function') youtubePlayerRef.current.destroy();
-      youtubePlayerRef.current = null;
-      window.onYouTubeIframeAPIReady = previousReadyHandler;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof youtubePlayerRef.current?.setVolume === 'function') youtubePlayerRef.current.setVolume(volume);
     if (playbackBgmGainRef.current) playbackBgmGainRef.current.gain.value = volume / 100;
   }, [volume]);
 
@@ -1219,11 +1115,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const startInternalChapterBgm = async (context: AudioContext, bgmId: string) => {
+    const generation = playbackBgmRequestGateRef.current.begin();
     playbackBgmSourceRef.current?.stop();
     playbackBgmSourceRef.current = null;
     playbackBgmGainRef.current = null;
     const option = bgmOptions.find((item) => item.id === bgmId);
-    if (!option?.audioSrc) return;
+    if (!option?.audioSrc) return true;
     let buffer = playbackBgmBuffersRef.current.get(option.audioSrc);
     if (!buffer) {
       const response = await fetch(option.audioSrc);
@@ -1231,6 +1128,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       buffer = await context.decodeAudioData(await response.arrayBuffer());
       playbackBgmBuffersRef.current.set(option.audioSrc, buffer);
     }
+    if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
     const source = context.createBufferSource();
     const gain = context.createGain();
     source.buffer = buffer;
@@ -1240,11 +1138,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     playbackBgmSourceRef.current = source;
     playbackBgmGainRef.current = gain;
     source.start();
+    return true;
   };
 
   const stopLibraryPlayback = (recordingId?: string) => {
     if (recordingId && activeLibraryRef.current !== recordingId) return;
-    youtubePlayerRef.current?.stopVideo();
     activeLibraryRef.current = null;
     setActiveLibraryId(null);
     setActivePreview(null);
@@ -1252,6 +1150,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const stopChapterPlayback = () => {
+    playbackBgmRequestGateRef.current.cancel();
     chapterPlayingRef.current = false;
     chapterPausedRef.current = false;
     chapterBgmIdRef.current = null;
@@ -1298,7 +1197,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const stopPreview = () => {
-    youtubePlayerRef.current?.stopVideo();
+    playbackBgmRequestGateRef.current.cancel();
     playbackBgmSourceRef.current?.stop();
     playbackBgmSourceRef.current = null;
     playbackBgmGainRef.current = null;
@@ -1315,7 +1214,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       if (id !== recording.id && !audio.paused) audio.pause();
     });
 
-    youtubePlayerRef.current?.stopVideo();
     setActivePreview(chapterPlayingRef.current ? `chapter-${chapterBgmIdRef.current ?? recording.bgmId}` : null);
   };
 
@@ -1342,7 +1240,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
     try {
       const context = await prepareChapterAudio();
-      await startInternalChapterBgm(context, bgm);
+      const started = await startInternalChapterBgm(context, bgm);
+      if (!started) return;
       await firstAudio.play();
     } catch {
       stopChapterPlayback();
@@ -1440,7 +1339,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       if (activePreview === option.id && bgmPaused && playbackBgmSourceRef.current) {
         setBgmPaused(false);
       } else {
-        await startInternalChapterBgm(context, option.id);
+        const started = await startInternalChapterBgm(context, option.id);
+        if (!started) return;
         setBgm(option.id);
         setActivePreview(option.id);
         setBgmPaused(false);
@@ -1464,7 +1364,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     chapterBgmIdRef.current = option.id;
     if (!chapterPlayingRef.current) return;
     const current = chapterQueue.find((item) => item.id === activeLibraryRef.current) ?? chapterQueue[0];
-    if (current) playLibraryBgm(current);
+    if (!current) return;
+    playLibraryBgm(current);
+    void prepareChapterAudio()
+      .then((context) => startInternalChapterBgm(context, option.id))
+      .catch(() => {
+        stopChapterPlayback();
+        setNotice('선택한 BGM으로 바꾸지 못했어요. 다시 눌러 주세요.');
+      });
   };
 
   const moveVerse = (nextIndex: number) => {
@@ -2117,7 +2024,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   return (
     <main className="app-shell">
-      <div className="persistent-youtube-host" aria-hidden="true"><div ref={youtubeContainerRef} /></div>
       {onboardingStep !== 'app' && (
         <section className="onboarding-overlay" aria-label="말씀유산 시작 설정">
           <div className="onboarding-brand">
@@ -2718,7 +2624,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   <button className="library-audio-button" type="button" disabled={audioStartingId === item.id} onClick={() => void toggleLibraryVersePlayback(item)}>{audioStartingId === item.id ? <LoaderCircle className="spin" size={16} /> : isPlaying ? <Pause size={16} /> : <Play size={16} />}{audioStartingId === item.id ? '재생 준비 중' : isPlaying ? '이 절 멈춤' : '이 절 듣기'}</button>
                   <p className="library-playback-note">
                     {isPlaying
-                      ? chapterPlaying && savedBgm.videoId ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
+                      ? chapterPlaying && savedBgm.audioSrc ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
                       : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}
                   </p>
                   <button className="library-retake-button" type="button" disabled={Boolean(deletingVerseId)} onClick={() => void startRetake(item)}>
