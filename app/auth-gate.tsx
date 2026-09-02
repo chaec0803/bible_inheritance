@@ -56,11 +56,11 @@ export function AuthGate({ children }: AuthGateProps) {
     if (mode === 'signup' && !result.data.session) setMessage('확인 이메일을 보냈어요. 이메일의 링크를 눌러 가입을 완료해 주세요.');
   };
 
-  const signInWithSocial = async (provider: 'google' | 'kakao') => {
+  const signInWithGoogle = async () => {
     setSubmitting(true);
     setMessage('');
     const { error } = await supabase.auth.signInWithOAuth({
-      provider,
+      provider: 'google',
       options: { redirectTo: window.location.origin },
     });
     if (error) { setMessage(error.message); setSubmitting(false); }
@@ -80,8 +80,7 @@ export function AuthGate({ children }: AuthGateProps) {
         <div className="auth-brand"><span><BookOpen size={24} /></span><div><strong>말씀유산</strong><small>VERSE LEGACY</small></div></div>
         <div><p className="eyebrow">목소리로 간직하는 말씀</p><h1>{mode === 'login' ? '다시 만나 반가워요' : '말씀 여정을 시작해요'}</h1><p className="muted">로그인하면 어느 기기에서든 내 녹음과 말씀 여정을 이어갈 수 있어요.</p></div>
         <div className="social-login-buttons">
-          <button className="google-login-button" type="button" onClick={() => void signInWithSocial('google')} disabled={submitting}>Google로 계속하기</button>
-          <button className="kakao-login-button" type="button" onClick={() => void signInWithSocial('kakao')} disabled={submitting}>카카오로 계속하기</button>
+          <button className="google-login-button" type="button" onClick={() => void signInWithGoogle()} disabled={submitting}>Google로 계속하기</button>
         </div>
         <div className="auth-divider"><span>또는 이메일로</span></div>
         <form onSubmit={(event) => void submitEmail(event)}>

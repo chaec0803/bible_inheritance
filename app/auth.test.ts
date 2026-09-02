@@ -8,12 +8,12 @@ const audioRoute = readFileSync(new URL('./api/recordings/[id]/audio/route.ts', 
 const styles = readFileSync(new URL('./globals.css', import.meta.url), 'utf8');
 
 describe('Supabase account authentication', () => {
-  it('offers email, Google, and Kakao sign-in but not Apple sign-in', () => {
+  it('offers email and Google sign-in without Kakao or Apple sign-in', () => {
     expect(gate).toContain("signInWithPassword");
     expect(gate).toContain("signUp({ email, password })");
-    expect(gate).toContain("signInWithSocial('google')");
-    expect(gate).toContain("'google' | 'kakao'");
-    expect(gate).toContain("signInWithSocial('kakao')");
+    expect(gate).toContain("provider: 'google'");
+    expect(gate).not.toContain("provider: 'kakao'");
+    expect(gate).not.toContain('카카오로 계속하기');
     expect(gate).not.toContain("provider: 'apple'");
   });
 
