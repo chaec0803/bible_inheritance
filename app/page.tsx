@@ -303,6 +303,63 @@ type SavedRecording = {
   createdAt: number;
 };
 
+type UserStateSnapshot = {
+  activeProjects: ActiveProject[];
+  activeProjectId: string | null;
+  wordCardAwards: WordCardAward[];
+};
+
+async function fetchUserState() {
+  const response = await fetch('/api/user-state');
+  if (!response.ok) throw new Error('말씀 여정 상태를 불러오지 못했어요.');
+  return (await response.json()) as { state: UserStateSnapshot | null };
+}
+
+async function saveUserState(state: UserStateSnapshot) {
+  const response = await fetch('/api/user-state', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(state),
+  });
+  if (!response.ok) throw new Error('말씀 여정 상태를 저장하지 못했어요.');
+}
+
+function recoverProjectsFromRecordings(recordings: readonly SavedRecording[]) {
+  const recovered = new Map<string, ActiveProject>();
+  recordings.forEach((recording) => {
+    if (recovered.has(recording.projectId)) return;
+    const template = projectTemplates.find((item) => item.id === recording.projectId && !item.custom);
+    if (template) {
+      recovered.set(template.id, {
+        id: template.id,
+        title: template.title,
+        duration: template.duration,
+        scope: template.scope,
+        tasks: template.tasks,
+        kind: 'guided',
+        startedOn: getKstDateKey(),
+        readingDay: 1,
+        readingDayDate: getKstDateKey(),
+      });
+      return;
+    }
+    if (recording.projectId === 'free-recording' || recording.projectId.startsWith('free-')) {
+      const book = bibleBooks.find((item) => item.name === recording.book);
+      recovered.set(`free-${book?.code ?? recording.book}`, {
+        id: `free-${book?.code ?? recording.book}`,
+        title: `${recording.book} 녹음`,
+        duration: 0,
+        scope: `${recording.book} 자유 녹음`,
+        tasks: [`${recording.book} ${recording.chapter}장`],
+        kind: 'free',
+        passage: { code: book?.code ?? recording.book, name: recording.book, chapter: recording.chapter, startVerse: 1, endVerse: recording.verse },
+        startedOn: getKstDateKey(),
+      });
+    }
+  });
+  return [...recovered.values()];
+}
+
 type YouTubePlayer = {
   destroy: () => void;
   loadVideoById: (options: {
@@ -483,6 +540,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [viewedProjectDay, setViewedProjectDay] = useState<number | null>(null);
   const [libraryRecordings, setLibraryRecordings] = useState<SavedRecording[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
+  const [userStateReady, setUserStateReady] = useState(false);
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [deletingVerseId, setDeletingVerseId] = useState<string | null>(null);
   const [audioStartingId, setAudioStartingId] = useState<string | null>(null);
@@ -552,6 +610,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
   const verseMenuListRef = useRef<HTMLDivElement | null>(null);
+  const userStateHydratedRef = useRef(false);
 
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
@@ -770,8 +829,47 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   useEffect(() => {
     let cancelled = false;
     fetchLibrary()
-      .then((recordings) => {
+      .then(async (recordings) => {
         if (cancelled) return;
+        if (!userStateHydratedRef.current) {
+          let restoredProjects: ActiveProject[] = [];
+          let restoredActiveProjectId: string | null = null;
+          let restoredAwards: WordCardAward[] = [];
+          let hasServerState = false;
+          try {
+            const { state } = await fetchUserState();
+            if (state) {
+              hasServerState = true;
+              restoredProjects = Array.isArray(state.activeProjects) ? state.activeProjects : [];
+              restoredActiveProjectId = typeof state.activeProjectId === 'string' ? state.activeProjectId : null;
+              restoredAwards = Array.isArray(state.wordCardAwards) ? state.wordCardAwards : [];
+            }
+          } catch {
+            // Recordings remain the recovery source if the state row has not been created yet.
+          }
+          if (!hasServerState) {
+            try {
+              restoredProjects = JSON.parse(window.localStorage.getItem('verse-legacy-active-projects') ?? '[]') as ActiveProject[];
+              restoredActiveProjectId = window.localStorage.getItem('verse-legacy-project');
+              restoredAwards = JSON.parse(window.localStorage.getItem('verse-legacy-word-card-awards') ?? '[]') as WordCardAward[];
+            } catch {
+              restoredProjects = [];
+              restoredAwards = [];
+            }
+          }
+          if (!restoredProjects.length) restoredProjects = recoverProjectsFromRecordings(recordings);
+          const restoredActiveProject = restoredProjects.find((project) => project.id === restoredActiveProjectId) ?? restoredProjects[0] ?? null;
+          setActiveProjects(restoredProjects);
+          setActiveProject(restoredActiveProject);
+          setReturningHome(true);
+          if (restoredActiveProject) window.localStorage.setItem('verse-legacy-project', restoredActiveProject.id);
+          window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(restoredProjects));
+          window.localStorage.setItem('verse-legacy-word-card-awards', JSON.stringify(restoredAwards));
+          setCollectedCardIds([...new Set(restoredAwards.filter((award) => award.collected).map((award) => award.cardId))]);
+          setPendingCardAwards(restoredAwards.filter((award) => !award.collected));
+          userStateHydratedRef.current = true;
+          setUserStateReady(true);
+        }
         const passageSaved = passageVerses.map((_, index) => recordings.some((item) => recordingBelongsToJourney(item, activeProject) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
         setLibraryRecordings(recordings);
         setSaved(passageSaved);
@@ -789,6 +887,21 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       cancelled = true;
     };
   }, [activeProject, passageBook.name, passageChapter, passageStartVerse, passageVerses, userId]);
+
+  useEffect(() => {
+    if (!userStateReady) return;
+    const timeout = window.setTimeout(() => {
+      let wordCardAwards: WordCardAward[] = [];
+      try {
+        wordCardAwards = JSON.parse(window.localStorage.getItem('verse-legacy-word-card-awards') ?? '[]') as WordCardAward[];
+      } catch {
+        wordCardAwards = [];
+      }
+      void saveUserState({ activeProjects, activeProjectId: activeProject?.id ?? null, wordCardAwards })
+        .catch(() => setNotice('말씀 여정 상태를 서버에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [activeProject?.id, activeProjects, collectedCardIds, pendingCardAwards, userStateReady]);
 
   useEffect(() => {
     let disposed = false;

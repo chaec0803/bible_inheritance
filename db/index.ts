@@ -27,6 +27,11 @@ export function ensureDbSchema() {
       duration_seconds INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_states (
+      owner_key TEXT PRIMARY KEY NOT NULL,
+      state_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`),
   ]).then(async () => {
     const columns = await env.DB.prepare('PRAGMA table_info(recordings)').all<{ name: string }>();
     const names = new Set(columns.results.map((column) => column.name));

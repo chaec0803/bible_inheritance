@@ -28,3 +28,9 @@ export const recordings = sqliteTable(
     index('idx_recordings_owner_project_created').on(table.ownerKey, table.projectId, table.createdAt),
   ],
 );
+
+export const userStates = sqliteTable('user_states', {
+  ownerKey: text('owner_key').primaryKey(),
+  stateJson: text('state_json').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
