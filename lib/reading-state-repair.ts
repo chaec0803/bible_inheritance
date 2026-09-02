@@ -10,7 +10,7 @@ type DailyProject = {
   readingDayDate?: string;
 };
 
-type ReadingState = {
+export type ReadingState = {
   activeProjects?: DailyProject[];
   [key: string]: unknown;
 };
@@ -44,7 +44,11 @@ export function repairDailyReadingState(
   const activeProjects = (state.activeProjects ?? []).map((project) => {
     if (project.kind === 'free' || !project.duration || project.duration < 1 || !Array.isArray(project.tasks)) return project;
 
-    const readingDay = normalizeReadingDay(project);
+    const readingDay = normalizeReadingDay({
+      duration: project.duration,
+      readingDay: project.readingDay,
+      readingDayDate: project.readingDayDate,
+    });
     const task = project.tasks[readingDay - 1];
     const required = task ? getRequiredTaskReferences(task, chapterCounts) : new Set<string>();
     const timestamps = new Map<string, number>();

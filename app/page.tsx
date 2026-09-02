@@ -41,6 +41,8 @@ import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-ve
 import { toggleAudioPlayback } from '@/lib/audio-playback';
 import { createLatestAudioRequestGate } from '@/lib/audio-request-gate';
 import { recoverJourneyProjects } from '@/lib/user-state-policy';
+import { getRecordingFinishLabel } from '@/lib/recording-finish-label';
+import { orderJourneyRecordings } from '@/lib/journey-playback';
 import { AuthGate } from './auth-gate';
 
 const defaultVerses = [
@@ -534,6 +536,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
+  const recordingFinishLabel = getRecordingFinishLabel({
+    isLastVerse: verseIndex === passageVerses.length - 1,
+    isDailyJourney: Boolean(activeProject && activeProject.kind !== 'free'),
+    book: passageBook.name,
+    chapter: passageChapter,
+  });
   const moveContinuousVerse = useCallback((nextIndex: number, source: 'manual') => {
     const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
     if (safeIndex === verseIndex) return;
@@ -978,21 +986,28 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       .sort((a, b) => (bibleOrder.get(a.book) ?? 999) - (bibleOrder.get(b.book) ?? 999) || a.chapter - b.chapter);
   }, [activeProject, libraryChapterGroups]);
   const selectedLibraryGroup = libraryChapterGroups.find((group) => group.key === selectedLibraryChapter) ?? libraryChapterGroups[0] ?? null;
-  const chapterQueue = useMemo(() => {
+  const isGuidedJourneyPlayback = Boolean(activeProject && activeProject.kind !== 'free');
+  const selectedChapterQueue = useMemo(() => {
     const latestByVerse = new Map<number, SavedRecording>();
     selectedLibraryGroup?.recordings.forEach((item) => {
       if (!latestByVerse.has(item.verse)) latestByVerse.set(item.verse, item);
     });
     return [...latestByVerse.values()].sort((a, b) => a.verse - b.verse);
   }, [selectedLibraryGroup]);
+  const playbackQueue = useMemo(() => {
+    if (isGuidedJourneyPlayback) {
+      return orderJourneyRecordings(activeLibraryRecordings, activeProject?.tasks ?? [], chapterCountsByBook);
+    }
+    return selectedChapterQueue;
+  }, [activeLibraryRecordings, activeProject?.tasks, chapterCountsByBook, isGuidedJourneyPlayback, selectedChapterQueue]);
   const selectedLibraryVerseCount = useMemo(() => {
     if (!selectedLibraryGroup) return 0;
     const book = bibleBooks.find((item) => item.name === selectedLibraryGroup.book);
-    return book?.chapters[selectedLibraryGroup.chapter - 1] ?? Math.max(0, ...chapterQueue.map((item) => item.verse));
-  }, [chapterQueue, selectedLibraryGroup]);
-  const selectedLibraryRecording = chapterQueue.find((item) => item.id === selectedLibraryRecordingId) ?? null;
-  const currentlyPlayingRecording = chapterQueue.find((item) => item.id === activeLibraryId) ?? null;
-  const currentlyPlayingChapterIndex = currentlyPlayingRecording ? chapterQueue.findIndex((item) => item.id === currentlyPlayingRecording.id) : -1;
+    return book?.chapters[selectedLibraryGroup.chapter - 1] ?? Math.max(0, ...selectedChapterQueue.map((item) => item.verse));
+  }, [selectedChapterQueue, selectedLibraryGroup]);
+  const selectedLibraryRecording = selectedChapterQueue.find((item) => item.id === selectedLibraryRecordingId) ?? null;
+  const currentlyPlayingRecording = playbackQueue.find((item) => item.id === activeLibraryId) ?? null;
+  const currentlyPlayingChapterIndex = currentlyPlayingRecording ? playbackQueue.findIndex((item) => item.id === currentlyPlayingRecording.id) : -1;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -1004,7 +1019,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   useEffect(() => {
     if (!libraryChapterMenuOpen || !selectedLibraryVerseCount) return;
-    const recordedVerses = new Set(chapterQueue.map((item) => item.verse));
+    const recordedVerses = new Set(selectedChapterQueue.map((item) => item.verse));
     const firstUnrecordedVerse = Array.from({ length: selectedLibraryVerseCount }, (_, index) => index + 1).find((verse) => !recordedVerses.has(verse));
     if (!firstUnrecordedVerse) return;
     const frame = window.requestAnimationFrame(() => {
@@ -1012,7 +1027,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       nextVerseButton?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chapterQueue, libraryChapterMenuOpen, selectedLibraryVerseCount]);
+  }, [selectedChapterQueue, libraryChapterMenuOpen, selectedLibraryVerseCount]);
 
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary();
@@ -1089,7 +1104,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       context = new AudioContext();
       playbackAudioContextRef.current = context;
     }
-    chapterQueue.forEach((recording) => {
+    playbackQueue.forEach((recording) => {
       const audio = libraryAudioRefs.current.get(recording.id);
       if (!audio || libraryAudioSourceRefs.current.has(audio)) return;
       const source = context!.createMediaElementSource(audio);
@@ -1204,14 +1219,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const startChapterPlayback = async () => {
-    if (chapterQueue.length === 0) return;
+    if (playbackQueue.length === 0) return;
     libraryAudioRefs.current.forEach((audio) => {
       audio.pause();
       audio.currentTime = 0;
       audio.load();
     });
     stopPreview();
-    const first = chapterQueue[0];
+    const first = playbackQueue[0];
     chapterPlayingRef.current = true;
     chapterPausedRef.current = false;
     chapterBgmIdRef.current = bgm;
@@ -1267,11 +1282,13 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       return;
     }
 
-    const currentIndex = chapterQueue.findIndex((item) => item.id === recordingId);
-    const next = chapterQueue[currentIndex + 1];
+    const currentIndex = playbackQueue.findIndex((item) => item.id === recordingId);
+    const next = playbackQueue[currentIndex + 1];
     if (!next) {
       stopChapterPlayback();
-      setNotice(`${selectedLibraryGroup?.book ?? passageBook.name} ${selectedLibraryGroup?.chapter ?? passageChapter}${selectedLibraryGroup?.book === '시편' ? '편' : '장'} 이어듣기를 모두 마쳤어요.`);
+      setNotice(isGuidedJourneyPlayback
+        ? `‘${activeProject?.title ?? '말씀 여정'}’ 전체 이어듣기를 모두 마쳤어요.`
+        : `${selectedLibraryGroup?.book ?? passageBook.name} ${selectedLibraryGroup?.chapter ?? passageChapter}${selectedLibraryGroup?.book === '시편' ? '편' : '장'} 이어듣기를 모두 마쳤어요.`);
       return;
     }
 
@@ -1349,7 +1366,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setBgm(option.id);
     chapterBgmIdRef.current = option.id;
     if (!chapterPlayingRef.current) return;
-    const current = chapterQueue.find((item) => item.id === activeLibraryRef.current) ?? chapterQueue[0];
+    const current = playbackQueue.find((item) => item.id === activeLibraryRef.current) ?? playbackQueue[0];
     if (!current) return;
     playLibraryBgm(current);
     void prepareChapterAudio()
@@ -2355,7 +2372,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
           {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행">
             <button className="next" type="button" onClick={completeContinuousVerse} disabled={verseIndex === passageVerses.length - 1}>다음 절 <ChevronRight size={18} /></button>
-            <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}><CircleStop size={18} /> 여기까지 녹음</button>
+            <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}><CircleStop size={18} /> {recordingFinishLabel}</button>
           </div>}
 
           <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
@@ -2538,8 +2555,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   ) : (
                     <div>
                       <small className="now-playing-label">READY TO PLAY</small>
-                      <strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기</strong>
-                      <small>{chapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.</small>
+                      <strong>{isGuidedJourneyPlayback
+                        ? `${activeProject?.title ?? '말씀 여정'} 전체 이어듣기`
+                        : `${selectedLibraryGroup.book} ${selectedLibraryGroup.chapter}${selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기`}</strong>
+                      <small>{isGuidedJourneyPlayback
+                        ? `${playbackQueue.length}개 녹음 저장됨 · 여정 전체를 순서대로 이어서 들어요.`
+                        : `${selectedChapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.`}</small>
                     </div>
                   )}
                 </div>
@@ -2562,7 +2583,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                 </div>
               </div>
               <div className="chapter-audio-bank">
-                {chapterQueue.map((item) => (
+                {playbackQueue.map((item) => (
                   // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
                   <audio
                     preload="auto"
@@ -2630,8 +2651,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             <dialog className="continuous-player-modal" open aria-labelledby="continuous-player-title">
               <button className="continuous-player-close" type="button" onClick={stopChapterPlayback} aria-label="이어듣기 닫기"><X size={22} /></button>
               <p className="eyebrow">CONTINUOUS PLAYBACK</p>
-              <div className="continuous-player-progress"><span style={{ width: `${((currentlyPlayingChapterIndex + 1) / chapterQueue.length) * 100}%` }} /></div>
-              <small>{currentlyPlayingChapterIndex + 1} / {chapterQueue.length} · {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}{currentlyPlayingRecording.book === '시편' ? '편' : '장'}</small>
+              <div className="continuous-player-progress"><span style={{ width: `${((currentlyPlayingChapterIndex + 1) / playbackQueue.length) * 100}%` }} /></div>
+              <small>{currentlyPlayingChapterIndex + 1} / {playbackQueue.length} · {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}{currentlyPlayingRecording.book === '시편' ? '편' : '장'}</small>
               <div className="continuous-player-verse">
                 <span>{currentlyPlayingRecording.verse}</span>
                 <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
@@ -2647,7 +2668,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               </div>
               {playbackListOpen && <div className="continuous-player-list" aria-label="녹음된 절 목록">
                 <strong>녹음된 절</strong>
-                <div>{chapterQueue.map((item, index) => <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => void jumpToChapterRecording(item)} key={item.id}><span>{item.verse}절</span><small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>
+                <div>{playbackQueue.map((item, index) => <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => void jumpToChapterRecording(item)} key={item.id}><span>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</span><small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>
               </div>}
             </dialog>
           </div>
@@ -2664,11 +2685,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                 })}
               </div>
               {selectedLibraryGroup && <div className="verse-menu-section">
-                <div className="verse-menu-heading"><strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} · 절별 녹음</strong><span>{chapterQueue.length}/{selectedLibraryVerseCount}절</span></div>
+                <div className="verse-menu-heading"><strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} · 절별 녹음</strong><span>{selectedChapterQueue.length}/{selectedLibraryVerseCount}절</span></div>
                 <div className="verse-menu-list" ref={verseMenuListRef}>
                   {Array.from({ length: selectedLibraryVerseCount }, (_, index) => {
                     const verse = index + 1;
-                    const recording = chapterQueue.find((item) => item.verse === verse);
+                    const recording = selectedChapterQueue.find((item) => item.verse === verse);
                     return <button type="button" data-verse-number={verse} disabled={!recording} onClick={() => recording && openLibraryVerse(recording)} key={verse}><strong>{verse}절</strong><small>{recording ? '녹음 듣기' : '미녹음'}</small></button>;
                   })}
                 </div>

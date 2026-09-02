@@ -15,10 +15,12 @@ vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate 
 vi.mock('@/db', () => ({
   ensureDbSchema: mocks.ensureSchema,
   getDb: () => ({
-    select: () => ({ from: () => ({ where: () => {
-      const rows = mocks.selectCalls++ === 0 ? mocks.selected : mocks.selectedRecordings;
-      return { limit: async () => rows, then: (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(rows)) };
-    } }) }),
+    select: () => {
+      const call = mocks.selectCalls++;
+      return { from: () => ({ where: () => call === 0
+        ? { limit: async () => mocks.selected }
+        : Promise.resolve(mocks.selectedRecordings) }) };
+    },
     insert: () => ({ values: (value: Record<string, unknown>) => ({
       onConflictDoUpdate: async (upsert: Record<string, unknown>) => {
         mocks.inserted.push(value);
@@ -100,6 +102,7 @@ describe('말씀 여정·진행도·보상 상태 API 통합 회귀', () => {
 
   it('상태 행이 없거나 깨졌으면 안전하게 빈 상태로 응답한다', async () => {
     expect(await (await GET(new Request('https://example.test/api/user-state'))).json()).toEqual({ state: null });
+    mocks.selectCalls = 0;
     mocks.selected = [{ stateJson: '{broken', updatedAt: 1234 }];
     expect(await (await GET(new Request('https://example.test/api/user-state'))).json()).toEqual({ state: null });
   });

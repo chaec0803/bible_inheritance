@@ -25,4 +25,8 @@ describe('로그인 사용자 말씀 여정 서버 저장', () => {
     expect(route).toContain('repairDailyReadingState');
     expect(route).toContain('getDb().update(userStates)');
   });
+
+  it('현재 데이터 버전의 녹음만 진행도 계산에 사용한다', () => {
+    expect(route).toContain('eq(recordings.dataVersion, CURRENT_DATA_VERSION)');
+  });
 });

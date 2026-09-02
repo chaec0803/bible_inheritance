@@ -1,8 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings, userStates } from '@/db/schema';
 import { bibleBooks } from '@/app/bible-metadata';
-import { getKstDateKey, repairDailyReadingState } from '@/lib/reading-state-repair';
+import { getKstDateKey, repairDailyReadingState, type ReadingState } from '@/lib/reading-state-repair';
+import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
 const MAX_STATE_BYTES = 256 * 1024;
@@ -16,16 +17,20 @@ export async function GET(request: Request) {
   try {
     const parsed = JSON.parse(row.stateJson) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return Response.json({ state: null });
+    const state = parsed as ReadingState;
     const savedRecordings = await getDb().select({
       projectId: recordings.projectId,
       book: recordings.book,
       chapter: recordings.chapter,
       verse: recordings.verse,
       createdAt: recordings.createdAt,
-    }).from(recordings).where(eq(recordings.ownerKey, user.id));
+    }).from(recordings).where(and(
+      eq(recordings.ownerKey, user.id),
+      eq(recordings.dataVersion, CURRENT_DATA_VERSION),
+    ));
     const chapterCounts = Object.fromEntries(bibleBooks.map((book) => [book.name, book.chapters]));
-    const repaired = repairDailyReadingState(parsed, savedRecordings, chapterCounts, getKstDateKey());
-    if (!repaired.changed) return Response.json({ state: parsed, updatedAt: row.updatedAt });
+    const repaired = repairDailyReadingState(state, savedRecordings, chapterCounts, getKstDateKey());
+    if (!repaired.changed) return Response.json({ state, updatedAt: row.updatedAt });
     const updatedAt = Date.now();
     await getDb().update(userStates).set({ stateJson: JSON.stringify(repaired.state), updatedAt }).where(eq(userStates.ownerKey, user.id));
     return Response.json({ state: repaired.state, updatedAt });

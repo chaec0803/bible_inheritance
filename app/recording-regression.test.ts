@@ -64,6 +64,12 @@ describe('녹음·저장·수정 회귀', () => {
 });
 
 describe('이어듣기·목록 UI 회귀', () => {
+  it('매일 말씀 여정은 전체 녹음을 이어듣고 목록에 말씀 위치를 모두 표시한다', () => {
+    expect(page).toContain("activeProject && activeProject.kind !== 'free'");
+    expect(page).toContain('orderJourneyRecordings');
+    expect(page).toContain("<span>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</span>");
+  });
+
   it('이어듣기 목록 버튼은 토글되고 절을 눌러도 열린 상태를 유지한다', () => {
     expect(page).toContain('setPlaybackListOpen((current) => !current)');
     const jumpHandler = functionBody('const jumpToChapterRecording', 'const playSelectedBgm');
