@@ -7,10 +7,12 @@ const recordingsRoute = readFileSync(new URL('./api/recordings/route.ts', import
 const audioRoute = readFileSync(new URL('./api/recordings/[id]/audio/route.ts', import.meta.url), 'utf8');
 
 describe('Supabase account authentication', () => {
-  it('offers email and Google sign-in but not Apple sign-in', () => {
+  it('offers email, Google, and Kakao sign-in but not Apple sign-in', () => {
     expect(gate).toContain("signInWithPassword");
     expect(gate).toContain("signUp({ email, password })");
-    expect(gate).toContain("provider: 'google'");
+    expect(gate).toContain("signInWithSocial('google')");
+    expect(gate).toContain("'google' | 'kakao'");
+    expect(gate).toContain("signInWithSocial('kakao')");
     expect(gate).not.toContain("provider: 'apple'");
   });
 
