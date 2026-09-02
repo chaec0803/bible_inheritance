@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
-import { userStates } from '@/db/schema';
+import { recordings, userStates } from '@/db/schema';
+import { bibleBooks } from '@/app/bible-metadata';
+import { getKstDateKey, repairDailyReadingState } from '@/lib/reading-state-repair';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
 const MAX_STATE_BYTES = 256 * 1024;
@@ -12,7 +14,21 @@ export async function GET(request: Request) {
   const [row] = await getDb().select().from(userStates).where(eq(userStates.ownerKey, user.id)).limit(1);
   if (!row) return Response.json({ state: null });
   try {
-    return Response.json({ state: JSON.parse(row.stateJson), updatedAt: row.updatedAt });
+    const parsed = JSON.parse(row.stateJson) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return Response.json({ state: null });
+    const savedRecordings = await getDb().select({
+      projectId: recordings.projectId,
+      book: recordings.book,
+      chapter: recordings.chapter,
+      verse: recordings.verse,
+      createdAt: recordings.createdAt,
+    }).from(recordings).where(eq(recordings.ownerKey, user.id));
+    const chapterCounts = Object.fromEntries(bibleBooks.map((book) => [book.name, book.chapters]));
+    const repaired = repairDailyReadingState(parsed, savedRecordings, chapterCounts, getKstDateKey());
+    if (!repaired.changed) return Response.json({ state: parsed, updatedAt: row.updatedAt });
+    const updatedAt = Date.now();
+    await getDb().update(userStates).set({ stateJson: JSON.stringify(repaired.state), updatedAt }).where(eq(userStates.ownerKey, user.id));
+    return Response.json({ state: repaired.state, updatedAt });
   } catch {
     return Response.json({ state: null });
   }

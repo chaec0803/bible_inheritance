@@ -20,4 +20,9 @@ describe('로그인 사용자 말씀 여정 서버 저장', () => {
   it('상태 행이 없으면 남아 있는 녹음 메타데이터로 여정을 복구한다', () => {
     expect(page).toContain('recoverJourneyProjects(recordings, projectTemplates, bibleBooks');
   });
+
+  it('로그인 시 DB 녹음 날짜를 기준으로 일일 여정을 서버에서 한 번 교정한다', () => {
+    expect(route).toContain('repairDailyReadingState');
+    expect(route).toContain('getDb().update(userStates)');
+  });
 });

@@ -17,20 +17,26 @@ export function restoreJourney<T extends JourneyIdentity>(journeys: readonly T[]
 export function getRequiredJourneyReferences(tasks: readonly string[], chapterCounts: Readonly<Record<string, readonly number[]>>) {
   const references = new Set<string>();
   tasks.forEach((task) => {
-    if (task.includes('전체 확인') || task.includes('밀린 녹음')) return;
-    const match = task.match(/^(.+?)\s+(\d+)(?:장|편)\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)장\s+(\d+)절)?/);
-    if (!match) return;
-    const book = match[1];
-    const startChapter = Number(match[2]);
-    const startVerse = Number(match[3]);
-    const endChapter = Number(match[5] ?? startChapter);
-    const endVerse = Number(match[6] ?? match[4] ?? startVerse);
-    for (let chapter = startChapter; chapter <= endChapter; chapter += 1) {
-      const firstVerse = chapter === startChapter ? startVerse : 1;
-      const lastVerse = chapter === endChapter ? endVerse : chapterCounts[book]?.[chapter - 1] ?? 0;
-      for (let verse = firstVerse; verse <= lastVerse; verse += 1) references.add(`${book}-${chapter}-${verse}`);
-    }
+    getRequiredTaskReferences(task, chapterCounts).forEach((reference) => references.add(reference));
   });
+  return references;
+}
+
+export function getRequiredTaskReferences(task: string, chapterCounts: Readonly<Record<string, readonly number[]>>) {
+  const references = new Set<string>();
+  if (task.includes('전체 확인') || task.includes('밀린 녹음')) return references;
+  const match = task.match(/^(.+?)\s+(\d+)(?:장|편)\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)장\s+(\d+)절)?/);
+  if (!match) return references;
+  const book = match[1];
+  const startChapter = Number(match[2]);
+  const startVerse = Number(match[3]);
+  const endChapter = Number(match[5] ?? startChapter);
+  const endVerse = Number(match[6] ?? match[4] ?? startVerse);
+  for (let chapter = startChapter; chapter <= endChapter; chapter += 1) {
+    const firstVerse = chapter === startChapter ? startVerse : 1;
+    const lastVerse = chapter === endChapter ? endVerse : chapterCounts[book]?.[chapter - 1] ?? 0;
+    for (let verse = firstVerse; verse <= lastVerse; verse += 1) references.add(`${book}-${chapter}-${verse}`);
+  }
   return references;
 }
 

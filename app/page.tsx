@@ -32,7 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
-import { advanceReadingSchedule, canAdvanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
+import { normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
@@ -705,10 +705,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, []);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || recordingMode === 'continuous') return;
     const interval = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(interval);
-  }, [recording]);
+  }, [recording, recordingMode]);
 
   useEffect(() => {
     if (!notice) return;
@@ -900,26 +900,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     return completed;
   }, [activeLibraryRecordings, activeProject, currentPassageComplete]);
   const displayedProjectDayComplete = completedProjectTaskIndexes.has(displayedProjectDayIndex);
-  const currentProjectCompletionDate = completedProjectTaskIndexes.has(currentProjectDay - 1)
-    ? activeLibraryRecordings.reduce<string | undefined>((latest, recording) => {
-      const date = getKstDateKey(new Date(recording.createdAt));
-      return !latest || date > latest ? date : latest;
-    }, undefined)
-    : undefined;
-
-  useEffect(() => {
-    if (!activeProject || activeProject.kind === 'free' || !canAdvanceReadingSchedule(activeProject, kstToday, userStateReady, libraryLoading, currentProjectCompletionDate)) return;
-    const nextSchedule = advanceReadingSchedule(activeProject, completedProjectTaskIndexes, kstToday);
-    const updatedProject = { ...activeProject, ...nextSchedule };
-    queueMicrotask(() => {
-      setActiveProject(updatedProject);
-      setActiveProjects((current) => {
-        const next = current.map((project) => project.id === updatedProject.id ? updatedProject : project);
-        window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
-        return next;
-      });
-    });
-  }, [activeProject, completedProjectTaskIndexes, currentProjectCompletionDate, kstToday, libraryLoading, userStateReady]);
   const freeRecordingChapterKeys = useMemo(() => new Set(
     libraryRecordings
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
@@ -1441,7 +1421,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setFullRetakeActive(true);
       setVerseIndex(0);
       setSeconds(0);
-      setNotice(`${passageBook.name} ${passageChapter}장의 기존 녹음을 모두 지웠어요. 1절부터 새로 녹음해 주세요.`);
+      setNotice(`${passageBook.name} ${passageChapter}장의 기존 녹음을 모두 지웠어요. ${passageStartVerse}절부터 새로 녹음해 주세요.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '기존 녹음을 지우지 못했어요.');
     } finally {
@@ -2496,7 +2476,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             <p>한 절만 바꾸려면 저장된 절을 선택해 주세요. 전체 재녹음은 첫 절부터 새롭게 이어 읽어요.</p>
             <div className="recording-manage-options">
               <button type="button" onClick={() => setRecordingManageOpen(false)}><span><AudioLines size={20} /></span><div><strong>절별로 수정</strong><small>목록에서 녹음된 절을 누른 뒤 ‘이 절 수정’을 선택해요.</small></div></button>
-              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => setConfirmFullRetakeOpen(true)}><span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span><div><strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong><small>현재 장에 저장된 녹음을 모두 지우고 1절부터 다시 시작해요.</small></div></button>
+              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => setConfirmFullRetakeOpen(true)}><span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span><div><strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong><small>현재 범위에 저장된 녹음을 모두 지우고 {passageStartVerse}절부터 다시 시작해요.</small></div></button>
             </div>
           </dialog>
         </div>
@@ -2507,7 +2487,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           <dialog className="confirm-retake-dialog" open aria-labelledby="confirm-retake-title">
             <span><RotateCcw size={24} /></span>
             <h2 id="confirm-retake-title">기존 {passageBook.name} {passageChapter}장 녹음본을 전부 삭제하시겠습니까?</h2>
-            <p>삭제한 녹음은 복구할 수 없어요. 삭제 후 1절부터 새로 녹음하게 됩니다.</p>
+            <p>삭제한 녹음은 복구할 수 없어요. 삭제 후 {passageStartVerse}절부터 새로 녹음하게 됩니다.</p>
             <div><button type="button" onClick={() => setConfirmFullRetakeOpen(false)} disabled={clearingForRetake}>돌아가기</button><button className="delete" type="button" onClick={() => void startFullRetake()} disabled={clearingForRetake}>{clearingForRetake ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{clearingForRetake ? '삭제 중' : '삭제하고 새로 녹음'}</button></div>
           </dialog>
         </div>
@@ -2697,7 +2677,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           </div>
         )}
 
-        <p className="library-privacy"><Cloud size={14} /> 현재는 이 브라우저에서 저장한 녹음만 보여요. 다른 기기와 공유하는 가족 계정은 다음 단계에서 연결할 수 있어요.</p>
+        <p className="library-privacy"><Cloud size={14} /> 녹음과 말씀 여정은 로그인한 계정에 안전하게 저장돼요. 같은 계정으로 로그인하면 다른 기기에서도 이어갈 수 있어요.</p>
       </section>}
 
       <footer className="page-footer">
@@ -2707,7 +2687,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       <nav className="mobile-nav" aria-label="주요 메뉴">
         <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={19} /><span>녹음</span></button>
         <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
-        <button type="button"><Users size={19} /><span>가족</span></button>
+        <button type="button" disabled aria-label="가족 기능 준비 중"><Users size={19} /><span>가족</span></button>
       </nav>
 
       <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="말씀 여정과 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>

@@ -9,18 +9,6 @@ export function normalizeReadingDay(schedule: ReadingSchedule) {
   return Math.min(schedule.duration, Math.max(1, schedule.readingDay ?? 1));
 }
 
-export function canAdvanceReadingSchedule(
-  schedule: ReadingSchedule,
-  today: string,
-  stateReady: boolean,
-  recordingsLoading: boolean,
-  completedOn?: string,
-) {
-  return stateReady
-    && !recordingsLoading
-    && (schedule.readingDayDate !== today || Boolean(completedOn && completedOn < today));
-}
-
 export function advanceReadingSchedule(
   schedule: ReadingSchedule,
   completedTaskIndexes: ReadonlySet<number>,
