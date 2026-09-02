@@ -50,6 +50,30 @@ export function ensureDbSchema() {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS gifts (
+      id TEXT PRIMARY KEY NOT NULL,
+      sender_key TEXT NOT NULL,
+      recipient_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      bgm_id TEXT NOT NULL,
+      bgm_volume INTEGER NOT NULL DEFAULT 12,
+      recording_count INTEGER NOT NULL,
+      total_size_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_recordings (
+      id TEXT PRIMARY KEY NOT NULL,
+      gift_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      book TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      verse INTEGER NOT NULL,
+      verse_text TEXT NOT NULL,
+      object_key TEXT NOT NULL UNIQUE,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      duration_seconds INTEGER NOT NULL
+    )`),
   ]).then(async () => {
     const columns = await env.DB.prepare('PRAGMA table_info(recordings)').all<{ name: string }>();
     const names = new Set(columns.results.map((column) => column.name));
@@ -69,6 +93,10 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_pair ON friendships(user_a_key, user_b_key)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_a_status ON friendships(user_a_key, status)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_b_status ON friendships(user_b_key, status)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_recipient_created ON gifts(recipient_key, created_at)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_sender_created ON gifts(sender_key, created_at)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_recordings_position ON gift_recordings(gift_id, position)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_gift ON gift_recordings(gift_id)'),
     ]);
     await env.DB.prepare('PRAGMA optimize').run();
   }).catch((error) => {

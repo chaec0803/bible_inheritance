@@ -1,0 +1,181 @@
+import { env } from 'cloudflare:workers';
+import { ensureDbSchema, getD1 } from '@/db';
+import { CURRENT_DATA_VERSION } from '@/lib/data-version';
+import { ensureUserProfile } from '@/lib/friend-server';
+import { canonicalFriendPair } from '@/lib/friend-policy';
+import { normalizeGiftRequest } from '@/lib/gift-policy';
+import { authenticateRequest } from '@/lib/supabase-auth';
+
+type SourceRecordingRow = {
+  id: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  verse_text: string;
+  object_key: string;
+  mime_type: string;
+  size_bytes: number;
+  duration_seconds: number;
+};
+
+type GiftRow = {
+  id: string;
+  title: string;
+  sender_nickname: string;
+  bgm_id: string;
+  bgm_volume: number;
+  recording_count: number;
+  total_size_bytes: number;
+  created_at: number;
+};
+
+type GiftRecordingRow = {
+  id: string;
+  gift_id: string;
+  position: number;
+  book: string;
+  chapter: number;
+  verse: number;
+  verse_text: string;
+  mime_type: string;
+  size_bytes: number;
+  duration_seconds: number;
+};
+
+export async function GET(request: Request) {
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+
+  try {
+    await ensureDbSchema();
+    await ensureUserProfile(user);
+    const giftResult = await getD1().prepare(`SELECT
+      gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
+      gifts.recording_count, gifts.total_size_bytes, gifts.created_at,
+      user_profiles.nickname AS sender_nickname
+    FROM gifts
+    JOIN user_profiles ON user_profiles.owner_key = gifts.sender_key
+    WHERE gifts.recipient_key = ?
+    ORDER BY gifts.created_at DESC
+    LIMIT 100`)
+      .bind(user.id)
+      .all<GiftRow>();
+
+    const giftIds = giftResult.results.map((gift) => gift.id);
+    let recordingRows: GiftRecordingRow[] = [];
+    if (giftIds.length) {
+      const placeholders = giftIds.map(() => '?').join(', ');
+      const recordingResult = await getD1().prepare(`SELECT
+        id, gift_id, position, book, chapter, verse, verse_text,
+        mime_type, size_bytes, duration_seconds
+      FROM gift_recordings
+      WHERE gift_id IN (${placeholders})
+      ORDER BY gift_id, position`)
+        .bind(...giftIds)
+        .all<GiftRecordingRow>();
+      recordingRows = recordingResult.results;
+    }
+
+    return Response.json({
+      gifts: giftResult.results.map((gift) => ({
+        id: gift.id,
+        title: gift.title,
+        senderNickname: gift.sender_nickname,
+        bgmId: gift.bgm_id,
+        bgmVolume: gift.bgm_volume,
+        recordingCount: gift.recording_count,
+        totalSizeBytes: gift.total_size_bytes,
+        createdAt: gift.created_at,
+        recordings: recordingRows
+          .filter((recording) => recording.gift_id === gift.id)
+          .map((recording) => ({
+            id: recording.id,
+            position: recording.position,
+            book: recording.book,
+            chapter: recording.chapter,
+            verse: recording.verse,
+            verseText: recording.verse_text,
+            mimeType: recording.mime_type,
+            sizeBytes: recording.size_bytes,
+            durationSeconds: recording.duration_seconds,
+          })),
+      })),
+    });
+  } catch (error) {
+    console.error('gifts.get_failed', error);
+    return Response.json({ error: '받은 선물을 불러오지 못했습니다.' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+
+  const giftRequest = normalizeGiftRequest(await request.json().catch(() => null));
+  if (!giftRequest) return Response.json({ error: '보낼 선물 정보를 다시 확인해 주세요.' }, { status: 400 });
+  if (giftRequest.recipientUserId === user.id) return Response.json({ error: '나 자신에게는 선물할 수 없습니다.' }, { status: 400 });
+
+  await ensureDbSchema();
+  await ensureUserProfile(user);
+  const [userA, userB] = canonicalFriendPair(user.id, giftRequest.recipientUserId);
+  const friendship = await getD1().prepare("SELECT id FROM friendships WHERE user_a_key = ? AND user_b_key = ? AND status = 'accepted'")
+    .bind(userA, userB)
+    .first<{ id: string }>();
+  if (!friendship) return Response.json({ error: '친구에게만 말씀을 선물할 수 있습니다.' }, { status: 403 });
+
+  const sourceResult = await getD1().prepare(`SELECT
+    id, book, chapter, verse, verse_text, object_key, mime_type, size_bytes, duration_seconds
+  FROM recordings
+  WHERE owner_key = ? AND data_version = ?`)
+    .bind(user.id, CURRENT_DATA_VERSION)
+    .all<SourceRecordingRow>();
+  const sourceById = new Map(sourceResult.results.map((recording) => [recording.id, recording]));
+  const orderedSources = giftRequest.recordingIds.map((id) => sourceById.get(id));
+  if (orderedSources.some((recording) => !recording)) {
+    return Response.json({ error: '선물할 녹음 중 찾을 수 없는 항목이 있습니다.' }, { status: 404 });
+  }
+
+  const recordings = orderedSources as SourceRecordingRow[];
+  const totalSizeBytes = recordings.reduce((sum, recording) => sum + recording.size_bytes, 0);
+  if (totalSizeBytes > 500 * 1024 * 1024) return Response.json({ error: '한 선물은 500MB까지 보낼 수 있습니다.' }, { status: 413 });
+
+  const giftId = crypto.randomUUID();
+  const now = Date.now();
+  const copiedKeys: string[] = [];
+  const giftRecordings: Array<SourceRecordingRow & { id: string; objectKey: string; position: number }> = [];
+
+  try {
+    for (const [position, recording] of recordings.entries()) {
+      const source = await env.FILES.get(recording.object_key);
+      if (!source) throw new Error(`missing gift source: ${recording.id}`);
+      const copyId = crypto.randomUUID();
+      const objectKey = `gifts/${giftRequest.recipientUserId}/${giftId}/${String(position + 1).padStart(3, '0')}-${copyId}`;
+      await env.FILES.put(objectKey, source.body, {
+        httpMetadata: { contentType: recording.mime_type },
+        customMetadata: { giftId, senderId: user.id, sourceRecordingId: recording.id },
+      });
+      copiedKeys.push(objectKey);
+      giftRecordings.push({ ...recording, id: copyId, objectKey, position });
+    }
+
+    const d1 = getD1();
+    const statements = [
+      d1.prepare(`INSERT INTO gifts (
+        id, sender_key, recipient_key, title, bgm_id, bgm_volume,
+        recording_count, total_size_bytes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(giftId, user.id, giftRequest.recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now),
+      ...giftRecordings.map((recording) => d1.prepare(`INSERT INTO gift_recordings (
+        id, gift_id, position, book, chapter, verse, verse_text,
+        object_key, mime_type, size_bytes, duration_seconds
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(recording.id, giftId, recording.position, recording.book, recording.chapter, recording.verse, recording.verse_text, recording.objectKey, recording.mime_type, recording.size_bytes, recording.duration_seconds)),
+    ];
+    await d1.batch(statements);
+    return Response.json({ gift: { id: giftId, title: giftRequest.title, recordingCount: recordings.length } }, { status: 201 });
+  } catch (error) {
+    if (copiedKeys.length) await env.FILES.delete(copiedKeys).catch(() => undefined);
+    console.error('gifts.send_failed', error);
+    return Response.json({ error: '말씀 선물을 보내지 못했습니다.' }, { status: 500 });
+  }
+}

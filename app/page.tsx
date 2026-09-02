@@ -12,6 +12,7 @@ import {
   ChevronRight,
   CircleStop,
   Cloud,
+  Gift,
   Headphones,
   Home,
   List,
@@ -24,6 +25,7 @@ import {
   Play,
   RotateCcw,
   Search,
+  Send,
   Sparkles,
   Sun,
   Target,
@@ -45,6 +47,8 @@ import { getRecordingFinishLabel } from '@/lib/recording-finish-label';
 import { orderJourneyRecordings } from '@/lib/journey-playback';
 import { AuthGate } from './auth-gate';
 import { FriendsPanel } from './friends-panel';
+import { GiftSendDialog } from './gift-send-dialog';
+import { GiftsPanel } from './gifts-panel';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -473,7 +477,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [chapterPaused, setChapterPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
-  const [appTab, setAppTab] = useState<'recording' | 'library' | 'friends'>('recording');
+  const [appTab, setAppTab] = useState<'recording' | 'library' | 'gifts' | 'friends'>('recording');
+  const [giftSendOpen, setGiftSendOpen] = useState(false);
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
   const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
@@ -1001,6 +1006,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
     return selectedChapterQueue;
   }, [activeLibraryRecordings, activeProject?.tasks, chapterCountsByBook, isGuidedJourneyPlayback, selectedChapterQueue]);
+  const playbackGiftTitle = isGuidedJourneyPlayback
+    ? `${activeProject?.title ?? '말씀 여정'} 전체 말씀`
+    : selectedLibraryGroup
+      ? `${selectedLibraryGroup.book} ${selectedLibraryGroup.chapter}${selectedLibraryGroup.book === '시편' ? '편' : '장'}`
+      : '말씀 녹음';
   const selectedLibraryVerseCount = useMemo(() => {
     if (!selectedLibraryGroup) return 0;
     const book = bibleBooks.find((item) => item.name === selectedLibraryGroup.book);
@@ -1190,6 +1200,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     savedRecordingAudioRef.current?.pause();
     setSavedRecordingPlaying(false);
     setAppTab('friends');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openGiftsTab = () => {
+    stopChapterPlayback();
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
+    setAppTab('gifts');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -2308,6 +2326,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           <nav className="desktop-tabs" aria-label="주요 화면">
             <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={16} /> 녹음</button>
             <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={16} /> 듣기</button>
+            <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}><Gift size={16} /> 선물</button>
             <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={16} /> 친구</button>
           </nav>
           <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
@@ -2579,7 +2598,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   <div>{bgmOptions.map((option) => <button className={bgm === option.id ? 'selected' : ''} type="button" disabled={chapterPlaying} onClick={() => selectLibraryBgm(option)} key={option.id}>{option.name}</button>)}</div>
                 </div>
                 <div className="chapter-player-controls">
-                  <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
+                  <div className="chapter-player-side-actions">
+                    <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
+                    <button className="chapter-gift-trigger" type="button" disabled={!playbackQueue.length || chapterPlaying} onClick={() => setGiftSendOpen(true)}><Send size={18} /><span>선물하기</span></button>
+                  </div>
                   <div className="chapter-player-actions">
                   <label>
                     <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
@@ -2711,7 +2733,21 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <p className="library-privacy"><Cloud size={14} /> 녹음과 말씀 여정은 로그인한 계정에 안전하게 저장돼요. 같은 계정으로 로그인하면 다른 기기에서도 이어갈 수 있어요.</p>
       </section>}
 
+      {appTab === 'gifts' && <GiftsPanel />}
       {appTab === 'friends' && <FriendsPanel />}
+
+      {giftSendOpen && <GiftSendDialog
+        title={playbackGiftTitle}
+        recordingIds={playbackQueue.map((item) => item.id)}
+        bgmId={bgm}
+        bgmName={bgmOptions.find((option) => option.id === bgm)?.name ?? '음악 없음'}
+        bgmVolume={volume}
+        onClose={() => setGiftSendOpen(false)}
+        onSent={(nickname) => {
+          setGiftSendOpen(false);
+          setCompletionModal({ title: '말씀 선물을 보냈어요', description: `${nickname}님에게 ‘${playbackGiftTitle}’ 녹음과 BGM을 안전하게 보냈어요.` });
+        }}
+      />}
 
       <footer className="page-footer">
         <p>말씀유산 · 소중한 목소리를 오래 간직하는 성경 낭독</p>
@@ -2720,6 +2756,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       <nav className="mobile-nav" aria-label="주요 메뉴">
         <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={19} /><span>녹음</span></button>
         <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
+        <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}><Gift size={19} /><span>선물</span></button>
         <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={19} /><span>친구</span></button>
       </nav>
 
