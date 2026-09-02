@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { advanceReadingSchedule, normalizeReadingDay } from './reading-policy';
+import { advanceReadingSchedule, canAdvanceReadingSchedule, normalizeReadingDay } from './reading-policy';
 
 describe('daily reading schedule policy', () => {
+  it('waits for the saved recordings before evaluating a new day', () => {
+    const schedule = { duration: 7, readingDay: 1, readingDayDate: '2026-09-02' };
+    expect(canAdvanceReadingSchedule(schedule, '2026-09-03', true, true)).toBe(false);
+    expect(canAdvanceReadingSchedule(schedule, '2026-09-03', true, false)).toBe(true);
+  });
+
+  it('waits for the user journey state before evaluating a new day', () => {
+    const schedule = { duration: 7, readingDay: 1, readingDayDate: '2026-09-02' };
+    expect(canAdvanceReadingSchedule(schedule, '2026-09-03', false, false)).toBe(false);
+  });
+
+  it('repairs a day that was stamped today before yesterday recordings loaded', () => {
+    const schedule = { duration: 7, readingDay: 1, readingDayDate: '2026-09-03' };
+    expect(canAdvanceReadingSchedule(schedule, '2026-09-03', true, false, '2026-09-02')).toBe(true);
+  });
+
+  it('does not advance immediately when the current reading was completed today', () => {
+    const schedule = { duration: 7, readingDay: 1, readingDayDate: '2026-09-03' };
+    expect(canAdvanceReadingSchedule(schedule, '2026-09-03', true, false, '2026-09-03')).toBe(false);
+  });
+
   it('starts on day one', () => {
     expect(normalizeReadingDay({ duration: 7 })).toBe(1);
   });

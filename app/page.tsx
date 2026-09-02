@@ -32,7 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
-import { advanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
+import { advanceReadingSchedule, canAdvanceReadingSchedule, normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
 import { getBackStep } from '@/lib/navigation-policy';
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
@@ -900,9 +900,15 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     return completed;
   }, [activeLibraryRecordings, activeProject, currentPassageComplete]);
   const displayedProjectDayComplete = completedProjectTaskIndexes.has(displayedProjectDayIndex);
+  const currentProjectCompletionDate = completedProjectTaskIndexes.has(currentProjectDay - 1)
+    ? activeLibraryRecordings.reduce<string | undefined>((latest, recording) => {
+      const date = getKstDateKey(new Date(recording.createdAt));
+      return !latest || date > latest ? date : latest;
+    }, undefined)
+    : undefined;
 
   useEffect(() => {
-    if (!activeProject || activeProject.kind === 'free' || activeProject.readingDayDate === kstToday) return;
+    if (!activeProject || activeProject.kind === 'free' || !canAdvanceReadingSchedule(activeProject, kstToday, userStateReady, libraryLoading, currentProjectCompletionDate)) return;
     const nextSchedule = advanceReadingSchedule(activeProject, completedProjectTaskIndexes, kstToday);
     const updatedProject = { ...activeProject, ...nextSchedule };
     queueMicrotask(() => {
@@ -913,7 +919,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         return next;
       });
     });
-  }, [activeProject, completedProjectTaskIndexes, kstToday]);
+  }, [activeProject, completedProjectTaskIndexes, currentProjectCompletionDate, kstToday, libraryLoading, userStateReady]);
   const freeRecordingChapterKeys = useMemo(() => new Set(
     libraryRecordings
       .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
