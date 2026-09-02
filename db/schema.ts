@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const recordings = sqliteTable(
   'recordings',
@@ -34,3 +34,38 @@ export const userStates = sqliteTable('user_states', {
   stateJson: text('state_json').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
+
+export const userProfiles = sqliteTable(
+  'user_profiles',
+  {
+    ownerKey: text('owner_key').primaryKey(),
+    email: text('email').notNull(),
+    emailNormalized: text('email_normalized').notNull(),
+    nickname: text('nickname').notNull(),
+    nicknameNormalized: text('nickname_normalized').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_user_profiles_email').on(table.emailNormalized),
+    index('idx_user_profiles_nickname').on(table.nicknameNormalized),
+  ],
+);
+
+export const friendships = sqliteTable(
+  'friendships',
+  {
+    id: text('id').primaryKey(),
+    userAKey: text('user_a_key').notNull(),
+    userBKey: text('user_b_key').notNull(),
+    requestedBy: text('requested_by').notNull(),
+    status: text('status').notNull().default('pending'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_friendships_pair').on(table.userAKey, table.userBKey),
+    index('idx_friendships_user_a_status').on(table.userAKey, table.status),
+    index('idx_friendships_user_b_status').on(table.userBKey, table.status),
+  ],
+);

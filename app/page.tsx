@@ -44,6 +44,7 @@ import { recoverJourneyProjects } from '@/lib/user-state-policy';
 import { getRecordingFinishLabel } from '@/lib/recording-finish-label';
 import { orderJourneyRecordings } from '@/lib/journey-playback';
 import { AuthGate } from './auth-gate';
+import { FriendsPanel } from './friends-panel';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -472,7 +473,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [chapterPaused, setChapterPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
-  const [appTab, setAppTab] = useState<'recording' | 'library'>('recording');
+  const [appTab, setAppTab] = useState<'recording' | 'library' | 'friends'>('recording');
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
   const [selectedLibraryRecordingId, setSelectedLibraryRecordingId] = useState<string | null>(null);
   const [libraryChapterMenuOpen, setLibraryChapterMenuOpen] = useState(false);
@@ -1181,6 +1182,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     savedRecordingAudioRef.current?.pause();
     setSavedRecordingPlaying(false);
     setAppTab('library');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openFriendsTab = () => {
+    stopChapterPlayback();
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
+    setAppTab('friends');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -2299,6 +2308,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           <nav className="desktop-tabs" aria-label="주요 화면">
             <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={16} /> 녹음</button>
             <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={16} /> 듣기</button>
+            <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={16} /> 친구</button>
           </nav>
           <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -2344,10 +2354,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               </button>
             ))}
           </div>
-          <div className="family-card">
+          <button className="family-card" type="button" onClick={openFriendsTab} aria-label="이메일이나 닉네임으로 친구 찾기">
             <div className="avatar-stack" aria-hidden="true"><span>엄</span><span>나</span><span>설</span></div>
-            <p><strong>가족 3명과 함께</strong><small>완성되면 가족에게 알려드려요.</small></p>
-          </div>
+            <p><strong>친구와 말씀 나누기</strong><small>이메일이나 닉네임으로 친구를 찾아보세요.</small></p>
+          </button>
         </aside>
 
         <section className="recording-card" aria-label="성경 녹음 화면">
@@ -2701,6 +2711,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <p className="library-privacy"><Cloud size={14} /> 녹음과 말씀 여정은 로그인한 계정에 안전하게 저장돼요. 같은 계정으로 로그인하면 다른 기기에서도 이어갈 수 있어요.</p>
       </section>}
 
+      {appTab === 'friends' && <FriendsPanel />}
+
       <footer className="page-footer">
         <p>말씀유산 · 소중한 목소리를 오래 간직하는 성경 낭독</p>
       </footer>
@@ -2708,7 +2720,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       <nav className="mobile-nav" aria-label="주요 메뉴">
         <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={19} /><span>녹음</span></button>
         <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
-        <button type="button" disabled aria-label="가족 기능 준비 중"><Users size={19} /><span>가족</span></button>
+        <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={19} /><span>친구</span></button>
       </nav>
 
       <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="말씀 여정과 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>

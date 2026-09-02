@@ -32,6 +32,24 @@ export function ensureDbSchema() {
       state_json TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_profiles (
+      owner_key TEXT PRIMARY KEY NOT NULL,
+      email TEXT NOT NULL,
+      email_normalized TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      nickname_normalized TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS friendships (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_a_key TEXT NOT NULL,
+      user_b_key TEXT NOT NULL,
+      requested_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`),
   ]).then(async () => {
     const columns = await env.DB.prepare('PRAGMA table_info(recordings)').all<{ name: string }>();
     const names = new Set(columns.results.map((column) => column.name));
@@ -46,7 +64,13 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_created ON recordings(owner_key, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_version_created ON recordings(owner_key, data_version, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_project_created ON recordings(owner_key, project_id, created_at)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_email ON user_profiles(email_normalized)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_user_profiles_nickname ON user_profiles(nickname_normalized)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_pair ON friendships(user_a_key, user_b_key)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_a_status ON friendships(user_a_key, status)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_b_status ON friendships(user_b_key, status)'),
     ]);
+    await env.DB.prepare('PRAGMA optimize').run();
   }).catch((error) => {
     schemaReady = null;
     throw error;
@@ -60,4 +84,9 @@ export function getDb() {
   }
 
   return drizzle(env.DB, { schema });
+}
+
+export function getD1() {
+  if (!env.DB) throw new Error('Cloudflare D1 binding `DB` is unavailable.');
+  return env.DB;
 }

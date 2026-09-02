@@ -89,7 +89,8 @@ describe('이어듣기·목록 UI 회귀', () => {
     expect(page).not.toContain('현재는 이 브라우저에서 저장한 녹음만 보여요');
   });
 
-  it('아직 구현되지 않은 가족 메뉴는 눌리는 버튼처럼 노출하지 않는다', () => {
-    expect(page).toContain('<button type="button" disabled aria-label="가족 기능 준비 중"><Users');
+  it('친구 메뉴는 데스크톱과 모바일에서 사용할 수 있다', () => {
+    expect(page).toContain('onClick={openFriendsTab}');
+    expect(page).not.toContain('가족 기능 준비 중');
   });
 });

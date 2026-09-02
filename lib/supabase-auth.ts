@@ -5,7 +5,7 @@ type SupabaseEnv = typeof env & {
   SUPABASE_PUBLISHABLE_KEY?: string;
 };
 
-export type AuthenticatedUser = { id: string; email?: string };
+export type AuthenticatedUser = { id: string; email?: string; metadata?: Record<string, unknown> };
 
 function readCookie(request: Request, name: string) {
   const cookie = request.headers.get('cookie') ?? '';
@@ -30,6 +30,6 @@ export async function authenticateRequest(request: Request): Promise<Authenticat
     headers: { apikey: key, Authorization: `Bearer ${token}` },
   });
   if (!response.ok) return null;
-  const user = (await response.json()) as { id?: string; email?: string };
-  return typeof user.id === 'string' ? { id: user.id, email: user.email } : null;
+  const user = (await response.json()) as { id?: string; email?: string; user_metadata?: Record<string, unknown> };
+  return typeof user.id === 'string' ? { id: user.id, email: user.email, metadata: user.user_metadata } : null;
 }

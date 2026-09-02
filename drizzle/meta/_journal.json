@@ -29,6 +29,13 @@
       "when": 1788276761995,
       "tag": "0003_light_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788366270664,
+      "tag": "0004_fancy_terrax",
+      "breakpoints": true
     }
   ]
 }
