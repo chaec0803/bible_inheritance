@@ -36,6 +36,13 @@ describe('완료 피드백과 재생 제어', () => {
     expect(page).toContain('setEarnedCard(null);');
   });
 
+  it('보관함으로 이동해도 방금 받은 말씀카드를 닫지 않는다', () => {
+    const handler = page.slice(page.indexOf('const openLibraryFromCompletion'), page.indexOf('const openLibraryVerse'));
+    expect(handler).toContain('setCompletionModal(null)');
+    expect(handler).toContain('openLibraryTab()');
+    expect(handler).not.toContain('setEarnedCard(null)');
+  });
+
   it('이어듣기 목록에서 절을 선택해도 목록을 유지한다', () => {
     const jumpHandler = page.slice(page.indexOf('const jumpToChapterRecording'), page.indexOf('const playSelectedBgm'));
     expect(jumpHandler).not.toContain('setPlaybackListOpen(false)');

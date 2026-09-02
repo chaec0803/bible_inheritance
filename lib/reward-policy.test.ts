@@ -18,6 +18,13 @@ describe('말씀카드 보상 정책', () => {
     expect(second.award?.cardId).toBe('david');
   });
 
+  it('이미 생성됐지만 아직 수집하지 않은 카드를 복구할 수 있게 반환한다', () => {
+    const pending: WordCardAward = { key: 'james:day-1', cardId: 'david', presented: true, collected: false };
+    const result = createDailyAward([pending], input, () => 0.9);
+    expect(result.created).toBe(false);
+    expect(result.award).toEqual(pending);
+  });
+
   it('아직 받지 않은 카드를 우선 지급한다', () => {
     const existing: WordCardAward[] = [{ key: 'james:day-1', cardId: 'david', presented: true, collected: true }];
     const result = createDailyAward(existing, { ...input, day: 2 }, () => 0);

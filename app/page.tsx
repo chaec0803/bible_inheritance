@@ -1079,12 +1079,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       completionSignature,
       cardIds: wordCards.map((card) => card.id),
     });
-    if (!result.created || !result.award) return;
+    if (!result.award || (!result.created && result.award.collected)) return;
     const card = wordCards.find((item) => item.id === result.award?.cardId);
     if (!card) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
+    if (result.created) window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
     setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), result.award!]);
-    setCompletionModal({ title: '하루 읽기 완료', description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.`, showLibraryAction: true });
+    if (result.created) setCompletionModal({ title: '하루 읽기 완료', description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.`, showLibraryAction: true });
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
@@ -1208,8 +1208,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const openLibraryFromCompletion = () => {
     setCompletionModal(null);
-    setEarnedCard(null);
-    setWordCardCollectionMode(false);
     openLibraryTab();
   };
 
