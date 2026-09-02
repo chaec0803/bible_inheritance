@@ -9,7 +9,7 @@
 .auth-brand > span { width: 46px; height: 46px; display: grid; place-items: center; color: white; background: var(--sage); border-radius: 14px; }
 .auth-brand strong, .auth-brand small { display: block; }
 .auth-brand small { margin-top: 2px; color: var(--muted); font-size: 8px; letter-spacing: .15em; }
-.auth-card h1 { margin: 5px 0 8px; font-family: Georgia, serif; font-size: 30px; }
+.auth-card h1 { margin: 5px 0 8px; font-family: Georgia, serif; font-size: clamp(20px, 7vw, 30px); white-space: nowrap; }
 .social-login-buttons { display: grid; gap: 10px; }
 .google-login-button, .kakao-login-button, .auth-submit { min-height: 48px; border: 0; border-radius: 13px; font-weight: 800; cursor: pointer; }
 .google-login-button { color: #263238; background: #fff; border: 1px solid #d7dce0; }
@@ -23,6 +23,11 @@
 .auth-card form input { width: 100%; min-height: 46px; padding: 0 13px; color: var(--ink); background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 11px; font-size: 14px; }
 .auth-message { padding: 11px 13px; color: var(--ink); background: var(--sage-soft); border-radius: 11px; font-size: 11px; line-height: 1.5; }
 .auth-mode-button { color: var(--sage); background: transparent; border: 0; font-size: 11px; font-weight: 800; cursor: pointer; }
+
+@media (max-width: 420px) {
+  .auth-shell { padding: 16px; }
+  .auth-card { padding: 26px 22px; }
+}
 
 :root {
   --ink: #183044;
