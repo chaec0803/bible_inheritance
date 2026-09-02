@@ -145,27 +145,27 @@ type BgmOption = {
 const bgmOptions: readonly BgmOption[] = [
   {
     id: 'still-waters',
-    name: '고요한 물가',
-    description: '잔잔한 묵상 피아노',
+    name: 'Aeternum',
+    description: 'Christoffer Moe Ditlevsen',
     videoId: 'DBVSSzzSlVw',
     startSeconds: 3371,
-    audioSrc: '/bgm/still-waters.wav',
+    audioSrc: '/api/bgm/aeternum',
   },
   {
     id: 'peaceful-morning',
-    name: '평안한 아침',
-    description: '따뜻한 아침의 선율',
+    name: 'Unto Thee',
+    description: 'JOYSPRING',
     videoId: 'WDkUGO7qWOQ',
     startSeconds: 0,
-    audioSrc: '/bgm/peaceful-morning.wav',
+    audioSrc: '/api/bgm/unto-thee',
   },
   {
     id: 'word-breath',
-    name: '말씀의 숨결',
-    description: 'AI 추천 · 시편 23편과 어울리는 음악',
+    name: "The King's Return",
+    description: 'Adriel Fair',
     videoId: 'TkodnfN4kUQ',
     startSeconds: 0,
-    audioSrc: '/bgm/breath-of-word.wav',
+    audioSrc: '/api/bgm/the-kings-return',
     recommended: true,
   },
   {
@@ -2474,7 +2474,7 @@ export default function HomePage() {
                     }}
                     type="button"
                   >
-                    <span className="music-icon">{option.videoId ? (option.recommended ? <Sparkles size={15} /> : '♪') : '—'}</span>
+                    <span className="music-icon">{option.audioSrc ? (option.recommended ? <Sparkles size={15} /> : '♪') : '—'}</span>
                     <span><strong>{option.name}</strong><small>{option.description}</small></span>
                     <span className="radio-dot" />
                   </button>

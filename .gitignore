@@ -36,3 +36,5 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+# Licensed BGM originals live in Cloudflare R2, never in Git.
+/public/bgm/*.mp3
