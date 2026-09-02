@@ -3,14 +3,9 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
+import { authenticateRequest } from '@/lib/supabase-auth';
 
-const OWNER_HEADER = 'x-verse-legacy-owner';
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
-
-function readOwnerKey(request: Request) {
-  const ownerKey = request.headers.get(OWNER_HEADER)?.trim() ?? '';
-  return /^[a-f0-9-]{20,80}$/i.test(ownerKey) ? ownerKey : null;
-}
 
 function formText(formData: FormData, key: string, maxLength: number) {
   const value = formData.get(key);
@@ -18,8 +13,9 @@ function formText(formData: FormData, key: string, maxLength: number) {
 }
 
 export async function GET(request: Request) {
-  const ownerKey = readOwnerKey(request);
-  if (!ownerKey) return Response.json({ error: '보관함 식별 정보가 없습니다.' }, { status: 401 });
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const ownerKey = user.id;
   await ensureDbSchema();
 
   const rows = await getDb()
@@ -48,8 +44,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const ownerKey = readOwnerKey(request);
-  if (!ownerKey) return Response.json({ error: '보관함 식별 정보가 없습니다.' }, { status: 401 });
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const ownerKey = user.id;
   await ensureDbSchema();
 
   const formData = await request.formData();

@@ -2,6 +2,26 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
+.auth-shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--canvas); color: var(--ink); }
+.auth-shell > p { margin-top: 10px; color: var(--muted); }
+.auth-card { width: min(100%, 430px); display: grid; gap: 22px; padding: 34px; background: var(--paper); border: 1px solid var(--line); border-radius: 26px; box-shadow: var(--shadow); }
+.auth-brand { display: flex; align-items: center; gap: 11px; }
+.auth-brand > span { width: 46px; height: 46px; display: grid; place-items: center; color: white; background: var(--sage); border-radius: 14px; }
+.auth-brand strong, .auth-brand small { display: block; }
+.auth-brand small { margin-top: 2px; color: var(--muted); font-size: 8px; letter-spacing: .15em; }
+.auth-card h1 { margin: 5px 0 8px; font-family: Georgia, serif; font-size: 30px; }
+.google-login-button, .auth-submit { min-height: 48px; border: 0; border-radius: 13px; font-weight: 800; cursor: pointer; }
+.google-login-button { color: #263238; background: #fff; border: 1px solid #d7dce0; }
+.auth-submit { display: flex; align-items: center; justify-content: center; gap: 7px; color: white; background: var(--action-bg); }
+.google-login-button:disabled, .auth-submit:disabled { cursor: wait; opacity: .6; }
+.auth-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; }
+.auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: var(--line); content: ''; }
+.auth-card form { display: grid; gap: 14px; }
+.auth-card form label { display: grid; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 800; }
+.auth-card form input { width: 100%; min-height: 46px; padding: 0 13px; color: var(--ink); background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 11px; font-size: 14px; }
+.auth-message { padding: 11px 13px; color: var(--ink); background: var(--sage-soft); border-radius: 11px; font-size: 11px; line-height: 1.5; }
+.auth-mode-button { color: var(--sage); background: transparent; border: 0; font-size: 11px; font-weight: 800; cursor: pointer; }
+
 :root {
   --ink: #183044;
   --muted: #66737c;

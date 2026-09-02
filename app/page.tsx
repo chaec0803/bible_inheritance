@@ -16,6 +16,7 @@ import {
   Home,
   List,
   LoaderCircle,
+  LogOut,
   Mic,
   Moon,
   Music2,
@@ -38,6 +39,7 @@ import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyComplete
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
 import { toggleAudioPlayback } from '@/lib/audio-playback';
+import { AuthGate } from './auth-gate';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -360,10 +362,8 @@ function recordingBelongsToJourney(recording: SavedRecording, project: ActivePro
     || (recording.projectId === 'free-recording' && recording.book === project.passage.name);
 }
 
-async function fetchLibrary(ownerKey: string) {
-  const response = await fetch('/api/recordings', {
-    headers: { 'x-verse-legacy-owner': ownerKey },
-  });
+async function fetchLibrary() {
+  const response = await fetch('/api/recordings');
   if (!response.ok) throw new Error('보관함을 불러오지 못했어요.');
   const payload = (await response.json()) as { recordings: SavedRecording[] };
   return payload.recordings;
@@ -445,7 +445,13 @@ function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
   return { context, stream: destination.stream };
 }
 
-export default function HomePage() {
+function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?: string; onSignOut: () => Promise<void> }) {
+  if (typeof window !== 'undefined' && window.localStorage.getItem('verse-legacy-active-user') !== userId) {
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('verse-legacy-') && key !== 'verse-legacy-theme')
+      .forEach((key) => window.localStorage.removeItem(key));
+    window.localStorage.setItem('verse-legacy-active-user', userId);
+  }
   const [verseIndex, setVerseIndex] = useState(0);
   const [passageBook, setPassageBook] = useState({ code: '시', name: '시편' });
   const [passageChapter, setPassageChapter] = useState(23);
@@ -483,7 +489,6 @@ export default function HomePage() {
   const [recentlyUpdatedReference, setRecentlyUpdatedReference] = useState<string | null>(null);
   const [savedRecordingPlaying, setSavedRecordingPlaying] = useState(false);
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
-  const [ownerKey, setOwnerKey] = useState('');
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [chapterPaused, setChapterPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
@@ -533,7 +538,6 @@ export default function HomePage() {
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const restartBgmOnNextPlayRef = useRef(false);
   const themeInitializedRef = useRef(false);
-  const ownerKeyRef = useRef('');
   const libraryAudioRefs = useRef(new Map<string, HTMLAudioElement>());
   const savedRecordingAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeLibraryRef = useRef<string | null>(null);
@@ -765,17 +769,7 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    let ownerKey = window.localStorage.getItem('verse-legacy-owner') ?? '';
-    if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
-      ownerKey = crypto.randomUUID();
-      window.localStorage.setItem('verse-legacy-owner', ownerKey);
-    }
-    ownerKeyRef.current = ownerKey;
-    queueMicrotask(() => {
-      if (!cancelled) setOwnerKey(ownerKey);
-    });
-
-    fetchLibrary(ownerKey)
+    fetchLibrary()
       .then((recordings) => {
         if (cancelled) return;
         const passageSaved = passageVerses.map((_, index) => recordings.some((item) => recordingBelongsToJourney(item, activeProject) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index));
@@ -794,7 +788,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [activeProject, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
+  }, [activeProject, passageBook.name, passageChapter, passageStartVerse, passageVerses, userId]);
 
   useEffect(() => {
     let disposed = false;
@@ -1061,7 +1055,7 @@ export default function HomePage() {
   }, [chapterQueue, libraryChapterMenuOpen, selectedLibraryVerseCount]);
 
   const refreshLibrary = async () => {
-    const recordings = await fetchLibrary(ownerKeyRef.current);
+    const recordings = await fetchLibrary();
     setLibraryRecordings(recordings);
     setSaved(passageVerses.map((_, index) => recordings.some((item) => recordingBelongsToJourney(item, activeProject) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
     return recordings;
@@ -1414,7 +1408,7 @@ export default function HomePage() {
     stopChapterPlayback();
     setDeletingVerseId(item.id);
     try {
-      const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
+      const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE' });
       if (!response.ok) throw new Error(`${item.verse}절 녹음을 지우지 못했어요.`);
       await refreshLibrary();
       setSelectedLibraryRecordingId(null);
@@ -1447,7 +1441,7 @@ export default function HomePage() {
     setClearingForRetake(true);
     try {
       await Promise.all(recordingsToDelete.map(async (item) => {
-        const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
+        const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE' });
         if (!response.ok) throw new Error('기존 녹음을 모두 지우지 못했어요. 다시 시도해 주세요.');
       }));
       await refreshLibrary();
@@ -1473,10 +1467,10 @@ export default function HomePage() {
     setDeletingJourney(true);
     try {
       await Promise.all(recordingIds.map(async (recordingId) => {
-        const response = await fetch(`/api/recordings/${recordingId}/audio`, { method: 'DELETE', headers: { 'x-verse-legacy-owner': ownerKeyRef.current } });
+        const response = await fetch(`/api/recordings/${recordingId}/audio`, { method: 'DELETE' });
         if (!response.ok) throw new Error('말씀 여정의 녹음본을 모두 지우지 못했어요. 다시 시도해 주세요.');
       }));
-      const remainingRecordings = await fetchLibrary(ownerKeyRef.current);
+      const remainingRecordings = await fetchLibrary();
       setLibraryRecordings(remainingRecordings);
       setActiveProjects((current) => {
         const next = removeJourney(current, journey.id);
@@ -1556,7 +1550,7 @@ export default function HomePage() {
         formData.append('bgmId', bgm);
         formData.append('reverb', reverb);
         formData.append('durationSeconds', String(Math.max(1, Math.round((boundary.endMs - boundary.startMs) / 1_000))));
-        const response = await fetch('/api/recordings', { method: 'POST', headers: { 'x-verse-legacy-owner': ownerKeyRef.current }, body: formData });
+        const response = await fetch('/api/recordings', { method: 'POST', body: formData });
         if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
       }));
       await refreshLibrary();
@@ -1786,7 +1780,6 @@ export default function HomePage() {
         '/api/recordings',
         {
         method: 'POST',
-        headers: { 'x-verse-legacy-owner': ownerKeyRef.current },
         body: formData,
         },
       );
@@ -2056,6 +2049,7 @@ export default function HomePage() {
             <button className="icon-button onboarding-theme-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
+            <button className="icon-button" onClick={() => void onSignOut()} type="button" aria-label={`${userEmail ?? '사용자'} 로그아웃`} title="로그아웃"><LogOut size={18} /></button>
           </div>
           {onboardingStep === 'welcome' ? (
             <div className="onboarding-card welcome-card">
@@ -2324,6 +2318,7 @@ export default function HomePage() {
           <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
+          <button className="icon-button" onClick={() => void onSignOut()} type="button" aria-label={`${userEmail ?? '사용자'} 로그아웃`} title="로그아웃"><LogOut size={18} /></button>
         </div>
       </header>
 
@@ -2424,7 +2419,7 @@ export default function HomePage() {
 
           {playbackRecording && (
             // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
-            <audio ref={savedRecordingAudioRef} preload="auto" src={ownerKey ? `/api/recordings/${playbackRecording.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
+            <audio ref={savedRecordingAudioRef} preload="auto" src={`/api/recordings/${playbackRecording.id}/audio`} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
           )}
 
           {currentTake && !recording && (
@@ -2603,7 +2598,7 @@ export default function HomePage() {
                   // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
                   <audio
                     preload="auto"
-                    src={ownerKey ? `/api/recordings/${item.id}/audio?owner=${encodeURIComponent(ownerKey)}` : undefined}
+                    src={`/api/recordings/${item.id}/audio`}
                     ref={(element) => {
                       if (element) libraryAudioRefs.current.set(item.id, element);
                       else libraryAudioRefs.current.delete(item.id);
@@ -2796,5 +2791,13 @@ export default function HomePage() {
 
       {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
     </main>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <AuthGate>
+      {(session, signOut) => <VerseApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />}
+    </AuthGate>
   );
 }

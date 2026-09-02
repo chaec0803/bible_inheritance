@@ -4,16 +4,16 @@ import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 import { parseByteRange } from '@/lib/http-range';
+import { authenticateRequest } from '@/lib/supabase-auth';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
 export async function GET(request: Request, context: RouteContext) {
-  const ownerKey = new URL(request.url).searchParams.get('owner')?.trim() ?? '';
-  if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
-    return Response.json({ error: '재생 권한이 없습니다.' }, { status: 401 });
-  }
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const ownerKey = user.id;
   await ensureDbSchema();
 
   const { id } = await context.params;
@@ -46,10 +46,9 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function PUT(request: Request, context: RouteContext) {
-  const ownerKey = request.headers.get('x-verse-legacy-owner')?.trim() ?? '';
-  if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
-    return Response.json({ error: '교체 권한이 없습니다.' }, { status: 401 });
-  }
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const ownerKey = user.id;
   await ensureDbSchema();
 
   const { id } = await context.params;
@@ -131,10 +130,9 @@ export async function PUT(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const ownerKey = request.headers.get('x-verse-legacy-owner')?.trim() ?? '';
-  if (!/^[a-f0-9-]{20,80}$/i.test(ownerKey)) {
-    return Response.json({ error: '삭제 권한이 없습니다.' }, { status: 401 });
-  }
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const ownerKey = user.id;
   await ensureDbSchema();
 
   const { id } = await context.params;
