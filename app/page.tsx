@@ -464,7 +464,6 @@ export default function HomePage() {
   const [notice, setNotice] = useState('');
   const [completionModal, setCompletionModal] = useState<{ title: string; description: string; showLibraryAction?: boolean } | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [playerReady, setPlayerReady] = useState(false);
   const [activePreview, setActivePreview] = useState<string | null>(null);
   const [bgmPaused, setBgmPaused] = useState(false);
   const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
@@ -818,7 +817,6 @@ export default function HomePage() {
           onReady: (event) => {
             event.target.setVolume(12);
             event.target.stopVideo();
-            setPlayerReady(true);
           },
           onStateChange: (event) => {
             if (event.data === 0) {
@@ -1231,6 +1229,10 @@ export default function HomePage() {
 
   const stopPreview = () => {
     youtubePlayerRef.current?.stopVideo();
+    playbackBgmSourceRef.current?.stop();
+    playbackBgmSourceRef.current = null;
+    playbackBgmGainRef.current = null;
+    void playbackAudioContextRef.current?.suspend();
     restartBgmOnNextPlayRef.current = true;
     setActivePreview(null);
     setBgmPaused(false);
@@ -1349,34 +1351,37 @@ export default function HomePage() {
     }
   };
 
-  const playSelectedBgm = (option: BgmOption) => {
+  const playSelectedBgm = async (option: BgmOption) => {
     if (activeLibraryRef.current) {
       libraryAudioRefs.current.get(activeLibraryRef.current)?.pause();
       stopLibraryPlayback();
     }
-    if (!option.videoId) {
+    if (!option.audioSrc) {
       stopPreview();
       return;
     }
-    if (!playerReady || !youtubePlayerRef.current) {
-      setNotice('배경음악을 준비하고 있어요. 잠시 후 다시 눌러 주세요.');
-      return;
+    try {
+      let context = playbackAudioContextRef.current;
+      if (!context || context.state === 'closed') {
+        context = new AudioContext();
+        playbackAudioContextRef.current = context;
+      }
+      await context.resume();
+      if (activePreview === option.id && bgmPaused && playbackBgmSourceRef.current) {
+        setBgmPaused(false);
+      } else {
+        await startInternalChapterBgm(context, option.id);
+        setBgm(option.id);
+        setActivePreview(option.id);
+        setBgmPaused(false);
+      }
+    } catch {
+      setNotice('배경음악을 재생하지 못했어요. 다시 눌러 주세요.');
     }
-
-    youtubePlayerRef.current.setVolume(volume);
-    if (activePreview === option.id && !restartBgmOnNextPlayRef.current) {
-      youtubePlayerRef.current.playVideo();
-    } else {
-      youtubePlayerRef.current.loadVideoById({ videoId: option.videoId, startSeconds: option.startSeconds });
-    }
-    restartBgmOnNextPlayRef.current = false;
-    setBgm(option.id);
-    setActivePreview(option.id);
-    setBgmPaused(false);
   };
 
   const pauseSelectedBgm = () => {
-    youtubePlayerRef.current?.pauseVideo();
+    void playbackAudioContextRef.current?.suspend();
     setBgmPaused(true);
   };
 
@@ -2465,7 +2470,7 @@ export default function HomePage() {
                     onClick={() => {
                       if (option.id !== bgm && activePreview) stopPreview();
                       setBgm(option.id);
-                      if (!option.videoId) stopPreview();
+                      if (!option.audioSrc) stopPreview();
                     }}
                     type="button"
                   >
@@ -2481,8 +2486,8 @@ export default function HomePage() {
           <div className="bgm-transport" aria-label="배경음악 재생 조작">
             <button className={bgmIsPlaying ? 'active' : ''} type="button" onClick={() => {
               const option = bgmOptions.find((item) => item.id === bgm);
-              if (option) playSelectedBgm(option);
-            }} disabled={!playerReady || bgm === 'none' || bgmIsPlaying} aria-label={bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'} aria-pressed={bgmIsPlaying}><Play size={16} /><span>{bgmIsPlaying ? '재생 중' : '재생'}</span></button>
+              if (option) void playSelectedBgm(option);
+            }} disabled={bgm === 'none' || bgmIsPlaying} aria-label={bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'} aria-pressed={bgmIsPlaying}><Play size={16} /><span>{bgmIsPlaying ? '재생 중' : '재생'}</span></button>
             <button className={bgmIsPaused ? 'active' : ''} type="button" onClick={pauseSelectedBgm} disabled={!bgmIsPlaying} aria-label={bgmIsPaused ? '배경음악 일시정지됨' : '배경음악 일시정지'} aria-pressed={bgmIsPaused}><Pause size={16} /><span>{bgmIsPaused ? '멈춤 상태' : '일시정지'}</span></button>
             <button type="button" onClick={stopPreview} disabled={!activePreview} aria-label="배경음악 정지"><CircleStop size={16} /><span>정지</span></button>
           </div>

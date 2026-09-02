@@ -10,6 +10,10 @@ describe('아이폰 이어듣기 BGM', () => {
     expect(page).toContain('createMediaElementSource(audio)');
     expect(page).toContain('context.createBufferSource()');
     expect(page).toContain('source.connect(gain).connect(context.destination)');
+    expect(page).toContain('playbackBgmGainRef.current.gain.value = volume / 100');
+    const previewHandler = page.slice(page.indexOf('const playSelectedBgm'), page.indexOf('const pauseSelectedBgm'));
+    expect(previewHandler).toContain('startInternalChapterBgm(context, option.id)');
+    expect(previewHandler).not.toContain('youtubePlayerRef.current.loadVideoById');
   });
 
   it.each(bgmFiles)('%s 음원이 유효한 WAV 파일이다', (file) => {
