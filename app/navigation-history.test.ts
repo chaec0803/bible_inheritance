@@ -26,8 +26,9 @@ describe('화면 경로와 뒤로가기 회귀', () => {
     expect(giftsPanel).toContain('뒤로가기');
   });
 
-  it('친구와 선물 화면으로 들어가는 플로팅 버튼을 항상 제공한다', () => {
+  it('툴바가 가려진 화면에서만 친구와 선물 플로팅 버튼을 제공한다', () => {
     expect(page).toContain('className="floating-route-actions"');
+    expect(page).toContain("{onboardingStep !== 'app' && <>");
     expect(page).toContain('className="floating-friends-button"');
     expect(page).toContain("navigateTo('friends')");
     expect(page).toContain('className="floating-gifts-button"');

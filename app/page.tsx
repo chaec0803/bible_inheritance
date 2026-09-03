@@ -2799,8 +2799,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       </nav>
 
       <nav className="floating-route-actions" aria-label="빠른 화면 이동">
-        <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기"><Users size={22} /><span>친구</span></button>
-        <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기"><Gift size={22} /><span>선물</span></button>
+        {onboardingStep !== 'app' && <>
+          <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기"><Users size={22} /><span>친구</span></button>
+          <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기"><Gift size={22} /><span>선물</span></button>
+        </>}
         <button className="floating-home-button" type="button" onClick={() => navigateTo('home')} aria-label="말씀 여정과 성경 읽기를 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
       </nav>
 
