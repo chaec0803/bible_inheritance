@@ -28,6 +28,13 @@ type GiftRow = {
   total_size_bytes: number;
   created_at: number;
   opened_at: number | null;
+  recipient_deleted_at: number | null;
+  thank_you_note: string | null;
+  thanked_at: number | null;
+};
+
+type SentGiftRow = Omit<GiftRow, 'sender_nickname'> & {
+  recipient_nickname: string;
 };
 
 type GiftRecordingRow = {
@@ -52,15 +59,29 @@ export async function GET(request: Request) {
     await ensureUserProfile(user);
     const giftResult = await getD1().prepare(`SELECT
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
-      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
+      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at, gifts.recipient_deleted_at,
+      gifts.thank_you_note, gifts.thanked_at,
       user_profiles.nickname AS sender_nickname
     FROM gifts
     JOIN user_profiles ON user_profiles.owner_key = gifts.sender_key
-    WHERE gifts.recipient_key = ?
+    WHERE gifts.recipient_key = ? AND gifts.recipient_deleted_at IS NULL
     ORDER BY gifts.created_at DESC
     LIMIT 100`)
       .bind(user.id)
       .all<GiftRow>();
+
+    const sentGiftResult = await getD1().prepare(`SELECT
+      gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
+      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at, gifts.recipient_deleted_at,
+      gifts.thank_you_note, gifts.thanked_at,
+      user_profiles.nickname AS recipient_nickname
+    FROM gifts
+    JOIN user_profiles ON user_profiles.owner_key = gifts.recipient_key
+    WHERE gifts.sender_key = ?
+    ORDER BY gifts.created_at DESC
+    LIMIT 100`)
+      .bind(user.id)
+      .all<SentGiftRow>();
 
     const giftIds = giftResult.results.map((gift) => gift.id);
     let recordingRows: GiftRecordingRow[] = [];
@@ -88,6 +109,8 @@ export async function GET(request: Request) {
         totalSizeBytes: gift.total_size_bytes,
         createdAt: gift.created_at,
         openedAt: gift.opened_at,
+        thankYouNote: gift.thank_you_note,
+        thankedAt: gift.thanked_at,
         recordings: recordingRows
           .filter((recording) => recording.gift_id === gift.id)
           .map((recording) => ({
@@ -102,10 +125,24 @@ export async function GET(request: Request) {
             durationSeconds: recording.duration_seconds,
           })),
       })),
+      sentGifts: sentGiftResult.results.map((gift) => ({
+        id: gift.id,
+        title: gift.title,
+        recipientNickname: gift.recipient_nickname,
+        bgmId: gift.bgm_id,
+        bgmVolume: gift.bgm_volume,
+        recordingCount: gift.recording_count,
+        totalSizeBytes: gift.total_size_bytes,
+        createdAt: gift.created_at,
+        openedAt: gift.opened_at,
+        recipientDeletedAt: gift.recipient_deleted_at,
+        thankYouNote: gift.thank_you_note,
+        thankedAt: gift.thanked_at,
+      })),
     });
   } catch (error) {
     console.error('gifts.get_failed', error);
-    return Response.json({ error: '받은 선물을 불러오지 못했습니다.' }, { status: 500 });
+    return Response.json({ error: '선물함을 불러오지 못했습니다.' }, { status: 500 });
   }
 }
 

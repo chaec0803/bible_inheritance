@@ -31,12 +31,11 @@ vi.mock('@/db', () => ({
 
 import { DELETE } from './[id]/route';
 import { GET as GET_AUDIO } from './[id]/audio/[position]/route';
-import { GET as DOWNLOAD } from './[id]/download/route';
 
 const giftContext = { params: Promise.resolve({ id: 'gift-1' }) };
 const audioContext = { params: Promise.resolve({ id: 'gift-1', position: '0' }) };
 
-describe('받은 선물 접근·삭제·다운로드 회귀', () => {
+describe('받은 선물 접근·삭제 회귀', () => {
   beforeEach(() => {
     mocks.authenticate.mockReset().mockResolvedValue({ id: 'friend-2' });
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
@@ -63,19 +62,10 @@ describe('받은 선물 접근·삭제·다운로드 회귀', () => {
     expect(mocks.r2Delete).toHaveBeenCalledWith(['gifts/friend/gift-1/one']);
   });
 
-  it('선물을 하나의 ZIP 파일로 다운로드한다', async () => {
-    const response = await DOWNLOAD(new Request('https://example.test/api/gifts/gift-1/download'), giftContext);
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toBe('application/zip');
-    expect(response.headers.get('content-disposition')).toContain('.zip');
-    expect(Array.from(new Uint8Array(await response.arrayBuffer()).slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
-  });
-
-  it('수신자의 선물이 아니면 재생·삭제·다운로드하지 않는다', async () => {
+  it('수신자의 선물이 아니면 재생·삭제하지 않는다', async () => {
     mocks.gift = null;
     mocks.recording = null;
     expect((await GET_AUDIO(new Request('https://example.test/api/gifts/gift-1/audio/0'), audioContext)).status).toBe(404);
     expect((await DELETE(new Request('https://example.test/api/gifts/gift-1', { method: 'DELETE' }), giftContext)).status).toBe(404);
-    expect((await DOWNLOAD(new Request('https://example.test/api/gifts/gift-1/download'), giftContext)).status).toBe(404);
   });
 });

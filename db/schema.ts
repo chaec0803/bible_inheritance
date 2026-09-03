@@ -84,6 +84,9 @@ export const gifts = sqliteTable(
     totalSizeBytes: integer('total_size_bytes').notNull(),
     createdAt: integer('created_at').notNull(),
     openedAt: integer('opened_at'),
+    recipientDeletedAt: integer('recipient_deleted_at'),
+    thankYouNote: text('thank_you_note'),
+    thankedAt: integer('thanked_at'),
   },
   (table) => [
     index('idx_gifts_recipient_created').on(table.recipientKey, table.createdAt),

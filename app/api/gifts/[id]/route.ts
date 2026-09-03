@@ -9,7 +9,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   await ensureDbSchema();
   const { id } = await context.params;
-  const gift = await getD1().prepare('SELECT id FROM gifts WHERE id = ? AND recipient_key = ?')
+  const gift = await getD1().prepare('SELECT id FROM gifts WHERE id = ? AND recipient_key = ? AND recipient_deleted_at IS NULL')
     .bind(id, user.id)
     .first<{ id: string }>();
   if (!gift) return Response.json({ error: '선물을 찾을 수 없습니다.' }, { status: 404 });
@@ -18,9 +18,10 @@ export async function DELETE(request: Request, context: RouteContext) {
     .bind(id)
     .all<{ object_key: string }>();
   const d1 = getD1();
+  const deletedAt = Date.now();
   await d1.batch([
     d1.prepare('DELETE FROM gift_recordings WHERE gift_id = ?').bind(id),
-    d1.prepare('DELETE FROM gifts WHERE id = ? AND recipient_key = ?').bind(id, user.id),
+    d1.prepare('UPDATE gifts SET recipient_deleted_at = ?, opened_at = COALESCE(opened_at, ?) WHERE id = ? AND recipient_key = ? AND recipient_deleted_at IS NULL').bind(deletedAt, deletedAt, id, user.id),
   ]);
   const objectKeys = recordingResult.results.map((recording) => recording.object_key);
   if (objectKeys.length) await env.FILES.delete(objectKeys);

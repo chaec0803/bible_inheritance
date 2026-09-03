@@ -16,7 +16,7 @@ export async function GET(request: Request, context: RouteContext) {
   const recording = await getD1().prepare(`SELECT gift_recordings.object_key, gift_recordings.mime_type
     FROM gift_recordings
     JOIN gifts ON gifts.id = gift_recordings.gift_id
-    WHERE gifts.id = ? AND gifts.recipient_key = ? AND gift_recordings.position = ?`)
+    WHERE gifts.id = ? AND gifts.recipient_key = ? AND gifts.recipient_deleted_at IS NULL AND gift_recordings.position = ?`)
     .bind(id, user.id, position)
     .first<{ object_key: string; mime_type: string }>();
   if (!recording) return Response.json({ error: '선물 녹음을 찾을 수 없습니다.' }, { status: 404 });

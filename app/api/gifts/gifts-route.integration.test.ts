@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   unopenedGift: null as { id: string } | null,
   sourceRows: [] as Array<Record<string, unknown>>,
   giftRows: [] as Array<Record<string, unknown>>,
+  sentGiftRows: [] as Array<Record<string, unknown>>,
   giftRecordingRows: [] as Array<Record<string, unknown>>,
   statements: [] as Array<{ sql: string; values: unknown[] }>,
   batch: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('@/db', () => ({
         all: async () => {
           mocks.statements.push({ sql, values });
           if (sql.includes('FROM recordings')) return { results: mocks.sourceRows };
+          if (sql.includes('gifts.sender_key = ?')) return { results: mocks.sentGiftRows };
           if (sql.includes('FROM gifts')) return { results: mocks.giftRows };
           if (sql.includes('FROM gift_recordings')) return { results: mocks.giftRecordingRows };
           return { results: [] };
@@ -74,6 +76,7 @@ describe('말씀 선물 API 통합 회귀', () => {
       { id: 'r-2', book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', object_key: 'sender/r-2', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 4 },
     ];
     mocks.giftRows = [];
+    mocks.sentGiftRows = [];
     mocks.giftRecordingRows = [];
     mocks.statements = [];
     mocks.batch.mockReset().mockResolvedValue([]);
@@ -112,7 +115,7 @@ describe('말씀 선물 API 통합 회귀', () => {
 
   it('받은 사용자의 선물 목록에 발신자와 순서가 붙은 녹음을 반환한다', async () => {
     mocks.authenticate.mockResolvedValue({ id: 'friend-2', email: 'friend@example.com' });
-    mocks.giftRows = [{ id: 'gift-1', title: '시편 23편', sender_nickname: '말씀친구', bgm_id: 'still-waters', bgm_volume: 17, recording_count: 2, total_size_bytes: 8, created_at: 100, opened_at: null }];
+    mocks.giftRows = [{ id: 'gift-1', title: '시편 23편', sender_nickname: '말씀친구', bgm_id: 'still-waters', bgm_volume: 17, recording_count: 2, total_size_bytes: 8, created_at: 100, opened_at: null, recipient_deleted_at: null, thank_you_note: null, thanked_at: null }];
     mocks.giftRecordingRows = [{ id: 'gr-1', gift_id: 'gift-1', position: 0, book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 3 }];
     const response = await GET(new Request('https://example.test/api/gifts'));
     expect(response.status).toBe(200);
@@ -120,6 +123,14 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(payload.gifts[0].senderNickname).toBe('말씀친구');
     expect(payload.gifts[0].openedAt).toBeNull();
     expect(payload.gifts[0].recordings[0].position).toBe(0);
+  });
+
+  it('내가 보낸 선물 목록에 수신자와 개봉 상태를 반환한다', async () => {
+    mocks.sentGiftRows = [{ id: 'gift-sent', title: '요한복음 1장', recipient_nickname: '받는친구', bgm_id: 'none', bgm_volume: 0, recording_count: 5, total_size_bytes: 40, created_at: 200, opened_at: 210, recipient_deleted_at: null, thank_you_note: '잘 들었어요!', thanked_at: 220 }];
+    const response = await GET(new Request('https://example.test/api/gifts'));
+    expect(response.status).toBe(200);
+    const payload = await response.json() as { sentGifts: Array<{ recipientNickname: string; openedAt: number | null; thankYouNote: string | null }> };
+    expect(payload.sentGifts).toEqual([expect.objectContaining({ recipientNickname: '받는친구', openedAt: 210, thankYouNote: '잘 들었어요!' })]);
   });
 
   it('로그인하지 않은 사용자는 선물을 보내거나 받을 수 없다', async () => {

@@ -1,0 +1,1 @@
+ALTER TABLE `gifts` ADD `recipient_deleted_at` integer;

@@ -12,7 +12,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   await ensureDbSchema();
   const { id } = await context.params;
-  const gift = await getD1().prepare('SELECT id, opened_at FROM gifts WHERE id = ? AND recipient_key = ?')
+  const gift = await getD1().prepare('SELECT id, opened_at FROM gifts WHERE id = ? AND recipient_key = ? AND recipient_deleted_at IS NULL')
     .bind(id, user.id)
     .first<GiftOpenRow>();
   if (!gift) return Response.json({ error: '선물을 찾을 수 없습니다.' }, { status: 404 });

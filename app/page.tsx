@@ -42,6 +42,7 @@ import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
 import { toggleAudioPlayback } from '@/lib/audio-playback';
 import { createLatestAudioRequestGate } from '@/lib/audio-request-gate';
+import { loadArrayBufferOnce, preloadImages } from '@/lib/media-preload';
 import { recoverJourneyProjects } from '@/lib/user-state-policy';
 import { getRecordingFinishLabel } from '@/lib/recording-finish-label';
 import { orderJourneyRecordings } from '@/lib/journey-playback';
@@ -156,19 +157,19 @@ const bgmOptions: readonly BgmOption[] = [
     id: 'still-waters',
     name: 'Aeternum',
     description: 'Christoffer Moe Ditlevsen',
-    audioSrc: '/api/bgm/aeternum',
+    audioSrc: '/api/bgm/aeternum?v=1',
   },
   {
     id: 'peaceful-morning',
     name: 'Unto Thee',
     description: 'JOYSPRING',
-    audioSrc: '/api/bgm/unto-thee',
+    audioSrc: '/api/bgm/unto-thee?v=1',
   },
   {
     id: 'word-breath',
     name: "The King's Return",
     description: 'Adriel Fair',
-    audioSrc: '/api/bgm/the-kings-return',
+    audioSrc: '/api/bgm/the-kings-return?v=1',
     recommended: true,
   },
   {
@@ -235,6 +236,12 @@ const wordCards: readonly WordCard[] = [
   { id: 'luke', name: '누가', heading: '꼼꼼히 기록해 복음을 전한 의사', detail: '누가는 여러 증언을 자세히 살펴 예수님의 이야기를 기록했어요. 바울의 여행에 함께하며 사람을 돌보고, 모든 이에게 열린 복음을 전했어요.', spriteIndex: 14, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
   { id: 'philip', name: '빌립', heading: '한 사람에게도 기쁜 소식을 전한 전도자', detail: '빌립은 성령의 인도를 따라 광야 길에서 한 여행자를 만났어요. 그의 질문을 듣고 성경을 설명하며 예수님의 기쁜 소식을 전했어요.', spriteIndex: 15, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
 ];
+
+const WORD_CARD_SPRITE_SHEETS = [
+  '/cards/bible-character-sprite.webp',
+  '/cards/bible-character-sprite-v2.webp',
+  '/cards/bible-character-sprite-v3.webp',
+] as const;
 
 type RecordingTake = {
   url: string;
@@ -456,6 +463,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [activePreview, setActivePreview] = useState<string | null>(null);
   const [bgmPaused, setBgmPaused] = useState(false);
+  const [bgmLoadingId, setBgmLoadingId] = useState<string | null>(null);
   const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
   const [earnedCard, setEarnedCard] = useState<WordCard | null>(null);
   const [collectedCardIds, setCollectedCardIds] = useState<string[]>([]);
@@ -532,6 +540,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const playbackBgmSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackBgmGainRef = useRef<GainNode | null>(null);
   const playbackBgmBuffersRef = useRef(new Map<string, AudioBuffer>());
+  const bgmArrayBufferPromisesRef = useRef(new Map<string, Promise<ArrayBuffer>>());
+  const cardPreloadImagesRef = useRef<ReturnType<typeof preloadImages>>([]);
   const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
   const stopChapterPlaybackRef = useRef<() => void>(() => undefined);
   const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
@@ -539,6 +549,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const verseListRef = useRef<HTMLDivElement | null>(null);
   const verseMenuListRef = useRef<HTMLDivElement | null>(null);
   const userStateHydratedRef = useRef(false);
+
+  const warmBgmTrack = useCallback((audioSrc: string | null) => {
+    if (!audioSrc) return Promise.resolve(null);
+    return loadArrayBufferOnce(audioSrc, bgmArrayBufferPromisesRef.current);
+  }, []);
 
   const currentTake = takes[verseIndex];
   const currentVerseNumber = passageStartVerse + verseIndex;
@@ -842,6 +857,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, [volume]);
 
   useEffect(() => {
+    void warmBgmTrack(bgmOptions[0].audioSrc).catch(() => undefined);
+    const timer = window.setTimeout(() => {
+      cardPreloadImagesRef.current = preloadImages(WORD_CARD_SPRITE_SHEETS);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [warmBgmTrack]);
+
+  useEffect(() => {
     const objectUrls = objectUrlsRef.current;
     return () => {
       discardRecordingRef.current = true;
@@ -1136,9 +1159,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     if (!option?.audioSrc) return true;
     let buffer = playbackBgmBuffersRef.current.get(option.audioSrc);
     if (!buffer) {
-      const response = await fetch(option.audioSrc);
-      if (!response.ok) throw new Error('BGM 파일을 불러오지 못했어요.');
-      buffer = await context.decodeAudioData(await response.arrayBuffer());
+      const encodedAudio = await warmBgmTrack(option.audioSrc);
+      if (!encodedAudio) return true;
+      buffer = await context.decodeAudioData(encodedAudio.slice(0));
       playbackBgmBuffersRef.current.set(option.audioSrc, buffer);
     }
     if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
@@ -1400,6 +1423,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       stopPreview();
       return;
     }
+    setBgmLoadingId(option.id);
     try {
       let context = playbackAudioContextRef.current;
       if (!context || context.state === 'closed') {
@@ -1418,6 +1442,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       }
     } catch {
       setNotice('배경음악을 재생하지 못했어요. 다시 눌러 주세요.');
+    } finally {
+      setBgmLoadingId((current) => current === option.id ? null : current);
     }
   };
 
@@ -2517,6 +2543,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                     onClick={() => {
                       if (option.id !== bgm && activePreview) stopPreview();
                       setBgm(option.id);
+                      void warmBgmTrack(option.audioSrc).catch(() => undefined);
                       if (!option.audioSrc) stopPreview();
                     }}
                     type="button"
@@ -2534,7 +2561,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             <button className={bgmIsPlaying ? 'active' : ''} type="button" onClick={() => {
               const option = bgmOptions.find((item) => item.id === bgm);
               if (option) void playSelectedBgm(option);
-            }} disabled={bgm === 'none' || bgmIsPlaying} aria-label={bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'} aria-pressed={bgmIsPlaying}><Play size={16} /><span>{bgmIsPlaying ? '재생 중' : '재생'}</span></button>
+            }} disabled={bgm === 'none' || bgmIsPlaying || bgmLoadingId === bgm} aria-label={bgmLoadingId === bgm ? '배경음악 준비 중' : bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'} aria-pressed={bgmIsPlaying}>{bgmLoadingId === bgm ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}<span>{bgmLoadingId === bgm ? '음악 준비 중' : bgmIsPlaying ? '재생 중' : '재생'}</span></button>
             <button className={bgmIsPaused ? 'active' : ''} type="button" onClick={pauseSelectedBgm} disabled={!bgmIsPlaying} aria-label={bgmIsPaused ? '배경음악 일시정지됨' : '배경음악 일시정지'} aria-pressed={bgmIsPaused}><Pause size={16} /><span>{bgmIsPaused ? '멈춤 상태' : '일시정지'}</span></button>
             <button type="button" onClick={stopPreview} disabled={!activePreview} aria-label="배경음악 정지"><CircleStop size={16} /><span>정지</span></button>
           </div>

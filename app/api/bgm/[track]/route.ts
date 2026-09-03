@@ -31,7 +31,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   const headers = new Headers({
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+    'Cache-Control': 'public, max-age=31536000, immutable',
     'Content-Disposition': 'inline',
     'Content-Length': String(range ? range.end - range.start + 1 : metadata.size),
     'Content-Type': 'audio/mpeg',

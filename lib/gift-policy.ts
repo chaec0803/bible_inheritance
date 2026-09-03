@@ -1,7 +1,7 @@
 export const GIFT_BGM_CATALOG = {
-  'still-waters': { name: 'Aeternum', audioSrc: '/api/bgm/aeternum', objectKey: 'bgm/aeternum.mp3' },
-  'peaceful-morning': { name: 'Unto Thee', audioSrc: '/api/bgm/unto-thee', objectKey: 'bgm/unto-thee.mp3' },
-  'word-breath': { name: "The King's Return", audioSrc: '/api/bgm/the-kings-return', objectKey: 'bgm/the-kings-return.mp3' },
+  'still-waters': { name: 'Aeternum', audioSrc: '/api/bgm/aeternum?v=1', objectKey: 'bgm/aeternum.mp3' },
+  'peaceful-morning': { name: 'Unto Thee', audioSrc: '/api/bgm/unto-thee?v=1', objectKey: 'bgm/unto-thee.mp3' },
+  'word-breath': { name: "The King's Return", audioSrc: '/api/bgm/the-kings-return?v=1', objectKey: 'bgm/the-kings-return.mp3' },
   none: { name: '음악 없음', audioSrc: null, objectKey: null },
 } as const;
 

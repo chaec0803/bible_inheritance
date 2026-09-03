@@ -60,7 +60,10 @@ export function ensureDbSchema() {
       recording_count INTEGER NOT NULL,
       total_size_bytes INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
-      opened_at INTEGER
+      opened_at INTEGER,
+      recipient_deleted_at INTEGER,
+      thank_you_note TEXT,
+      thanked_at INTEGER
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_recordings (
       id TEXT PRIMARY KEY NOT NULL,
@@ -88,6 +91,15 @@ export function ensureDbSchema() {
     const giftColumns = await env.DB.prepare('PRAGMA table_info(gifts)').all<{ name: string }>();
     if (!giftColumns.results.some((column) => column.name === 'opened_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN opened_at INTEGER').run();
+    }
+    if (!giftColumns.results.some((column) => column.name === 'recipient_deleted_at')) {
+      await env.DB.prepare('ALTER TABLE gifts ADD COLUMN recipient_deleted_at INTEGER').run();
+    }
+    if (!giftColumns.results.some((column) => column.name === 'thank_you_note')) {
+      await env.DB.prepare('ALTER TABLE gifts ADD COLUMN thank_you_note TEXT').run();
+    }
+    if (!giftColumns.results.some((column) => column.name === 'thanked_at')) {
+      await env.DB.prepare('ALTER TABLE gifts ADD COLUMN thanked_at INTEGER').run();
     }
     await env.DB.prepare(`UPDATE gifts
       SET opened_at = created_at

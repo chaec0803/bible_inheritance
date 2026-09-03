@@ -8,6 +8,7 @@ describe('BGM streaming API', () => {
     expect(route).toContain("'Accept-Ranges': 'bytes'");
     expect(route).toContain("status: range ? 206 : 200");
     expect(route).toContain("'Content-Type': 'audio/mpeg'");
+    expect(route).toContain("'Cache-Control': 'public, max-age=31536000, immutable'");
   });
 
   it('is read-only after R2 bootstrap', () => {
