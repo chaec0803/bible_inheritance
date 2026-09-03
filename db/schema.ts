@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const recordings = sqliteTable(
@@ -82,10 +83,12 @@ export const gifts = sqliteTable(
     recordingCount: integer('recording_count').notNull(),
     totalSizeBytes: integer('total_size_bytes').notNull(),
     createdAt: integer('created_at').notNull(),
+    openedAt: integer('opened_at'),
   },
   (table) => [
     index('idx_gifts_recipient_created').on(table.recipientKey, table.createdAt),
     index('idx_gifts_sender_created').on(table.senderKey, table.createdAt),
+    uniqueIndex('idx_gifts_one_unopened_per_pair').on(table.senderKey, table.recipientKey).where(sql`${table.openedAt} IS NULL`),
   ],
 );
 

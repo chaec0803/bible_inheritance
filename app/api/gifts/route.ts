@@ -27,6 +27,7 @@ type GiftRow = {
   recording_count: number;
   total_size_bytes: number;
   created_at: number;
+  opened_at: number | null;
 };
 
 type GiftRecordingRow = {
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
     await ensureUserProfile(user);
     const giftResult = await getD1().prepare(`SELECT
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
-      gifts.recording_count, gifts.total_size_bytes, gifts.created_at,
+      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
       user_profiles.nickname AS sender_nickname
     FROM gifts
     JOIN user_profiles ON user_profiles.owner_key = gifts.sender_key
@@ -86,6 +87,7 @@ export async function GET(request: Request) {
         recordingCount: gift.recording_count,
         totalSizeBytes: gift.total_size_bytes,
         createdAt: gift.created_at,
+        openedAt: gift.opened_at,
         recordings: recordingRows
           .filter((recording) => recording.gift_id === gift.id)
           .map((recording) => ({
@@ -122,6 +124,15 @@ export async function POST(request: Request) {
     .bind(userA, userB)
     .first<{ id: string }>();
   if (!friendship) return Response.json({ error: '친구에게만 말씀을 선물할 수 있습니다.' }, { status: 403 });
+
+  const unopenedGift = await getD1().prepare(`SELECT id FROM gifts
+    WHERE sender_key = ? AND recipient_key = ? AND opened_at IS NULL
+    LIMIT 1`)
+    .bind(user.id, giftRequest.recipientUserId)
+    .first<{ id: string }>();
+  if (unopenedGift) {
+    return Response.json({ error: '친구가 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });
+  }
 
   const sourceResult = await getD1().prepare(`SELECT
     id, book, chapter, verse, verse_text, object_key, mime_type, size_bytes, duration_seconds
@@ -175,6 +186,10 @@ export async function POST(request: Request) {
     return Response.json({ gift: { id: giftId, title: giftRequest.title, recordingCount: recordings.length } }, { status: 201 });
   } catch (error) {
     if (copiedKeys.length) await env.FILES.delete(copiedKeys).catch(() => undefined);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('idx_gifts_one_unopened_per_pair') || errorMessage.includes('UNIQUE constraint failed: gifts.sender_key, gifts.recipient_key')) {
+      return Response.json({ error: '친구가 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });
+    }
     console.error('gifts.send_failed', error);
     return Response.json({ error: '말씀 선물을 보내지 못했습니다.' }, { status: 500 });
   }

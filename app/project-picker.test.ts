@@ -6,7 +6,7 @@ const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
 describe('매일 말씀 읽기 선택 화면', () => {
   it('화면에 처음 들어갈 때 선택된 코스가 없다', () => {
     expect(page).toContain("useState('');");
-    expect(page).toContain("setSelectedTemplateId(''); setOnboardingStep('projects')");
+    expect(page).toContain("setSelectedTemplateId(''); navigateTo('daily-reading')");
   });
 
   it('코스를 선택한 뒤에만 일정 서브탭을 연다', () => {

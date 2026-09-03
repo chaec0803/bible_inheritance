@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, LoaderCircle, Mail, Search, UserCheck, UserPlus, Users, X } from 'lucide-react';
+import { Check, ChevronLeft, LoaderCircle, Mail, Search, UserCheck, UserPlus, Users, X } from 'lucide-react';
 
 type Relationship = 'none' | 'friend' | 'incoming' | 'outgoing';
 
@@ -29,7 +29,7 @@ async function requestFriends(url = '/api/friends', init?: RequestInit) {
   return payload;
 }
 
-export function FriendsPanel() {
+export function FriendsPanel({ onBack }: { onBack: () => void }) {
   const [data, setData] = useState<FriendsPayload>(emptyPayload);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -129,10 +129,11 @@ export function FriendsPanel() {
     return <button type="button" disabled={busy} onClick={() => void runAction('request', person)}>{busy ? <LoaderCircle className="spin" size={14} /> : <UserPlus size={14} />} 친구 요청</button>;
   };
 
-  if (loading) return <section className="friends-section"><div className="friends-loading"><LoaderCircle className="spin" size={28} /><strong>친구 목록을 불러오고 있어요</strong></div></section>;
+  if (loading) return <section className="friends-section"><button className="section-route-back" type="button" onClick={onBack}><ChevronLeft size={17} /> 뒤로가기</button><div className="friends-loading"><LoaderCircle className="spin" size={28} /><strong>친구 목록을 불러오고 있어요</strong></div></section>;
 
   return (
     <section className="friends-section" aria-labelledby="friends-title">
+      <button className="section-route-back" type="button" onClick={onBack}><ChevronLeft size={17} /> 뒤로가기</button>
       <div className="friends-heading">
         <div><p className="eyebrow">함께 간직하는 말씀</p><h2 id="friends-title">친구</h2><p className="muted">이메일이나 닉네임으로 찾아 친구 요청을 보내세요.</p></div>
         <span><Users size={16} /> {data.friends.length}명</span>

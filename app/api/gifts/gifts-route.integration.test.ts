@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   ensureSchema: vi.fn(),
   ensureProfile: vi.fn(),
   friendship: { id: 'friendship-1' } as { id: string } | null,
+  unopenedGift: null as { id: string } | null,
   sourceRows: [] as Array<Record<string, unknown>>,
   giftRows: [] as Array<Record<string, unknown>>,
   giftRecordingRows: [] as Array<Record<string, unknown>>,
@@ -27,7 +28,9 @@ vi.mock('@/db', () => ({
       bind: (...values: unknown[]) => ({
         first: async () => {
           mocks.statements.push({ sql, values });
-          return sql.includes('FROM friendships') ? mocks.friendship : null;
+          if (sql.includes('FROM friendships')) return mocks.friendship;
+          if (sql.includes('opened_at IS NULL')) return mocks.unopenedGift;
+          return null;
         },
         all: async () => {
           mocks.statements.push({ sql, values });
@@ -65,6 +68,7 @@ describe('말씀 선물 API 통합 회귀', () => {
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
     mocks.ensureProfile.mockReset().mockResolvedValue(undefined);
     mocks.friendship = { id: 'friendship-1' };
+    mocks.unopenedGift = null;
     mocks.sourceRows = [
       { id: 'r-1', book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', object_key: 'sender/r-1', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 3 },
       { id: 'r-2', book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', object_key: 'sender/r-2', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 4 },
@@ -98,14 +102,23 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(mocks.r2Put).not.toHaveBeenCalled();
   });
 
+  it('받는 사람이 이전 선물을 열기 전에는 같은 친구에게 추가로 보낼 수 없다', async () => {
+    mocks.unopenedGift = { id: 'gift-pending' };
+    const response = await POST(sendRequest());
+    expect(response.status).toBe(409);
+    expect((await response.json() as { error: string }).error).toContain('아직 열지 않았어요');
+    expect(mocks.r2Put).not.toHaveBeenCalled();
+  });
+
   it('받은 사용자의 선물 목록에 발신자와 순서가 붙은 녹음을 반환한다', async () => {
     mocks.authenticate.mockResolvedValue({ id: 'friend-2', email: 'friend@example.com' });
-    mocks.giftRows = [{ id: 'gift-1', title: '시편 23편', sender_nickname: '말씀친구', bgm_id: 'still-waters', bgm_volume: 17, recording_count: 2, total_size_bytes: 8, created_at: 100 }];
+    mocks.giftRows = [{ id: 'gift-1', title: '시편 23편', sender_nickname: '말씀친구', bgm_id: 'still-waters', bgm_volume: 17, recording_count: 2, total_size_bytes: 8, created_at: 100, opened_at: null }];
     mocks.giftRecordingRows = [{ id: 'gr-1', gift_id: 'gift-1', position: 0, book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 3 }];
     const response = await GET(new Request('https://example.test/api/gifts'));
     expect(response.status).toBe(200);
-    const payload = await response.json() as { gifts: Array<{ senderNickname: string; recordings: Array<{ position: number }> }> };
+    const payload = await response.json() as { gifts: Array<{ senderNickname: string; openedAt: number | null; recordings: Array<{ position: number }> }> };
     expect(payload.gifts[0].senderNickname).toBe('말씀친구');
+    expect(payload.gifts[0].openedAt).toBeNull();
     expect(payload.gifts[0].recordings[0].position).toBe(0);
   });
 

@@ -33,8 +33,8 @@ describe('친구 추가 기능 회귀', () => {
   });
 
   it('데스크톱과 모바일 내비게이션에서 친구 화면을 연다', () => {
-    expect(page).toContain("setAppTab('friends')");
+    expect(page).toContain("navigateTo('friends')");
     expect(page.match(/onClick={openFriendsTab}/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(page).toContain("appTab === 'friends' && <FriendsPanel />");
+    expect(page).toContain("appTab === 'friends' && <FriendsPanel");
   });
 });

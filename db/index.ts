@@ -59,7 +59,8 @@ export function ensureDbSchema() {
       bgm_volume INTEGER NOT NULL DEFAULT 12,
       recording_count INTEGER NOT NULL,
       total_size_bytes INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      opened_at INTEGER
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_recordings (
       id TEXT PRIMARY KEY NOT NULL,
@@ -84,6 +85,19 @@ export function ensureDbSchema() {
     if (!names.has('recording_group_id')) additions.push(env.DB.prepare('ALTER TABLE recordings ADD COLUMN recording_group_id TEXT'));
     if (!names.has('recording_mode')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN recording_mode TEXT NOT NULL DEFAULT 'verse'"));
     if (additions.length) await env.DB.batch(additions);
+    const giftColumns = await env.DB.prepare('PRAGMA table_info(gifts)').all<{ name: string }>();
+    if (!giftColumns.results.some((column) => column.name === 'opened_at')) {
+      await env.DB.prepare('ALTER TABLE gifts ADD COLUMN opened_at INTEGER').run();
+    }
+    await env.DB.prepare(`UPDATE gifts
+      SET opened_at = created_at
+      WHERE opened_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM gifts AS newer
+          WHERE newer.sender_key = gifts.sender_key
+            AND newer.recipient_key = gifts.recipient_key
+            AND (newer.created_at > gifts.created_at OR (newer.created_at = gifts.created_at AND newer.id > gifts.id))
+        )`).run();
     await env.DB.batch([
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_created ON recordings(owner_key, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_recordings_owner_version_created ON recordings(owner_key, data_version, created_at)'),
@@ -95,6 +109,7 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_b_status ON friendships(user_b_key, status)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_recipient_created ON gifts(recipient_key, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_sender_created ON gifts(sender_key, created_at)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gifts_one_unopened_per_pair ON gifts(sender_key, recipient_key) WHERE opened_at IS NULL'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_recordings_position ON gift_recordings(gift_id, position)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_gift ON gift_recordings(gift_id)'),
     ]);

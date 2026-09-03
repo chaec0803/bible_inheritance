@@ -36,7 +36,7 @@ import {
 import { bibleBooks, type BibleBook } from './bible-metadata';
 import { normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
-import { getBackStep } from '@/lib/navigation-policy';
+import { getBackStep, getNavigationHash, parseNavigationRoute, type NavigationRoute } from '@/lib/navigation-policy';
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
@@ -533,6 +533,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const playbackBgmGainRef = useRef<GainNode | null>(null);
   const playbackBgmBuffersRef = useRef(new Map<string, AudioBuffer>());
   const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
+  const stopChapterPlaybackRef = useRef<() => void>(() => undefined);
   const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
@@ -1153,13 +1154,13 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     return true;
   };
 
-  const stopLibraryPlayback = (recordingId?: string) => {
+  const stopLibraryPlayback = useCallback((recordingId?: string) => {
     if (recordingId && activeLibraryRef.current !== recordingId) return;
     activeLibraryRef.current = null;
     setActiveLibraryId(null);
     setActivePreview(null);
     setBgmPaused(false);
-  };
+  }, []);
 
   const stopChapterPlayback = () => {
     playbackBgmRequestGateRef.current.cancel();
@@ -1181,34 +1182,74 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     stopLibraryPlayback();
   };
 
-  const openRecordingTab = () => {
+  useEffect(() => {
+    stopChapterPlaybackRef.current = stopChapterPlayback;
+  });
+
+  const applyNavigationRoute = useCallback((route: NavigationRoute) => {
+    if (route === 'home') {
+      setReturningHome(true);
+      setBibleBackTarget('welcome');
+      setOnboardingStep('welcome');
+      return;
+    }
+    if (route === 'journeys') {
+      setOnboardingStep('projectHome');
+      return;
+    }
+    if (route === 'daily-reading') {
+      setOnboardingStep('projects');
+      return;
+    }
+    if (route === 'bible' || route === 'schedule' || route === 'cards') {
+      setOnboardingStep(route);
+      return;
+    }
+    setAppTab(route);
+    setOnboardingStep('app');
+  }, []);
+
+  const navigateTo = (route: NavigationRoute) => {
     stopChapterPlayback();
-    setAppTab('recording');
+    savedRecordingAudioRef.current?.pause();
+    setSavedRecordingPlaying(false);
+    applyNavigationRoute(route);
+    const hash = getNavigationHash(route);
+    if (window.location.hash !== hash) {
+      window.history.pushState({ verseLegacyRoute: route }, '', hash);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    window.history.replaceState({ verseLegacyRoute: 'home' }, '', getNavigationHash('home'));
+    const handlePopState = (event: PopStateEvent) => {
+      stopChapterPlaybackRef.current();
+      const stateRoute = typeof event.state?.verseLegacyRoute === 'string'
+        ? getNavigationHash(event.state.verseLegacyRoute as NavigationRoute)
+        : window.location.hash;
+      const route = parseNavigationRoute(stateRoute);
+      applyNavigationRoute(route);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [applyNavigationRoute]);
+
+  const openRecordingTab = () => {
+    navigateTo('recording');
   };
 
   const openLibraryTab = () => {
-    stopChapterPlayback();
-    savedRecordingAudioRef.current?.pause();
-    setSavedRecordingPlaying(false);
-    setAppTab('library');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateTo('library');
   };
 
   const openFriendsTab = () => {
-    stopChapterPlayback();
-    savedRecordingAudioRef.current?.pause();
-    setSavedRecordingPlaying(false);
-    setAppTab('friends');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateTo('friends');
   };
 
   const openGiftsTab = () => {
-    stopChapterPlayback();
-    savedRecordingAudioRef.current?.pause();
-    setSavedRecordingPlaying(false);
-    setAppTab('gifts');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateTo('gifts');
   };
 
   const openLibraryFromCompletion = () => {
@@ -1495,8 +1536,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setActiveProject(null);
       setViewedProjectDay(null);
       setConfirmQuitJourneyOpen(false);
-      setOnboardingStep('welcome');
-      setReturningHome(true);
+      navigateTo('home');
       setNotice(`‘${journey.title}’ 말씀 읽기와 녹음본을 모두 삭제했어요.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '말씀 읽기를 그만두지 못했어요. 다시 시도해 주세요.');
@@ -1926,7 +1966,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     window.localStorage.removeItem('verse-legacy-free-passage');
   };
 
-  const openJourney = (project: ActiveProject) => {
+  const openJourney = (project: ActiveProject, destination: 'recording' | 'library' = 'recording') => {
     activateProject(project);
     if (project.kind === 'free' && project.passage) {
       const bookIndex = bibleBooks.findIndex((book) => book.code === project.passage?.code);
@@ -1936,12 +1976,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         setBibleSearch('');
         chooseBibleBook(book);
         setBibleBackTarget('projectHome');
-        setOnboardingStep('bible');
+        navigateTo('bible');
         return;
       }
     }
-    setAppTab('recording');
-    setOnboardingStep('app');
+    navigateTo(destination);
   };
 
   const startFreeChapter = () => {
@@ -1966,9 +2005,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     window.localStorage.setItem('verse-legacy-free-passage', JSON.stringify({ code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter }));
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
     activateProject(freeProject);
-    setAppTab('recording');
     setNotice(`${selectedBibleBook.name} ${selectedBibleChapter}장을 자유 녹음으로 열었어요.`);
-    setOnboardingStep('app');
+    navigateTo('recording');
   };
 
   const finishOnboarding = (projectId?: string) => {
@@ -1988,7 +2026,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setActiveProject(null);
       setNotice('원하는 말씀을 자유롭게 녹음할 수 있어요.');
     }
-    setOnboardingStep('app');
+    navigateTo('recording');
   };
 
   const selectedTemplate = projectTemplates.find((item) => item.id === selectedTemplateId) ?? projectTemplates[0];
@@ -2069,25 +2107,25 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               <h1>{returningHome ? '무엇을 선택할까요?' : '어떤 방식으로 시작할까요?'}</h1>
               <p className="onboarding-lead">{returningHome ? '진행 중인 말씀 여정을 열거나, 원하는 말씀을 골라 자유롭게 녹음하세요.' : '지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.'}</p>
               <div className="start-choice-grid">
-                <button type="button" onClick={() => { setBibleBackTarget('welcome'); setOnboardingStep('bible'); }}>
+                <button type="button" onClick={() => { setBibleBackTarget('welcome'); navigateTo('bible'); }}>
                   <span><Sparkles size={22} /></span>
-                  <strong>내 방식대로 자유롭게</strong>
+                  <strong>성경 읽기</strong>
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
                   <em>성경 고르기 <ArrowRight size={15} /></em>
                 </button>
-                <button className="recommended" type="button" onClick={() => { setSelectedTemplateId(''); setOnboardingStep('projects'); }}>
+                <button className="recommended" type="button" onClick={() => { setSelectedTemplateId(''); navigateTo('daily-reading'); }}>
                   <i>추천</i><span><Target size={22} /></span>
                   <strong>매일 말씀 읽기 시작하기</strong>
                   <small>분량과 기간을 정해 매일 조금씩 말씀을 녹음해요.</small>
                   <em>읽기 일정 고르기 <ArrowRight size={15} /></em>
                 </button>
               </div>
-              <button className="word-card-library-entry journey-library-entry" type="button" onClick={() => setOnboardingStep('projectHome')}>
+              <button className="word-card-library-entry journey-library-entry" type="button" onClick={() => navigateTo('journeys')}>
                 <span><Target size={21} /></span>
                 <div><strong>내 말씀 여정</strong><small>{journeyProjects.length ? `진행 중인 말씀 여정 ${journeyProjects.length}개 · ${journeyProjects.slice(0, 2).map((project) => project.title).join(' · ')}` : '아직 진행 중인 말씀 여정이 없어요.'}</small></div>
                 <ArrowRight size={18} />
               </button>
-              <button className="word-card-library-entry" type="button" onClick={() => setOnboardingStep('cards')}>
+              <button className="word-card-library-entry" type="button" onClick={() => navigateTo('cards')}>
                 <span><Sparkles size={21} /></span>
                 <div><strong>내 카드 보관함</strong><small>간직한 말씀 카드 {collectedWordCards.length}장을 모아봐요.</small></div>
                 <ArrowRight size={18} />
@@ -2095,7 +2133,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             </div>
           ) : onboardingStep === 'cards' ? (
             <div className="onboarding-card word-card-library-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 홈으로</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo('home')}><ChevronLeft size={16} /> 홈으로</button>
               <p className="eyebrow">MY WORD CARDS</p>
               <h1>내 카드 보관함</h1>
               <p className="onboarding-lead">말씀 여정의 하루 분량을 마치고 직접 간직한 카드들이에요. 카드를 누르면 자세히 볼 수 있어요.</p>
@@ -2123,7 +2161,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             </div>
           ) : onboardingStep === 'projectHome' ? (
             <div className="onboarding-card project-home-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('welcome')}><ChevronLeft size={16} /> 홈으로</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo('home')}><ChevronLeft size={16} /> 홈으로</button>
               <p className="eyebrow">MY PROJECTS</p>
               <h1>어떤 말씀 여정을 이어갈까요?</h1>
               <p className="onboarding-lead">말씀 여정을 선택하면 해당 녹음 화면으로 바로 이어져요.</p>
@@ -2148,14 +2186,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                 {completedJourneyProjects.length > 0 && <section aria-labelledby="completed-journeys-title">
                   <div className="journey-status-heading completed"><h2 id="completed-journeys-title">완료</h2><span>{completedJourneyProjects.length}</span></div>
                   <div className="running-project-list completed-project-list">
-                    {completedJourneyProjects.map((project, index) => <button className={`project-color-${(ongoingJourneyProjects.length + index) % 5}`} type="button" onClick={() => { openJourney(project); setAppTab('library'); }} key={project.id}><span><Check size={20} /></span><div><small>말씀 여정 완료</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
+                    {completedJourneyProjects.map((project, index) => <button className={`project-color-${(ongoingJourneyProjects.length + index) % 5}`} type="button" onClick={() => openJourney(project, 'library')} key={project.id}><span><Check size={20} /></span><div><small>말씀 여정 완료</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
                   </div>
                 </section>}
               </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
             </div>
           ) : onboardingStep === 'bible' ? (
             <div className="onboarding-card bible-browser-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep(bibleBackTarget)}><ChevronLeft size={16} /> 이전</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo(bibleBackTarget === 'projectHome' ? 'journeys' : bibleBackTarget === 'app' ? 'recording' : 'home')}><ChevronLeft size={16} /> 이전</button>
               <p className="eyebrow">자유롭게 녹음하기</p>
               <h1>{activeProject?.kind === 'free' && activeProject.passage?.code === selectedBibleBook.code ? `${selectedBibleBook.name}에서 몇 장을 읽을까요?` : '어떤 말씀부터 읽어볼까요?'}</h1>
               <p className="onboarding-lead">이미 진행 중인 장은 흰색으로 표시돼요. 새로 읽거나 이어갈 장을 선택해 주세요.</p>
@@ -2210,7 +2248,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             </div>
           ) : onboardingStep === 'schedule' && activeProject ? (
             <div className="onboarding-card project-schedule-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep('app')}><ChevronLeft size={16} /> 말씀 여정으로 돌아가기</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo('recording')}><ChevronLeft size={16} /> 말씀 여정으로 돌아가기</button>
               <p className="eyebrow">PROJECT SCHEDULE</p>
               <h1>{activeProject.title}</h1>
               <p className="onboarding-lead">{activeProject.scope}</p>
@@ -2231,12 +2269,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   })}
                 </ol>
               </div>
-              <button className="start-project-button" type="button" onClick={() => setOnboardingStep('app')}>이 말씀 여정 계속하기 <ArrowRight size={16} /></button>
+              <button className="start-project-button" type="button" onClick={() => navigateTo('recording')}>이 말씀 여정 계속하기 <ArrowRight size={16} /></button>
               {activeProject.kind !== 'free' && <button className="quit-journey-button" type="button" onClick={() => setConfirmQuitJourneyOpen(true)}>말씀 읽기 그만하기</button>}
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
-              <button className="onboarding-back" type="button" onClick={() => setOnboardingStep(getBackStep('projects'))}><ChevronLeft size={16} /> 이전</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo(getBackStep('projects') === 'welcome' ? 'home' : 'daily-reading')}><ChevronLeft size={16} /> 이전</button>
               <p className="eyebrow">말씀 여정 만들기</p>
               <h1>얼마 동안 함께 완성해볼까요?</h1>
               <div className="duration-picker" aria-label="말씀 여정 기간">
@@ -2358,7 +2396,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               })}
             </div>
           </div>}
-          {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => setOnboardingStep('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
+          {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => navigateTo('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
           <div className="verse-list" aria-label="구절 목록" ref={verseListRef}>
             {passageVerses.map((_, index) => (
               <button
@@ -2733,8 +2771,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <p className="library-privacy"><Cloud size={14} /> 녹음과 말씀 여정은 로그인한 계정에 안전하게 저장돼요. 같은 계정으로 로그인하면 다른 기기에서도 이어갈 수 있어요.</p>
       </section>}
 
-      {appTab === 'gifts' && <GiftsPanel />}
-      {appTab === 'friends' && <FriendsPanel />}
+      {appTab === 'gifts' && <GiftsPanel onBack={() => window.history.back()} />}
+      {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} />}
 
       {giftSendOpen && <GiftSendDialog
         title={playbackGiftTitle}
@@ -2760,7 +2798,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={19} /><span>친구</span></button>
       </nav>
 
-      <button className="floating-home-button" type="button" onClick={() => { stopChapterPlayback(); setReturningHome(true); setBibleBackTarget('welcome'); setOnboardingStep('welcome'); }} aria-label="말씀 여정과 자유 녹음을 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+      <nav className="floating-route-actions" aria-label="빠른 화면 이동">
+        <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기"><Users size={22} /><span>친구</span></button>
+        <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기"><Gift size={22} /><span>선물</span></button>
+        <button className="floating-home-button" type="button" onClick={() => navigateTo('home')} aria-label="말씀 여정과 성경 읽기를 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+      </nav>
 
       {completionModal && (
         <div className="completion-modal-backdrop" role="presentation">
