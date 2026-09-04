@@ -20,6 +20,44 @@ describe('나만의 읽기 계획 계산', () => {
     expect(plan.days.flatMap((day) => day.passages).every((passage) => passage.name === '창세기')).toBe(true);
   });
 
+  it('한 권 읽기는 같은 장 안의 시작 절과 마지막 절만 포함한다', () => {
+    const plan = buildCustomReadingPlan({
+      books: bibleBooks,
+      mode: 'single',
+      singleBookId: '창',
+      startChapter: 1,
+      startVerse: 1,
+      endChapter: 1,
+      endVerse: 4,
+      durationDays: 2,
+    });
+    expect(plan.totalChapters).toBe(1);
+    expect(plan.totalVerses).toBe(4);
+    expect(plan.scope).toBe('창세기 1장 1절부터 1장 4절');
+    expect(plan.days.flatMap((day) => day.passages)).toEqual([
+      { code: '창', name: '창세기', chapter: 1, startVerse: 1, endVerse: 2 },
+      { code: '창', name: '창세기', chapter: 1, startVerse: 3, endVerse: 4 },
+    ]);
+  });
+
+  it('한 권의 절 범위가 여러 장을 건너뛰면 첫 장과 마지막 장의 선택 범위만 포함한다', () => {
+    const plan = buildCustomReadingPlan({
+      books: bibleBooks,
+      mode: 'single',
+      singleBookId: '창',
+      startChapter: 1,
+      startVerse: 30,
+      endChapter: 2,
+      endVerse: 3,
+      durationDays: 1,
+    });
+    expect(plan.totalVerses).toBe(2 + 3);
+    expect(plan.days[0].passages).toEqual([
+      { code: '창', name: '창세기', chapter: 1, startVerse: 30, endVerse: 31 },
+      { code: '창', name: '창세기', chapter: 2, startVerse: 1, endVerse: 3 },
+    ]);
+  });
+
   it('시편 한 권 범위에는 장 대신 편 단위를 표시한다', () => {
     const plan = buildCustomReadingPlan({
       books: bibleBooks,

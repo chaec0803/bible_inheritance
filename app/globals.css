@@ -244,6 +244,10 @@ button { color: inherit; }
 .custom-single-book-options label > span, .custom-plan-name > span, .custom-duration-input > span { color: var(--muted); font-size: 14px; font-weight: 800; }
 .custom-single-book-options select, .custom-plan-name input, .custom-duration-input input { width: 100%; min-height: 44px; padding: 9px 11px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 11px; font: inherit; font-size: 16px; outline: none; }
 .custom-single-book-options select:focus, .custom-plan-name input:focus, .custom-duration-input input:focus { border-color: var(--sage); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sage) 14%, transparent); }
+.passage-range-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.passage-range-row fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.passage-range-row legend { padding: 0 5px; color: var(--ink); font-size: 14px; font-weight: 900; }
+.passage-range-arrow { color: var(--sage); font-size: 20px; font-weight: 900; }
 .custom-multiple-books { margin-top: 15px; padding: 14px; display: grid; gap: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; }
 .custom-book-actions { display: flex; align-items: center; justify-content: space-between; color: var(--ink); font-size: 14px; font-weight: 900; }
 .custom-book-actions button { padding: 7px 9px; color: var(--muted); background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 9px; font-size: 12px; cursor: pointer; }
@@ -947,6 +951,8 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
   .custom-plan-step { padding: 17px 14px; }
   .custom-plan-mode-grid { grid-template-columns: 1fr; }
   .custom-plan-mode-grid button { min-height: 70px; }
+  .passage-range-row { grid-template-columns: 1fr; }
+  .passage-range-arrow { transform: rotate(90deg); text-align: center; line-height: 1; }
   .custom-plan-summary { grid-template-columns: 1fr; }
   .custom-plan-preview li { grid-template-columns: 42px minmax(0, 1fr); }
   .custom-plan-preview li small { grid-column: 2; }

@@ -37,4 +37,11 @@ describe('매일 말씀 읽기 선택 화면', () => {
     expect(page).toContain('customDurationDays');
     expect(page).toContain('buildCustomReadingPlan');
   });
+
+  it('한 권 읽기의 시작과 끝을 장·절로 선택한다', () => {
+    expect(page).toContain('시작 위치');
+    expect(page).toContain('마지막 위치');
+    expect(page).toContain('customStartVerse');
+    expect(page).toContain('customEndVerse');
+  });
 });

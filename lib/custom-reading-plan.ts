@@ -30,7 +30,9 @@ type BuildReadingPlanInput = {
   mode: ReadingPlanMode;
   singleBookId?: string;
   startChapter?: number;
+  startVerse?: number;
   endChapter?: number;
+  endVerse?: number;
   selectedBookIds?: readonly string[];
   durationDays: number;
 };
@@ -95,9 +97,18 @@ export function buildCustomReadingPlan(input: BuildReadingPlanInput): CustomRead
     const endChapter = input.mode === 'single'
       ? Math.max(startChapter, Math.min(Math.trunc(input.endChapter ?? book.chapters.length), book.chapters.length))
       : book.chapters.length;
+    const startVerse = input.mode === 'single'
+      ? Math.max(1, Math.min(Math.trunc(input.startVerse ?? 1), book.chapters[startChapter - 1]))
+      : 1;
+    const requestedEndVerse = input.mode === 'single'
+      ? Math.max(1, Math.min(Math.trunc(input.endVerse ?? book.chapters[endChapter - 1]), book.chapters[endChapter - 1]))
+      : book.chapters[endChapter - 1];
+    const endVerse = startChapter === endChapter ? Math.max(startVerse, requestedEndVerse) : requestedEndVerse;
     totalChapters += endChapter - startChapter + 1;
     for (let chapter = startChapter; chapter <= endChapter; chapter += 1) {
-      for (let verse = 1; verse <= book.chapters[chapter - 1]; verse += 1) {
+      const firstVerse = chapter === startChapter ? startVerse : 1;
+      const lastVerse = chapter === endChapter ? endVerse : book.chapters[chapter - 1];
+      for (let verse = firstVerse; verse <= lastVerse; verse += 1) {
         verses.push({ code: book.code, name: book.name, chapter, verse });
       }
     }
@@ -116,8 +127,13 @@ export function buildCustomReadingPlan(input: BuildReadingPlanInput): CustomRead
 
   const bookNames = selectedBooks.map((book) => book.name);
   const singleBookUnit = bookNames[0] === '시편' ? '편' : '장';
+  const firstPassage = days[0]?.passages[0];
+  const lastPassage = days.at(-1)?.passages.at(-1);
+  const hasExplicitVerseRange = input.startVerse !== undefined || input.endVerse !== undefined;
   const scope = input.mode === 'single'
-    ? `${bookNames[0] ?? '성경'} ${days[0]?.passages[0]?.chapter ?? 1}${singleBookUnit}부터 ${days.at(-1)?.passages.at(-1)?.chapter ?? 1}${singleBookUnit}`
+    ? hasExplicitVerseRange
+      ? `${bookNames[0] ?? '성경'} ${firstPassage?.chapter ?? 1}${singleBookUnit} ${firstPassage?.startVerse ?? 1}절부터 ${lastPassage?.chapter ?? 1}${singleBookUnit} ${lastPassage?.endVerse ?? 1}절`
+      : `${bookNames[0] ?? '성경'} ${firstPassage?.chapter ?? 1}${singleBookUnit}부터 ${lastPassage?.chapter ?? 1}${singleBookUnit}`
     : input.mode === 'multiple'
       ? `${bookNames.join(' · ')} 전체`
       : input.mode === 'old' ? '구약 39권 전체' : input.mode === 'new' ? '신약 27권 전체' : '성경 66권 전체';

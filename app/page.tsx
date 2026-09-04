@@ -110,7 +110,7 @@ const projectTemplates: ProjectTemplate[] = [
 ];
 
 const customPlanModes: Array<{ id: ReadingPlanMode; title: string; description: string }> = [
-  { id: 'single', title: '한 권 읽기', description: '한 권에서 시작 장과 마지막 장을 정해요.' },
+  { id: 'single', title: '한 권 읽기', description: '한 권에서 시작할 장·절과 끝낼 장·절을 정해요.' },
   { id: 'multiple', title: '여러 권 읽기', description: '고른 책은 모든 장을 순서대로 읽어요.' },
   { id: 'old', title: '구약 통독', description: '창세기부터 말라기까지 읽어요.' },
   { id: 'new', title: '신약 통독', description: '마태복음부터 요한계시록까지 읽어요.' },
@@ -481,7 +481,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [customProjectName, setCustomProjectName] = useState('창세기 읽기 계획');
   const [customBookId, setCustomBookId] = useState(bibleBooks[0].code);
   const [customStartChapter, setCustomStartChapter] = useState(1);
+  const [customStartVerse, setCustomStartVerse] = useState(1);
   const [customEndChapter, setCustomEndChapter] = useState(bibleBooks[0].chapters.length);
+  const [customEndVerse, setCustomEndVerse] = useState(bibleBooks[0].chapters.at(-1) ?? 1);
   const [customSelectedBookIds, setCustomSelectedBookIds] = useState<string[]>([]);
   const [customDurationDays, setCustomDurationDays] = useState(30);
   const [activeDailyPassageIndex, setActiveDailyPassageIndex] = useState(0);
@@ -2117,10 +2119,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     mode: customPlanMode,
     singleBookId: customBookId,
     startChapter: customStartChapter,
+    startVerse: customStartVerse,
     endChapter: customEndChapter,
+    endVerse: customEndVerse,
     selectedBookIds: customSelectedBookIds,
     durationDays: customDurationDays,
-  }), [customBookId, customDurationDays, customEndChapter, customPlanMode, customSelectedBookIds, customStartChapter]);
+  }), [customBookId, customDurationDays, customEndChapter, customEndVerse, customPlanMode, customSelectedBookIds, customStartChapter, customStartVerse]);
   const customPlanReady = customPlan.totalVerses > 0 && customPlan.days.length > 0;
   const collectedWordCards = wordCards.filter((card) => collectedCardIds.includes(card.id));
   const pendingWordCards = pendingCardAwards.flatMap((award) => {
@@ -2139,7 +2143,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const book = bibleBooks.find((item) => item.code === bookId) ?? bibleBooks[0];
     setCustomBookId(book.code);
     setCustomStartChapter(1);
+    setCustomStartVerse(1);
     setCustomEndChapter(book.chapters.length);
+    setCustomEndVerse(book.chapters.at(-1) ?? 1);
     setCustomProjectName(`${book.name} 읽기 계획`);
   };
 
@@ -2389,9 +2395,22 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   }} key={mode.id}><strong>{mode.title}</strong><small>{mode.description}</small></button>)}</div>
                   {customPlanMode === 'single' && <div className="custom-single-book-options">
                     <label><span>성경</span><select value={customBookId} onChange={(event) => changeCustomBook(event.target.value)}>{bibleBooks.map((book) => <option value={book.code} key={book.code}>{book.name}</option>)}</select></label>
-                    <div className="range-row">
-                      <label><span>시작 장</span><select value={customStartChapter} onChange={(event) => { const chapter = Number(event.target.value); setCustomStartChapter(chapter); if (chapter > customEndChapter) setCustomEndChapter(chapter); }}>{customBook.chapters.map((_, index) => <option value={index + 1} key={index}>{index + 1}장</option>)}</select></label>
-                      <label><span>마지막 장</span><select value={customEndChapter} onChange={(event) => { const chapter = Number(event.target.value); setCustomEndChapter(chapter); if (chapter < customStartChapter) setCustomStartChapter(chapter); }}>{customBook.chapters.map((_, index) => <option value={index + 1} key={index}>{index + 1}장</option>)}</select></label>
+                    <div className="passage-range-row">
+                      <fieldset>
+                        <legend>시작 위치</legend>
+                        <div className="range-row">
+                          <label><span>장</span><select value={customStartChapter} onChange={(event) => { const chapter = Number(event.target.value); const maxVerse = customBook.chapters[chapter - 1]; setCustomStartChapter(chapter); setCustomStartVerse((current) => Math.min(current, maxVerse)); if (chapter > customEndChapter) { setCustomEndChapter(chapter); setCustomEndVerse(maxVerse); } }}>{customBook.chapters.map((_, index) => <option value={index + 1} key={index}>{index + 1}장</option>)}</select></label>
+                          <label><span>절</span><select value={customStartVerse} onChange={(event) => { const verse = Number(event.target.value); setCustomStartVerse(verse); if (customStartChapter === customEndChapter && verse > customEndVerse) setCustomEndVerse(verse); }}>{Array.from({ length: customBook.chapters[customStartChapter - 1] }, (_, index) => <option value={index + 1} key={index}>{index + 1}절</option>)}</select></label>
+                        </div>
+                      </fieldset>
+                      <span className="passage-range-arrow" aria-hidden="true">→</span>
+                      <fieldset>
+                        <legend>마지막 위치</legend>
+                        <div className="range-row">
+                          <label><span>장</span><select value={customEndChapter} onChange={(event) => { const chapter = Number(event.target.value); const maxVerse = customBook.chapters[chapter - 1]; setCustomEndChapter(chapter); setCustomEndVerse((current) => Math.min(current, maxVerse)); if (chapter < customStartChapter) { setCustomStartChapter(chapter); setCustomStartVerse(1); } }}>{customBook.chapters.map((_, index) => <option value={index + 1} key={index}>{index + 1}장</option>)}</select></label>
+                          <label><span>절</span><select value={customEndVerse} onChange={(event) => { const verse = Number(event.target.value); setCustomEndVerse(verse); if (customStartChapter === customEndChapter && verse < customStartVerse) setCustomStartVerse(verse); }}>{Array.from({ length: customBook.chapters[customEndChapter - 1] }, (_, index) => <option value={index + 1} key={index}>{index + 1}절</option>)}</select></label>
+                        </div>
+                      </fieldset>
                     </div>
                   </div>}
                   {customPlanMode === 'multiple' && <div className="custom-multiple-books">
