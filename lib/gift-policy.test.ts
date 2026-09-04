@@ -22,7 +22,7 @@ describe('말씀 선물 정책', () => {
     expect(normalizeGiftRequest({ recipientUserId: 'friend-1', recordingIds: [], title: '선물', bgmId: 'none', bgmVolume: 0 })).toBeNull();
     expect(normalizeGiftRequest({ recipientUserId: 'friend-1', recordingIds: ['one'], title: '선물', bgmId: 'unknown', bgmVolume: 10 })).toBeNull();
     expect(normalizeGiftRequest({ recipientUserId: 'friend-1', recordingIds: ['one', 2], title: '선물', bgmId: 'none', bgmVolume: 10 })).toBeNull();
-    expect(normalizeGiftRequest({ recipientUserId: 'friend-1', recordingIds: Array.from({ length: 301 }, (_, index) => `r-${index}`), title: '선물', bgmId: 'none', bgmVolume: 0 })).toBeNull();
+    expect(normalizeGiftRequest({ recipientUserId: 'friend-1', recordingIds: Array.from({ length: 40_001 }, (_, index) => `r-${index}`), title: '선물', bgmId: 'none', bgmVolume: 0 })).toBeNull();
   });
 
   it('BGM 음량은 안전한 범위로 제한한다', () => {

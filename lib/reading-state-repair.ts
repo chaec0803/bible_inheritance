@@ -1,5 +1,6 @@
 import { getRequiredTaskReferences } from './journey-policy';
 import { normalizeReadingDay } from './reading-policy';
+import { getPlanPassageReferences, type ReadingPlanPassage } from './custom-reading-plan';
 
 type DailyProject = {
   id: string;
@@ -8,6 +9,7 @@ type DailyProject = {
   tasks?: string[];
   readingDay?: number;
   readingDayDate?: string;
+  dailySchedule?: ReadingPlanPassage[][];
 };
 
 export type ReadingState = {
@@ -50,7 +52,10 @@ export function repairDailyReadingState(
       readingDayDate: project.readingDayDate,
     });
     const task = project.tasks[readingDay - 1];
-    const required = task ? getRequiredTaskReferences(task, chapterCounts) : new Set<string>();
+    const scheduledPassages = project.dailySchedule?.[readingDay - 1];
+    const required = scheduledPassages?.length
+      ? getPlanPassageReferences(scheduledPassages)
+      : task ? getRequiredTaskReferences(task, chapterCounts) : new Set<string>();
     const timestamps = new Map<string, number>();
     recordings.forEach((recording) => {
       if (recording.projectId !== project.id) return;

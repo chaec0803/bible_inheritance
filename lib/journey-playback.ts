@@ -14,6 +14,7 @@ export function orderJourneyRecordings<T extends PlaybackRecording>(
   recordings: readonly T[],
   tasks: readonly string[],
   chapterCounts: Readonly<Record<string, readonly number[]>>,
+  orderedReferences?: readonly string[],
 ) {
   const latestByReference = new Map<string, T>();
   recordings.forEach((recording) => {
@@ -22,7 +23,7 @@ export function orderJourneyRecordings<T extends PlaybackRecording>(
   });
 
   const journeyOrder = new Map(
-    [...getRequiredJourneyReferences(tasks, chapterCounts)].map((reference, index) => [reference, index]),
+    [...(orderedReferences ?? getRequiredJourneyReferences(tasks, chapterCounts))].map((reference, index) => [reference, index]),
   );
 
   return [...latestByReference.values()].sort((left, right) => {

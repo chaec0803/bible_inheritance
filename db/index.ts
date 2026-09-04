@@ -73,7 +73,8 @@ export function ensureDbSchema() {
       chapter INTEGER NOT NULL,
       verse INTEGER NOT NULL,
       verse_text TEXT NOT NULL,
-      object_key TEXT NOT NULL UNIQUE,
+      source_recording_id TEXT,
+      object_key TEXT UNIQUE,
       mime_type TEXT NOT NULL,
       size_bytes INTEGER NOT NULL,
       duration_seconds INTEGER NOT NULL
@@ -124,6 +125,7 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gifts_one_unopened_per_pair ON gifts(sender_key, recipient_key) WHERE opened_at IS NULL'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_recordings_position ON gift_recordings(gift_id, position)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_gift ON gift_recordings(gift_id)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_source ON gift_recordings(source_recording_id)'),
     ]);
     await env.DB.prepare('PRAGMA optimize').run();
   }).catch((error) => {

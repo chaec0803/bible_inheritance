@@ -57,6 +57,14 @@ describe('녹음·저장·수정 회귀', () => {
     expect(audioRoute).toContain('eq(recordings.ownerKey, ownerKey)');
   });
 
+  it('완료된 여정과 장은 녹음·수정·전체 삭제를 잠근다', () => {
+    expect(page).toContain('currentUnitLocked');
+    expect(page).toContain('완료된 말씀은 더 이상 수정할 수 없어요');
+    expect(page).toContain('selectedLibraryUnitLocked');
+    expect(recordingsRoute).toContain('isRecordingMutationLocked');
+    expect(audioRoute).toContain('isRecordingMutationLocked');
+  });
+
   it('전체 재녹음 안내는 선택 범위의 첫 절을 정확히 표시한다', () => {
     const fullRetakeHandler = functionBody('const startFullRetake', 'const quitDailyJourney');
     expect(fullRetakeHandler).toContain('${passageStartVerse}절부터 새로 녹음해 주세요.');

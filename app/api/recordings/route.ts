@@ -3,6 +3,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
+import { isRecordingMutationLocked } from '@/lib/recording-lock-server';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
@@ -82,6 +83,10 @@ export async function POST(request: Request) {
     .select({ id: recordings.id, objectKey: recordings.objectKey })
     .from(recordings)
     .where(and(eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION), eq(recordings.projectId, projectId), eq(recordings.book, book), eq(recordings.chapter, chapter), eq(recordings.verse, verse)));
+
+  if (await isRecordingMutationLocked(ownerKey, { projectId, book, chapter, verse })) {
+    return Response.json({ error: '완료된 말씀은 더 이상 수정할 수 없어요.' }, { status: 409 });
+  }
 
   await env.FILES.put(objectKey, audio.stream(), {
     httpMetadata: { contentType: mimeType },

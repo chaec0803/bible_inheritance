@@ -14,7 +14,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     .first<{ id: string }>();
   if (!gift) return Response.json({ error: '선물을 찾을 수 없습니다.' }, { status: 404 });
 
-  const recordingResult = await getD1().prepare('SELECT object_key FROM gift_recordings WHERE gift_id = ? ORDER BY position')
+  const recordingResult = await getD1().prepare('SELECT object_key FROM gift_recordings WHERE gift_id = ? AND source_recording_id IS NULL AND object_key IS NOT NULL ORDER BY position')
     .bind(id)
     .all<{ object_key: string }>();
   const d1 = getD1();

@@ -4,6 +4,7 @@ import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 import { parseByteRange } from '@/lib/http-range';
+import { isRecordingMutationLocked } from '@/lib/recording-lock-server';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
 type RouteContext = {
@@ -53,12 +54,15 @@ export async function PUT(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const [existing] = await getDb()
-    .select({ objectKey: recordings.objectKey })
+    .select({ objectKey: recordings.objectKey, projectId: recordings.projectId, book: recordings.book, chapter: recordings.chapter, verse: recordings.verse })
     .from(recordings)
     .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .limit(1);
 
   if (!existing) return Response.json({ error: '교체할 녹음을 찾을 수 없습니다.' }, { status: 404 });
+  if (await isRecordingMutationLocked(ownerKey, { id, projectId: existing.projectId, book: existing.book, chapter: existing.chapter, verse: existing.verse })) {
+    return Response.json({ error: '완료된 말씀은 더 이상 수정할 수 없어요.' }, { status: 409 });
+  }
 
   const formData = await request.formData();
   const audio = formData.get('audio');
@@ -137,12 +141,15 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const [existing] = await getDb()
-    .select({ objectKey: recordings.objectKey })
+    .select({ objectKey: recordings.objectKey, projectId: recordings.projectId, book: recordings.book, chapter: recordings.chapter, verse: recordings.verse })
     .from(recordings)
     .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .limit(1);
 
   if (!existing) return Response.json({ error: '삭제할 녹음을 찾을 수 없습니다.' }, { status: 404 });
+  if (await isRecordingMutationLocked(ownerKey, { id, projectId: existing.projectId, book: existing.book, chapter: existing.chapter, verse: existing.verse })) {
+    return Response.json({ error: '완료된 말씀은 더 이상 수정하거나 삭제할 수 없어요.' }, { status: 409 });
+  }
 
   await getDb().delete(recordings).where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)));
   await env.FILES.delete(existing.objectKey);

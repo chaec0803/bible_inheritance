@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   authenticate: vi.fn(),
   ensureSchema: vi.fn(),
-  selected: [] as Array<{ objectKey: string; mimeType?: string }>,
+  selected: [] as Array<{ objectKey: string; mimeType?: string; projectId?: string; book?: string; chapter?: number; verse?: number }>,
   updated: [] as Array<Record<string, unknown>>,
   deletedWhere: vi.fn(),
   r2Head: vi.fn(),
   r2Get: vi.fn(),
   r2Put: vi.fn(),
   r2Delete: vi.fn(),
+  mutationLocked: vi.fn(),
 }));
 
 vi.mock('cloudflare:workers', () => ({
@@ -24,6 +25,7 @@ vi.mock('cloudflare:workers', () => ({
 }));
 
 vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate }));
+vi.mock('@/lib/recording-lock-server', () => ({ isRecordingMutationLocked: mocks.mutationLocked }));
 vi.mock('@/db', () => ({
   ensureDbSchema: mocks.ensureSchema,
   getDb: () => ({
@@ -57,7 +59,7 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
   beforeEach(() => {
     mocks.authenticate.mockReset().mockResolvedValue({ id: 'user-1' });
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
-    mocks.selected = [{ objectKey: 'user-1/recording-1', mimeType: 'audio/wav' }];
+    mocks.selected = [{ objectKey: 'user-1/recording-1', mimeType: 'audio/wav', projectId: 'free-시', book: '시편', chapter: 23, verse: 1 }];
     mocks.updated = [];
     mocks.deletedWhere.mockReset().mockResolvedValue(undefined);
     mocks.r2Head.mockReset().mockResolvedValue({ size: 1000 });
@@ -68,6 +70,7 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
     });
     mocks.r2Put.mockReset().mockResolvedValue(undefined);
     mocks.r2Delete.mockReset().mockResolvedValue(undefined);
+    mocks.mutationLocked.mockReset().mockResolvedValue(false);
   });
 
   it('아이폰 탐색 재생을 위한 byte range 응답을 반환한다', async () => {
@@ -104,6 +107,14 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
     expect((await GET(new Request('https://example.test/api/recordings/recording-1/audio'), context)).status).toBe(404);
     expect((await PUT(replacementRequest(), context)).status).toBe(404);
     expect((await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context)).status).toBe(404);
+    expect(mocks.r2Put).not.toHaveBeenCalled();
+    expect(mocks.r2Delete).not.toHaveBeenCalled();
+  });
+
+  it('완료되어 잠긴 말씀은 교체하거나 삭제하지 않는다', async () => {
+    mocks.mutationLocked.mockResolvedValue(true);
+    expect((await PUT(replacementRequest(), context)).status).toBe(409);
+    expect((await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context)).status).toBe(409);
     expect(mocks.r2Put).not.toHaveBeenCalled();
     expect(mocks.r2Delete).not.toHaveBeenCalled();
   });

@@ -56,4 +56,24 @@ describe('server-side daily reading repair', () => {
     const result = repairDailyReadingState({ activeProjects: [project] }, recordings, chapterCounts, '2026-09-03');
     expect(result.changed).toBe(false);
   });
+
+  it('나만의 계획은 하루에 여러 장이 있어도 모두 녹음한 뒤 다음 날로 넘긴다', () => {
+    const custom = {
+      ...project,
+      id: 'custom-plan',
+      readingDay: 1,
+      dailySchedule: [[
+        { code: '창', name: '창세기', chapter: 1, startVerse: 1, endVerse: 2 },
+        { code: '창', name: '창세기', chapter: 2, startVerse: 1, endVerse: 2 },
+      ]],
+    };
+    const recordings = [
+      { projectId: custom.id, book: '창세기', chapter: 1, verse: 1, createdAt: Date.parse('2026-09-02T01:00:00Z') },
+      { projectId: custom.id, book: '창세기', chapter: 1, verse: 2, createdAt: Date.parse('2026-09-02T01:00:00Z') },
+      { projectId: custom.id, book: '창세기', chapter: 2, verse: 1, createdAt: Date.parse('2026-09-02T01:00:00Z') },
+      { projectId: custom.id, book: '창세기', chapter: 2, verse: 2, createdAt: Date.parse('2026-09-02T01:00:00Z') },
+    ];
+    const result = repairDailyReadingState({ activeProjects: [custom] }, recordings, chapterCounts, '2026-09-03');
+    expect(result.state.activeProjects?.[0].readingDay).toBe(2);
+  });
 });

@@ -27,6 +27,6 @@ export function normalizeGiftRequest(input: unknown): GiftRequest | null {
   const rawVolume = typeof body.bgmVolume === 'number' && Number.isFinite(body.bgmVolume) ? body.bgmVolume : 12;
   const bgmVolume = Math.max(0, Math.min(100, Math.round(rawVolume)));
 
-  if (!recipientUserId || !title || !bgmId || recordingIds.length === 0 || recordingIds.length > 300) return null;
+  if (!recipientUserId || !title || !bgmId || recordingIds.length === 0 || recordingIds.length > 40_000) return null;
   return { recipientUserId, recordingIds, title, bgmId, bgmVolume };
 }

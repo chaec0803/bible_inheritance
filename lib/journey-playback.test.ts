@@ -31,4 +31,12 @@ describe('매일 말씀 여정 전체 이어듣기 순서', () => {
 
     expect(orderJourneyRecordings(recordings, ['창세기 1장 1절'], chapterCounts).map((item) => item.id)).toEqual(['newest']);
   });
+
+  it('나만의 읽기 계획은 저장된 명시적 말씀 순서대로 재생한다', () => {
+    const recordings = [
+      { id: 'exodus', book: '출애굽기', chapter: 1, verse: 1 },
+      { id: 'genesis', book: '창세기', chapter: 50, verse: 26 },
+    ];
+    expect(orderJourneyRecordings(recordings, [], {}, ['창세기-50-26', '출애굽기-1-1']).map((item) => item.id)).toEqual(['genesis', 'exodus']);
+  });
 });

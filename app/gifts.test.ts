@@ -12,10 +12,18 @@ const deleteRoute = readFileSync(new URL('./api/gifts/[id]/route.ts', import.met
 describe('말씀 선물 UI·데이터 회귀', () => {
   it('듣기 탭에서 현재 이어듣기 묶음과 선택한 BGM을 친구에게 보낸다', () => {
     expect(page).toContain('선물하기');
-    expect(page).toContain('playbackQueue.map((item) => item.id)');
+    expect(page).toContain('giftQueue.map((item) => item.id)');
     expect(page).toContain('bgmVolume={volume}');
     expect(dialog).toContain("fetch('/api/gifts'");
     expect(dialog).toContain("fetch('/api/friends'");
+  });
+
+  it('완료된 여정 전체 또는 완료된 자유 읽기 장만 선물 범위로 고른다', () => {
+    expect(page).toContain('여정을 완료하면 선물할 수 있어요');
+    expect(page).toContain('완료된 장만 선택할 수 있어요');
+    expect(page).toContain('giftableFreeChapterGroups');
+    expect(page).toContain('evaluateGiftSelection');
+    expect(page).toContain('disabled={!giftQueue.length || chapterPlaying}');
   });
 
   it('선물 탭에서 받은 선물을 이어듣고 MP3로 다운로드하고 삭제한다', () => {
@@ -74,6 +82,7 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(schema).toContain("thankYouNote: text('thank_you_note')");
     expect(schema).toContain("thankedAt: integer('thanked_at')");
     expect(schema).toContain("uniqueIndex('idx_gift_recordings_position')");
+    expect(schema).toContain("sourceRecordingId: text('source_recording_id')");
   });
 
   it('받은 사람이 선물을 삭제해도 보낸 선물 기록은 남긴다', () => {

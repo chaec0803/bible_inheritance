@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   inserted: [] as Array<Record<string, unknown>>,
   deletedWhere: vi.fn(),
   insertError: null as Error | null,
+  mutationLocked: vi.fn(),
 }));
 
 vi.mock('cloudflare:workers', () => ({
@@ -16,6 +17,7 @@ vi.mock('cloudflare:workers', () => ({
 }));
 
 vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate }));
+vi.mock('@/lib/recording-lock-server', () => ({ isRecordingMutationLocked: mocks.mutationLocked }));
 vi.mock('@/db', () => ({
   ensureDbSchema: mocks.ensureSchema,
   getDb: () => ({
@@ -57,6 +59,7 @@ describe('녹음 저장 API 통합 회귀', () => {
     mocks.existing = [];
     mocks.inserted = [];
     mocks.insertError = null;
+    mocks.mutationLocked.mockReset().mockResolvedValue(false);
   });
 
   it('인증된 사용자의 음원은 R2에, 메타데이터는 D1에 저장한다', async () => {
@@ -104,6 +107,13 @@ describe('녹음 저장 API 통합 회귀', () => {
     const empty = new FormData();
     empty.append('book', '시편');
     expect((await POST(new Request('https://example.test/api/recordings', { method: 'POST', body: empty }))).status).toBe(400);
+    expect(mocks.r2Put).not.toHaveBeenCalled();
+  });
+
+  it('완료되어 잠긴 말씀에는 새 녹음을 저장하지 않는다', async () => {
+    mocks.mutationLocked.mockResolvedValue(true);
+    const response = await POST(validRequest());
+    expect(response.status).toBe(409);
     expect(mocks.r2Put).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   r2Get: vi.fn(),
   r2Put: vi.fn(),
   r2Delete: vi.fn(),
+  completionContext: {
+    projects: [{ id: 'daily-1', title: '시편 묵상', kind: 'guided', tasks: ['시편 23편 1–2절'] }],
+    chapterCounts: { 시편: [6] },
+  },
 }));
 
 vi.mock('cloudflare:workers', () => ({
@@ -22,6 +26,7 @@ vi.mock('cloudflare:workers', () => ({
 }));
 vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate }));
 vi.mock('@/lib/friend-server', () => ({ ensureUserProfile: mocks.ensureProfile }));
+vi.mock('@/lib/recording-lock-server', () => ({ loadRecordingCompletionContext: async () => mocks.completionContext }));
 vi.mock('@/db', () => ({
   ensureDbSchema: mocks.ensureSchema,
   getD1: () => ({
@@ -72,8 +77,8 @@ describe('말씀 선물 API 통합 회귀', () => {
     mocks.friendship = { id: 'friendship-1' };
     mocks.unopenedGift = null;
     mocks.sourceRows = [
-      { id: 'r-1', book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', object_key: 'sender/r-1', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 3 },
-      { id: 'r-2', book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', object_key: 'sender/r-2', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 4 },
+      { id: 'r-1', project_id: 'daily-1', book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 3 },
+      { id: 'r-2', project_id: 'daily-1', book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 4 },
     ];
     mocks.giftRows = [];
     mocks.sentGiftRows = [];
@@ -85,15 +90,13 @@ describe('말씀 선물 API 통합 회귀', () => {
     mocks.r2Delete.mockReset().mockResolvedValue(undefined);
   });
 
-  it('친구에게 요청한 순서대로 녹음을 복사하고 선택 BGM과 함께 선물을 저장한다', async () => {
+  it('완료된 여정의 녹음을 말씀 순서로 참조하고 선택 BGM과 함께 선물을 저장한다', async () => {
     const response = await POST(sendRequest());
     expect(response.status).toBe(201);
-    expect(mocks.r2Get).toHaveBeenNthCalledWith(1, 'sender/r-2');
-    expect(mocks.r2Get).toHaveBeenNthCalledWith(2, 'sender/r-1');
-    expect(mocks.r2Put).toHaveBeenCalledTimes(2);
     expect(mocks.batch).toHaveBeenCalledOnce();
     const statements = mocks.batch.mock.calls[0][0] as Array<{ sql?: string }>;
     expect(statements).toHaveLength(3);
+    expect(mocks.r2Put).not.toHaveBeenCalled();
   });
 
   it('친구가 아니거나 소유하지 않은 녹음은 보낼 수 없다', async () => {
@@ -111,6 +114,12 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(response.status).toBe(409);
     expect((await response.json() as { error: string }).error).toContain('아직 열지 않았어요');
     expect(mocks.r2Put).not.toHaveBeenCalled();
+  });
+
+  it('완료되지 않은 일부 녹음만 골라서는 보낼 수 없다', async () => {
+    const response = await POST(sendRequest({ recordingIds: ['r-1'] }));
+    expect(response.status).toBe(409);
+    expect(mocks.batch).not.toHaveBeenCalled();
   });
 
   it('받은 사용자의 선물 목록에 발신자와 순서가 붙은 녹음을 반환한다', async () => {

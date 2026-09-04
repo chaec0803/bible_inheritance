@@ -105,7 +105,8 @@ export const giftRecordings = sqliteTable(
     chapter: integer('chapter').notNull(),
     verse: integer('verse').notNull(),
     verseText: text('verse_text').notNull(),
-    objectKey: text('object_key').notNull().unique(),
+    sourceRecordingId: text('source_recording_id'),
+    objectKey: text('object_key').unique(),
     mimeType: text('mime_type').notNull(),
     sizeBytes: integer('size_bytes').notNull(),
     durationSeconds: integer('duration_seconds').notNull(),
@@ -113,5 +114,6 @@ export const giftRecordings = sqliteTable(
   (table) => [
     uniqueIndex('idx_gift_recordings_position').on(table.giftId, table.position),
     index('idx_gift_recordings_gift').on(table.giftId),
+    index('idx_gift_recordings_source').on(table.sourceRecordingId),
   ],
 );

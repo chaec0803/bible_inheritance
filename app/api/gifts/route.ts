@@ -1,18 +1,19 @@
-import { env } from 'cloudflare:workers';
 import { ensureDbSchema, getD1 } from '@/db';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 import { ensureUserProfile } from '@/lib/friend-server';
 import { canonicalFriendPair } from '@/lib/friend-policy';
+import { evaluateGiftSelection } from '@/lib/gift-eligibility';
 import { normalizeGiftRequest } from '@/lib/gift-policy';
+import { loadRecordingCompletionContext } from '@/lib/recording-lock-server';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
 type SourceRecordingRow = {
   id: string;
+  project_id: string;
   book: string;
   chapter: number;
   verse: number;
   verse_text: string;
-  object_key: string;
   mime_type: string;
   size_bytes: number;
   duration_seconds: number;
@@ -172,57 +173,49 @@ export async function POST(request: Request) {
   }
 
   const sourceResult = await getD1().prepare(`SELECT
-    id, book, chapter, verse, verse_text, object_key, mime_type, size_bytes, duration_seconds
+    id, project_id, book, chapter, verse, verse_text, mime_type, size_bytes, duration_seconds
   FROM recordings
   WHERE owner_key = ? AND data_version = ?`)
     .bind(user.id, CURRENT_DATA_VERSION)
     .all<SourceRecordingRow>();
+  const completionContext = await loadRecordingCompletionContext(user.id);
+  const selection = evaluateGiftSelection({
+    recordings: sourceResult.results.map((recording) => ({ id: recording.id, projectId: recording.project_id, book: recording.book, chapter: recording.chapter, verse: recording.verse })),
+    projects: completionContext.projects,
+    selectedRecordingIds: giftRequest.recordingIds,
+    chapterCounts: completionContext.chapterCounts,
+  });
+  if (!selection.eligible) return Response.json({ error: selection.reason }, { status: selection.reason.includes('찾을 수 없') ? 404 : 409 });
   const sourceById = new Map(sourceResult.results.map((recording) => [recording.id, recording]));
-  const orderedSources = giftRequest.recordingIds.map((id) => sourceById.get(id));
-  if (orderedSources.some((recording) => !recording)) {
-    return Response.json({ error: '선물할 녹음 중 찾을 수 없는 항목이 있습니다.' }, { status: 404 });
-  }
-
-  const recordings = orderedSources as SourceRecordingRow[];
+  const recordings = selection.orderedRecordingIds.map((id) => sourceById.get(id)!).filter(Boolean);
   const totalSizeBytes = recordings.reduce((sum, recording) => sum + recording.size_bytes, 0);
-  if (totalSizeBytes > 500 * 1024 * 1024) return Response.json({ error: '한 선물은 500MB까지 보낼 수 있습니다.' }, { status: 413 });
 
   const giftId = crypto.randomUUID();
   const now = Date.now();
-  const copiedKeys: string[] = [];
-  const giftRecordings: Array<SourceRecordingRow & { id: string; objectKey: string; position: number }> = [];
+  const giftRecordings: Array<SourceRecordingRow & { id: string; position: number }> = recordings.map((recording, position) => ({ ...recording, id: crypto.randomUUID(), position }));
 
   try {
-    for (const [position, recording] of recordings.entries()) {
-      const source = await env.FILES.get(recording.object_key);
-      if (!source) throw new Error(`missing gift source: ${recording.id}`);
-      const copyId = crypto.randomUUID();
-      const objectKey = `gifts/${giftRequest.recipientUserId}/${giftId}/${String(position + 1).padStart(3, '0')}-${copyId}`;
-      await env.FILES.put(objectKey, source.body, {
-        httpMetadata: { contentType: recording.mime_type },
-        customMetadata: { giftId, senderId: user.id, sourceRecordingId: recording.id },
-      });
-      copiedKeys.push(objectKey);
-      giftRecordings.push({ ...recording, id: copyId, objectKey, position });
-    }
-
     const d1 = getD1();
     const statements = [
       d1.prepare(`INSERT INTO gifts (
         id, sender_key, recipient_key, title, bgm_id, bgm_volume,
         recording_count, total_size_bytes, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(giftId, user.id, giftRequest.recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now),
+        .bind(giftId, user.id, giftRequest.recipientUserId, selection.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now),
       ...giftRecordings.map((recording) => d1.prepare(`INSERT INTO gift_recordings (
         id, gift_id, position, book, chapter, verse, verse_text,
-        object_key, mime_type, size_bytes, duration_seconds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(recording.id, giftId, recording.position, recording.book, recording.chapter, recording.verse, recording.verse_text, recording.objectKey, recording.mime_type, recording.size_bytes, recording.duration_seconds)),
+        source_recording_id, object_key, mime_type, size_bytes, duration_seconds
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
+        .bind(recording.id, giftId, recording.position, recording.book, recording.chapter, recording.verse, recording.verse_text, sourceById.get(selection.orderedRecordingIds[recording.position])!.id, recording.mime_type, recording.size_bytes, recording.duration_seconds)),
     ];
-    await d1.batch(statements);
-    return Response.json({ gift: { id: giftId, title: giftRequest.title, recordingCount: recordings.length } }, { status: 201 });
+    for (let offset = 0; offset < statements.length; offset += 500) await d1.batch(statements.slice(offset, offset + 500));
+    return Response.json({ gift: { id: giftId, title: selection.title, recordingCount: recordings.length } }, { status: 201 });
   } catch (error) {
-    if (copiedKeys.length) await env.FILES.delete(copiedKeys).catch(() => undefined);
+    const d1 = getD1();
+    await d1.batch([
+      d1.prepare('DELETE FROM gift_recordings WHERE gift_id = ?').bind(giftId),
+      d1.prepare('DELETE FROM gifts WHERE id = ?').bind(giftId),
+    ]).catch(() => undefined);
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes('idx_gifts_one_unopened_per_pair') || errorMessage.includes('UNIQUE constraint failed: gifts.sender_key, gifts.recipient_key')) {
       return Response.json({ error: '친구가 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });
