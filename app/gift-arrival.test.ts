@@ -29,6 +29,8 @@ describe('앱 전역 말씀 선물 도착 경험', () => {
     expect(page).toContain('initialReceivedGiftId={selectedReceivedGiftId}');
     expect(page).toContain("fetch(`/api/gifts/${arrivals[0].id}/open`, { method: 'PATCH' })");
     expect(panel).toContain('initialReceivedGiftId');
-    expect(panel).toContain('setJustOpenedGiftId(initialReceivedGiftId)');
+    expect(panel).toContain('setJustOpenedGiftId(initialGift.id)');
+    expect(panel).toContain('initialGift.hasLetter');
+    expect(panel).toContain('setLetterPopupGiftId(initialGift.id)');
   });
 });

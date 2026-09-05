@@ -1406,6 +1406,15 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
 .gift-letter-envelope blockquote { margin: 0; padding: 15px; border-radius: 14px; background: #fff; color: #344b59; line-height: 1.75; white-space: pre-wrap; }
 .gift-voice-letter { display: grid; gap: 5px; }
 .gift-voice-letter small { color: #7c898e; }
+.gift-letter-reopen { margin: 11px 0; padding: 9px 13px; display: inline-flex; align-items: center; gap: 6px; color: #805d28; background: #fff8e8; border: 1px solid #e0c99f; border-radius: 999px; font-weight: 800; cursor: pointer; }
+.gift-letter-popup-backdrop { z-index: 190; }
+.gift-letter-popup { position: relative; width: min(440px, 100%); max-height: calc(100dvh - 36px); margin: auto; padding: 34px 30px 28px; overflow-y: auto; color: var(--ink); background: linear-gradient(155deg, #fffdf7, #fff6dc 62%, #f1f6ec); border: 1px solid rgba(203, 155, 64, .35); border-radius: 28px; box-shadow: 0 30px 90px rgba(20, 34, 28, .34); text-align: center; }
+.gift-letter-popup-icon { width: 60px; height: 60px; margin: 0 auto 16px; display: grid; place-items: center; color: #fffaf0; background: linear-gradient(145deg, #d6a544, #b77a2f); border-radius: 20px; box-shadow: 0 12px 30px rgba(183, 122, 47, .25); }
+.gift-letter-popup h2 { margin: 6px 0 11px; font-size: clamp(23px, 5vw, 29px); }
+.gift-letter-popup > p:not(.eyebrow) { margin: 0; color: var(--muted); line-height: 1.7; }
+.gift-letter-popup blockquote { margin: 18px 0 0; padding: 20px; color: #4f3b2c; background: rgba(255,255,255,.72); border: 1px solid #ead9b8; border-radius: 16px; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 17px; line-height: 1.8; white-space: pre-wrap; }
+.gift-letter-popup-primary { width: 100%; min-height: 50px; margin-top: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: white; background: linear-gradient(135deg, #b47a30, #cc9a3f); border: 0; border-radius: 14px; font-weight: 900; cursor: pointer; }
+.gift-letter-popup-primary:disabled { opacity: .58; cursor: wait; }
 .sent-gift-letter-tag { margin: 10px 0; display: flex; align-items: center; gap: 6px; color: #805d28; font-size: 13px; }
 @media (max-width: 560px) { .gift-letter-types { grid-template-columns: 1fr; } .gift-letter-voice-ready { align-items: stretch; flex-direction: column; } .gift-letter-voice-ready > button { justify-content: center; } }
 .gift-selected-friends { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: #f3f7f4; }

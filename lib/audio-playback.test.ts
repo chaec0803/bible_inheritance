@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { toggleAudioPlayback } from './audio-playback';
+import { isPlaybackPauseInterruption, toggleAudioPlayback } from './audio-playback';
 
 describe('절별 녹음 듣기 버튼', () => {
   it('정지 상태면 오디오 재생을 시작한다', async () => {
@@ -18,5 +18,15 @@ describe('절별 녹음 듣기 버튼', () => {
     const error = new Error('play rejected');
     const audio = { paused: true, pause: vi.fn(), play: vi.fn().mockRejectedValue(error) };
     await expect(toggleAudioPlayback(audio, false)).rejects.toBe(error);
+  });
+});
+
+describe('연속 재생 일시정지 경합', () => {
+  it('play 직후 pause로 발생한 AbortError는 재생 실패로 취급하지 않는다', () => {
+    expect(isPlaybackPauseInterruption({ name: 'AbortError' })).toBe(true);
+  });
+
+  it('실제 재생 오류는 숨기지 않는다', () => {
+    expect(isPlaybackPauseInterruption(new Error('decode failed'))).toBe(false);
   });
 });

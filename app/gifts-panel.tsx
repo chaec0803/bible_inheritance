@@ -5,6 +5,7 @@ import { ChevronLeft, CircleStop, Download, Gift, Headphones, List, LoaderCircle
 import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
 import { THANK_YOU_TEMPLATES } from '@/lib/gift-thank-you';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
+import { isPlaybackPauseInterruption } from '@/lib/audio-playback';
 
 type GiftRecording = {
   id: string;
@@ -102,6 +103,8 @@ export function GiftsPanel({
   const [detailSentGiftId, setDetailSentGiftId] = useState<string | null>(initialSentGiftId ?? null);
   const [sendingThankYou, setSendingThankYou] = useState(false);
   const [openingLetterId, setOpeningLetterId] = useState<string | null>(null);
+  const [letterPopupGiftId, setLetterPopupGiftId] = useState<string | null>(null);
+  const [letterPopupStage, setLetterPopupStage] = useState<'notice' | 'content'>('notice');
   const voiceRef = useRef<HTMLAudioElement | null>(null);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const sentGiftsRef = useRef<SentGift[]>([]);
@@ -137,10 +140,16 @@ export function GiftsPanel({
           setSentGifts(nextSent);
           sentGiftsRef.current = nextSent;
           setGiftVolumes(Object.fromEntries(nextReceived.map((gift) => [gift.id, gift.bgmVolume])));
-          if (initialReceivedGiftId && nextReceived.some((gift) => gift.id === initialReceivedGiftId)) {
-            setJustOpenedGiftId(initialReceivedGiftId);
-            setDetailGiftId(initialReceivedGiftId);
-            setOpenLists([initialReceivedGiftId]);
+          const initialGift = initialReceivedGiftId ? nextReceived.find((gift) => gift.id === initialReceivedGiftId) : null;
+          if (initialGift) {
+            setJustOpenedGiftId(initialGift.id);
+            if (initialGift.hasLetter) {
+              setLetterPopupGiftId(initialGift.id);
+              setLetterPopupStage(initialGift.letterOpenedAt ? 'content' : 'notice');
+            } else {
+              setDetailGiftId(initialGift.id);
+              setOpenLists([initialGift.id]);
+            }
           }
           if (initialReceivedGiftId) onInitialReceivedHandled?.();
         }
@@ -236,7 +245,8 @@ export function GiftsPanel({
     } else if (bgmAudio && bgm.audioSrc && bgmAudio.paused) {
       playRequests.push(bgmAudio.play());
     }
-    void Promise.all(playRequests).catch(() => {
+    void Promise.all(playRequests).catch((error: unknown) => {
+      if (isPlaybackPauseInterruption(error)) return;
       stopPlayback();
       setMessage('선물 재생을 시작하지 못했어요. 다시 눌러 주세요.');
     });
@@ -282,8 +292,13 @@ export function GiftsPanel({
       if (!response.ok) throw new Error(payload.error ?? '선물을 열지 못했어요.');
       await refresh();
       setJustOpenedGiftId(gift.id);
-      setDetailGiftId(gift.id);
-      setOpenLists((current) => current.includes(gift.id) ? current : [...current, gift.id]);
+      if (gift.hasLetter) {
+        setLetterPopupGiftId(gift.id);
+        setLetterPopupStage('notice');
+      } else {
+        setDetailGiftId(gift.id);
+        setOpenLists((current) => current.includes(gift.id) ? current : [...current, gift.id]);
+      }
       setMessage(`${gift.senderNickname}님의 선물을 열었어요.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '선물을 열지 못했어요.');
@@ -398,12 +413,23 @@ export function GiftsPanel({
         letterMimeType: payload.letter!.mimeType,
         letterDurationSeconds: payload.letter!.durationSeconds,
       } : candidate));
+      setLetterPopupStage('content');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '쪽지를 열지 못했어요.');
     } finally {
       setOpeningLetterId(null);
     }
   };
+
+  const closeLetterPopup = () => {
+    if (!letterPopupGiftId) return;
+    setDetailGiftId(letterPopupGiftId);
+    setOpenLists((current) => current.includes(letterPopupGiftId) ? current : [...current, letterPopupGiftId]);
+    setLetterPopupGiftId(null);
+    setLetterPopupStage('notice');
+  };
+
+  const letterPopupGift = receivedGifts.find((gift) => gift.id === letterPopupGiftId) ?? null;
 
   return (
     <section className="gifts-section" aria-labelledby="gifts-title">
@@ -431,10 +457,7 @@ export function GiftsPanel({
                 <button type="button" disabled={Boolean(openingGiftId)} onClick={() => void openGift(gift)}>{openingGiftId === gift.id ? <LoaderCircle className="spin" size={18} /> : <Gift size={18} />}{openingGiftId === gift.id ? '선물 여는 중' : '선물 열기'}</button>
               </div> : detailOpen ? <>
                 <div className="gift-card-tags"><span><Headphones size={13} /> {gift.recordingCount}개 녹음</span><span><Music2 size={13} /> {giftBgm.name}</span></div>
-                {gift.hasLetter && <section className={`gift-letter-envelope ${gift.letterOpenedAt ? 'opened' : ''}`}>
-                  <div><MessageCircle size={20} /><span><strong>함께 온 쪽지가 있어요</strong><small>{gift.letterOpenedAt ? (gift.letterType === 'voice' ? '목소리로 전한 마음' : '글로 전한 마음') : '직접 열어보기 전까지 내용은 비밀이에요.'}</small></span></div>
-                  {!gift.letterOpenedAt ? <button type="button" disabled={openingLetterId === gift.id} onClick={() => void openLetter(gift)}>{openingLetterId === gift.id ? <LoaderCircle className="spin" size={16} /> : <Gift size={16} />}{openingLetterId === gift.id ? '쪽지 여는 중' : '쪽지 열어보기'}</button> : gift.letterType === 'text' ? <blockquote>{gift.letterText}</blockquote> : <div className="gift-voice-letter">{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls src={`/api/gifts/${gift.id}/letter/audio`} /><small>{gift.letterDurationSeconds ? `${gift.letterDurationSeconds}초 음성 편지` : '음성 편지'}</small></div>}
-                </section>}
+                {gift.hasLetter && <button className="gift-letter-reopen" type="button" onClick={() => { setLetterPopupGiftId(gift.id); setLetterPopupStage(gift.letterOpenedAt ? 'content' : 'notice'); }}><MessageCircle size={17} /> 쪽지 다시 열기</button>}
                 {giftBgm.audioSrc && <div className="gift-volume-control">
                   <span><Volume2 size={16} /> 선물 BGM 음량 <strong>{giftVolume}%</strong></span>
                   <div className="gift-volume-input-row">
@@ -457,7 +480,7 @@ export function GiftsPanel({
                 </div>}
                 {isActive && activeRecording && <div className="gift-now-playing"><small>NOW PLAYING · {activeIndex + 1}/{gift.recordings.length}</small><strong>{activeRecording.verseText}</strong><span>{activeRecording.book} {activeRecording.chapter}{activeRecording.book === '시편' ? '편' : '장'} {activeRecording.verse}절</span></div>}
                 <div className="gift-primary-actions">
-                  {!isActive ? <button type="button" onClick={() => startPlayback(gift)}><Play size={17} /> 이어듣기</button> : <><button type="button" onClick={paused ? resumePlayback : pausePlayback}>{paused ? <Play size={17} /> : <Pause size={17} />}{paused ? '계속 듣기' : '일시정지'}</button><button className="secondary" type="button" onClick={stopPlayback}><CircleStop size={17} /> 종료</button></>}
+                  {!isActive ? <button type="button" onClick={() => startPlayback(gift)}><Play size={17} /> 들어보기</button> : <><button type="button" onClick={paused ? resumePlayback : pausePlayback}>{paused ? <Play size={17} /> : <Pause size={17} />}{paused ? '계속 듣기' : '일시정지'}</button><button className="secondary" type="button" onClick={stopPlayback}><CircleStop size={17} /> 종료</button></>}
                 </div>
                 <button className="gift-list-toggle" type="button" onClick={() => setOpenLists((current) => current.includes(gift.id) ? current.filter((id) => id !== gift.id) : [...current, gift.id])} aria-expanded={listOpen}><List size={16} /> 녹음 목록 {listOpen ? '접기' : '보기'}</button>
                 {listOpen && <div className="gift-recording-list">{gift.recordings.map((recording, index) => <button className={isActive && index === activeIndex ? 'playing' : ''} type="button" onClick={() => playPosition(gift, index, !isActive)} key={recording.id}><span>{recording.book} {recording.chapter}{recording.book === '시편' ? '편' : '장'} · {recording.verse}절</span><small>{isActive && index === activeIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>}
@@ -489,7 +512,7 @@ export function GiftsPanel({
       )}
 
       {activeGift && activeRecording && <div className="continuous-player-backdrop" role="presentation"><dialog className="continuous-player-modal" open aria-labelledby="gift-player-title">
-        <button className="continuous-player-close" type="button" onClick={stopPlayback} aria-label="선물 이어듣기 닫기"><X size={22} /></button>
+        <button className="continuous-player-close" type="button" onClick={stopPlayback} aria-label="선물 들어보기 닫기"><X size={22} /></button>
         <p className="eyebrow">GIFT PLAYBACK · {activeGift.senderNickname}님으로부터</p>
         <div className="continuous-player-progress"><span style={{ width: `${((activeIndex + 1) / activeGift.recordings.length) * 100}%` }} /></div>
         <small>{activeIndex + 1} / {activeGift.recordings.length} · {formatGiftDate(activeGift.createdAt)}</small>
@@ -506,6 +529,21 @@ export function GiftsPanel({
       <audio ref={voiceRef} onEnded={handleEnded} />
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 배경음악은 음성 콘텐츠가 아닙니다. */}
       <audio ref={bgmRef} />
+
+      {letterPopupGift && <div className="gift-dialog-backdrop gift-letter-popup-backdrop" role="presentation"><dialog className="gift-letter-popup" open aria-labelledby="gift-letter-popup-title">
+        <span className="gift-letter-popup-icon"><MessageCircle size={27} /></span>
+        {letterPopupStage === 'notice' && !letterPopupGift.letterOpenedAt ? <>
+          <p className="eyebrow">A LETTER FOR YOU</p>
+          <h2 id="gift-letter-popup-title">함께 온 쪽지가 있습니다</h2>
+          <p>{letterPopupGift.senderNickname}님이 말씀과 함께 마음을 전했어요.</p>
+          <button className="gift-letter-popup-primary" type="button" disabled={openingLetterId === letterPopupGift.id} onClick={() => void openLetter(letterPopupGift)}>{openingLetterId === letterPopupGift.id ? <LoaderCircle className="spin" size={17} /> : <Gift size={17} />}{openingLetterId === letterPopupGift.id ? '쪽지 여는 중' : '쪽지 열기'}</button>
+        </> : <>
+          <p className="eyebrow">함께 온 마음</p>
+          <h2 id="gift-letter-popup-title">{letterPopupGift.letterType === 'voice' ? '목소리로 전한 쪽지' : '글로 전한 쪽지'}</h2>
+          {letterPopupGift.letterType === 'text' ? <blockquote>{letterPopupGift.letterText}</blockquote> : <div className="gift-voice-letter">{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls src={`/api/gifts/${letterPopupGift.id}/letter/audio`} /><small>{letterPopupGift.letterDurationSeconds ? `${letterPopupGift.letterDurationSeconds}초 음성 편지` : '음성 편지'}</small></div>}
+          <button className="gift-letter-popup-primary" type="button" onClick={closeLetterPopup}>확인</button>
+        </>}
+      </dialog></div>}
 
       {confirmDeleteGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-delete-dialog" open aria-labelledby="gift-delete-title"><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)} aria-label="삭제 확인 닫기"><X size={20} /></button><span><Trash2 size={25} /></span><h2 id="gift-delete-title">‘{confirmDeleteGift.title}’ 선물을 삭제할까요?</h2><p>삭제하면 선물함과 다운로드 파일에서 모두 사라지고 복구할 수 없어요.</p><div><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)}>돌아가기</button><button className="delete" type="button" onClick={() => void deleteGift()} disabled={Boolean(deletingGiftId)}>{deletingGiftId ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{deletingGiftId ? '삭제 중' : '선물 삭제'}</button></div></dialog></div>}
       {confirmDeleteSentGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-delete-dialog" open aria-labelledby="gift-sent-delete-title"><button type="button" onClick={() => setConfirmDeleteSentGift(null)} disabled={Boolean(deletingGiftId)} aria-label="보낸 선물 삭제 확인 닫기"><X size={20} /></button><span><Trash2 size={25} /></span><h2 id="gift-sent-delete-title">‘{confirmDeleteSentGift.title}’을 보낸 목록에서 삭제할까요?</h2><p>내 보낸 선물함에서만 사라져요. 받는 사람의 선물은 그대로 유지돼요.</p><div><button type="button" onClick={() => setConfirmDeleteSentGift(null)} disabled={Boolean(deletingGiftId)}>돌아가기</button><button className="delete" type="button" onClick={() => void deleteSentGift()} disabled={Boolean(deletingGiftId)}>{deletingGiftId ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{deletingGiftId ? '삭제 중' : '보낸 목록에서 삭제'}</button></div></dialog></div>}

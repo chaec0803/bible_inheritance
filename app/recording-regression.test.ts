@@ -43,6 +43,19 @@ describe('녹음·저장·수정 회귀', () => {
     expect(saveHandler).toContain("fetch('/api/recordings', { method: 'POST'");
   });
 
+  it('다음 절 이동은 불필요한 전체 화면 상태 갱신 없이 즉시 반영한다', () => {
+    const moveHandler = functionBody('const moveContinuousVerse', 'const completeContinuousVerse');
+    expect(moveHandler).toContain('flushSync(() => setVerseIndex(safeIndex))');
+    expect(moveHandler).not.toContain('setContinuousBoundaries');
+  });
+
+  it('여기까지 녹음은 저장 처리 전에 즉시 종료 상태를 보여준다', () => {
+    const stopHandler = functionBody('const stopContinuousAndSaveCurrent', 'useEffect(() => {');
+    expect(stopHandler).toContain('setRecording(false)');
+    expect(stopHandler).toContain('setSavingLibrary(true)');
+    expect(stopHandler.indexOf('setRecording(false)')).toBeLessThan(stopHandler.indexOf('mediaRecorderRef.current.stop()'));
+  });
+
   it('녹음은 무압축 WAV가 아니라 고음질 MP4로 압축해 저장한다', () => {
     expect(page).toContain('encodeAudioBufferSegmentAsMp4');
     expect(page).toContain("{ type: 'audio/mp4' }");

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Archive, ArrowRight, AudioLines, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, CircleStop, Cloud, Gift, Headphones, Home, List, LoaderCircle, LogOut, Mic, Moon, Music2, Pause, Play, RotateCcw, Search, Sparkles, Sun, Target, Trash2, Users, Volume2, X } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
 import { normalizeReadingDay } from '@/lib/reading-policy';
@@ -627,7 +628,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [passageVerses, setPassageVerses] = useState(defaultVerses);
   const [recording, setRecording] = useState(false);
   const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>('continuous');
-  const [, setContinuousBoundaries] = useState<ContinuousVerseBoundary[]>([]);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => defaultVerses.map(() => null));
@@ -783,10 +783,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         transitionSource: source,
       };
       continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-      setContinuousBoundaries(continuousBoundariesRef.current);
       continuousVerseStartedAtRef.current = now;
       continuousVerseIndexRef.current = safeIndex;
-      setVerseIndex(safeIndex);
+      flushSync(() => setVerseIndex(safeIndex));
     },
     [passageVerses.length, verseIndex],
   );
@@ -805,7 +804,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       transitionSource: 'manual',
     };
     continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-    setContinuousBoundaries(continuousBoundariesRef.current);
+    setRecording(false);
+    setSavingLibrary(true);
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
     setNotice('마지막 절까지 읽었어요. 완료한 절을 저장하고 있어요.');
   }, [moveContinuousVerse, passageVerses.length, recording, recordingMode, verseIndex]);
@@ -820,7 +820,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       transitionSource: 'manual',
     };
     continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-    setContinuousBoundaries(continuousBoundariesRef.current);
+    setRecording(false);
+    setSavingLibrary(true);
     mediaRecorderRef.current.stop();
     setNotice('현재 절까지 저장하고 있어요.');
   }, [recording, recordingMode, verseIndex]);
@@ -2188,7 +2189,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           continuousVerseIndexRef.current = targetVerseIndex;
           continuousRecordingGroupIdRef.current = crypto.randomUUID();
           continuousBoundariesRef.current = [];
-          setContinuousBoundaries([]);
           setVerseIndex(targetVerseIndex);
         }
       };
@@ -2207,7 +2207,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         mediaRecorderRef.current = null;
         setRecording(false);
 
-        if (discardRecordingRef.current || chunks.length === 0) return;
+        if (discardRecordingRef.current || chunks.length === 0) {
+          setSavingLibrary(false);
+          return;
+        }
 
         let completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
         if (recordingMode === 'continuous') {
@@ -2218,7 +2221,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             transitionSource: 'stop',
           };
           continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== continuousVerseIndexRef.current), finalBoundary];
-          setContinuousBoundaries(continuousBoundariesRef.current);
           completedContinuousBoundaries = [...continuousBoundariesRef.current];
         }
 

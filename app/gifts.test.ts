@@ -67,7 +67,7 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(page).toContain("navigateTo('gifts')");
     expect(page).toContain("appTab === 'gifts' && (");
     expect(page).toContain('<GiftsPanel');
-    expect(panel).toContain('이어듣기');
+    expect(panel).toContain('들어보기');
     expect(panel).toContain('다운로드');
     expect(panel).toContain('createGiftMp4');
     expect(panel).toContain('MP4 만드는 중');
@@ -127,12 +127,27 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('openingGiftId');
   });
 
-  it('수신자는 쪽지가 있다는 사실만 본 뒤 직접 열어 텍스트나 음성을 확인한다', () => {
-    expect(panel).toContain('함께 온 쪽지가 있어요');
-    expect(panel).toContain('쪽지 열어보기');
+  it('선물을 열면 쪽지 안내 팝업을 먼저 거치고 확인 후 선물 상세를 보여준다', () => {
+    expect(panel).toContain('letterPopupGiftId');
+    expect(panel).toContain('함께 온 쪽지가 있습니다');
+    expect(panel).toContain('쪽지 열기');
+    expect(panel).toContain('쪽지 다시 열기');
+    expect(panel).toContain('gift-letter-popup-title');
+    expect(panel).toContain('setDetailGiftId(letterPopupGiftId)');
+    expect(panel).toContain('setLetterPopupGiftId(null)');
     expect(panel).toContain('/letter/open`');
     expect(panel).toContain('/letter/audio`');
     expect(panel).toContain('letterOpenedAt');
+  });
+
+  it('받은 선물 재생 동작은 이어듣기 대신 들어보기로 안내한다', () => {
+    expect(panel).toContain('들어보기');
+    expect(panel).not.toContain('이어듣기');
+  });
+
+  it('재생 시작 직후 일시정지로 발생한 AbortError가 플레이어를 종료하지 않는다', () => {
+    expect(panel).toContain('isPlaybackPauseInterruption(error)');
+    expect(panel).toContain('if (isPlaybackPauseInterruption(error)) return;');
   });
 
   it('선물을 열면 읽은 목록으로 갑자기 보내지 않고 그 자리에서 상세와 녹음 목록을 연다', () => {
