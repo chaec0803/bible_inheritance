@@ -151,6 +151,15 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('녹음을 저장하지 못했어요');
   });
 
+  it('다음 절 버튼을 누르는 즉시 본문을 먼저 바꾸고 중복 탭을 막는다', () => {
+    const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
+    const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
+    const handler = studio.slice(handlerStart, handlerEnd);
+    expect(handler).toContain('advancingRef.current = true');
+    expect(handler).toContain('setDraft(optimisticDraft)');
+    expect(handler.indexOf('setDraft(optimisticDraft)')).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
+  });
+
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {
     expect(studio).toContain('전체 미리 듣기');
     expect(studio).toContain('이 절 다시 녹음');

@@ -1,6 +1,7 @@
 'use client';
 /* oxlint-disable jsx-a11y/media-has-caption -- verse text is displayed beside each spoken recording */
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   ArrowRight,
   BookHeart,
@@ -164,6 +165,7 @@ export function GiftStudio({
   const fullPreviewVoiceRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewBgmRef = useRef<HTMLAudioElement | null>(null);
   const autoContinueRef = useRef(false);
+  const advancingRef = useRef(false);
   const continuousBoundariesRef = useRef<number[]>([]);
 
   const refresh = () =>
@@ -381,13 +383,24 @@ export function GiftStudio({
     startedRef.current = Date.now();
     setSeconds(0);
     recorder.start();
+    advancingRef.current = false;
     setRecording(true);
   }
   const finishCurrentVerseAndContinue = () => {
+    if (advancingRef.current || !draft || draft.nextPosition == null) return;
+    const position = draft.nextPosition;
+    const hasNext = position < draft.items.length - 1;
     continuousBoundariesRef.current.push(Date.now());
-    autoContinueRef.current = Boolean(
-      draft && draft.nextPosition !== draft.items.length - 1,
-    );
+    autoContinueRef.current = hasNext;
+    if (hasNext) {
+      advancingRef.current = true;
+      const optimisticDraft: Draft = {
+        ...draft,
+        nextPosition: position + 1,
+        items: draft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
+      };
+      flushSync(() => setDraft(optimisticDraft));
+    }
     recorderRef.current?.stop();
   };
   const bgmSrc = (id: string) =>
