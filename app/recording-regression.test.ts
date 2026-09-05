@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 const recordingsRoute = readFileSync(new URL('./api/recordings/route.ts', import.meta.url), 'utf8');
 const audioRoute = readFileSync(new URL('./api/recordings/[id]/audio/route.ts', import.meta.url), 'utf8');
 
@@ -10,6 +10,22 @@ function functionBody(startMarker: string, endMarker: string) {
 }
 
 describe('녹음·저장·수정 회귀', () => {
+  it('리버브 선택과 효과 처리를 제공하지 않고 원음으로 녹음한다', () => {
+    expect(page).not.toContain("const reverbOptions =");
+    expect(page).not.toContain("const [reverb, setReverb]");
+    expect(page).not.toContain('<legend>리버브</legend>');
+    expect(page).not.toContain("formData.append('reverb'");
+    expect(page).not.toContain('createRecordingAudioGraph(stream, reverb)');
+  });
+
+  it('범위 녹음을 보관함에서 확인한 뒤 여정을 저장해 완료할 수 있다', () => {
+    expect(page).toContain('여정 저장하기');
+    expect(page).toContain('recordingCompleteJourneyIds.has(activeProject.id)');
+    expect(page).toContain('requestJourneyCompletion');
+    expect(page).toContain('setConfirmJourneyCompletion(true)');
+    expect(page).toContain('saveCompletedJourney(Date.now());');
+  });
+
   it('이어 녹음 타이머와 절별 녹음 타이머가 동시에 실행되지 않는다', () => {
     expect(page).toContain("if (!recording || recordingMode !== 'continuous') return;");
     expect(page).toContain("if (!recording || recordingMode === 'continuous') return;");
@@ -25,6 +41,13 @@ describe('녹음·저장·수정 회귀', () => {
     expect(saveHandler).toContain("formData.append('recordingGroupId'");
     expect(saveHandler).toContain("formData.append('recordingMode', 'continuous')");
     expect(saveHandler).toContain("fetch('/api/recordings', { method: 'POST'");
+  });
+
+  it('녹음은 무압축 WAV가 아니라 고음질 MP4로 압축해 저장한다', () => {
+    expect(page).toContain('encodeAudioBufferSegmentAsMp4');
+    expect(page).toContain("{ type: 'audio/mp4' }");
+    expect(page).toContain('.mp4`');
+    expect(page).not.toContain('encodeAudioBufferAsWav(decoded');
   });
 
   it('저장·마이크 요청 중에는 녹음 버튼을 다시 누를 수 없다', () => {
@@ -49,11 +72,11 @@ describe('녹음·저장·수정 회귀', () => {
     expect(recordingsRoute).toContain('await Promise.all(existing.map((item) => env.FILES.delete(item.objectKey)))');
   });
 
-  it('절별 수정은 기존 파일을 먼저 지운 뒤 같은 절의 수정 모드로 이동한다', () => {
+  it('절별 수정은 기존 파일을 즉시 지운 뒤 같은 절의 수정 모드로 이동한다', () => {
     const retakeHandler = functionBody('const startRetake', 'const startFullRetake');
     expect(retakeHandler).toContain("method: 'DELETE'");
-    expect(retakeHandler).toContain("setRecordingMode('verse')");
     expect(retakeHandler).toContain('setReplacingRecording(item)');
+    expect(retakeHandler).toContain("setRecordingMode('verse')");
     expect(audioRoute).toContain('eq(recordings.ownerKey, ownerKey)');
   });
 
@@ -65,6 +88,23 @@ describe('녹음·저장·수정 회귀', () => {
     expect(audioRoute).toContain('isRecordingMutationLocked');
   });
 
+  it('필요한 절을 모두 녹음해도 완료하기 전에는 여정을 잠그지 않는다', () => {
+    expect(page).toContain("const completedJourneyIds = useMemo(() => new Set(activeProjects.filter((project) => project.completedAt).map((project) => project.id))");
+    expect(page).toContain('recordingCompleteJourneyIds.has(activeProject.id)');
+  });
+
+  it('진행 중·완료된 말씀 읽기 모두 삭제 동작을 눈에 보이게 제공한다', () => {
+    expect(page).toContain('말씀 읽기 삭제');
+    expect(page).toContain('완료된 말씀 삭제');
+    expect(page).toContain('quitDailyJourney(confirmQuitJourneyOpen)');
+  });
+
+  it('완료된 말씀을 절이 아니라 말씀 묶음 단위로 하나 이상 선택해 선물한다', () => {
+    expect(page).toContain('completedGiftProjectIds');
+    expect(page).toContain('선택한 말씀');
+    expect(page).not.toContain('절 선물 선택');
+  });
+
   it('전체 재녹음 안내는 선택 범위의 첫 절을 정확히 표시한다', () => {
     const fullRetakeHandler = functionBody('const startFullRetake', 'const quitDailyJourney');
     expect(fullRetakeHandler).toContain('${passageStartVerse}절부터 새로 녹음해 주세요.');
@@ -72,10 +112,19 @@ describe('녹음·저장·수정 회귀', () => {
 });
 
 describe('이어듣기·목록 UI 회귀', () => {
+  it('성경 읽기의 범위 지정은 날짜 일정이 없는 자유 읽기로 만든다', () => {
+    const rangeHandler = functionBody('const startBibleRange', 'const finishOnboarding');
+    expect(rangeHandler).toContain("kind: 'free'");
+    expect(rangeHandler).toContain('duration: 0');
+    expect(rangeHandler).not.toContain("kind: 'guided'");
+    expect(page).toContain("activeProject && activeProject.kind !== 'free'");
+  });
+
   it('매일 말씀 여정은 전체 녹음을 이어듣고 목록에 말씀 위치를 모두 표시한다', () => {
     expect(page).toContain("activeProject && activeProject.kind !== 'free'");
     expect(page).toContain('orderJourneyRecordings');
-    expect(page).toContain("<span>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</span>");
+    expect(page).toContain('{item.book} {item.chapter}');
+    expect(page).toContain('{item.verse}절');
   });
 
   it('이어듣기 목록 버튼은 토글되고 절을 눌러도 열린 상태를 유지한다', () => {

@@ -7,6 +7,7 @@ describe('새 계정 베타 데이터 세대', () => {
       'verse-legacy-owner',
       'verse-legacy-active-projects',
       'verse-legacy-word-card-awards',
+      'verse-legacy-theme',
       'unrelated-key',
     ], 'old-beta')).toEqual([
       'verse-legacy-owner',

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const page = readFileSync(join(process.cwd(), 'app/page.tsx'), 'utf8');
+const page = readFileSync(join(process.cwd(), 'app/page.tsx'), 'utf8').replace(/\s+/g, ' ');
 const friendsPanel = readFileSync(join(process.cwd(), 'app/friends-panel.tsx'), 'utf8');
 const giftsPanel = readFileSync(join(process.cwd(), 'app/gifts-panel.tsx'), 'utf8');
 
@@ -28,11 +28,18 @@ describe('화면 경로와 뒤로가기 회귀', () => {
 
   it('툴바가 가려진 화면에서만 친구와 선물 플로팅 버튼을 제공한다', () => {
     expect(page).toContain('className="floating-route-actions"');
-    expect(page).toContain("{onboardingStep !== 'app' && <>");
+    expect(page).toContain("onboardingStep !== 'app'");
+    expect(page).toContain('floating-route-actions');
     expect(page).toContain('className="floating-friends-button"');
     expect(page).toContain("navigateTo('friends')");
     expect(page).toContain('className="floating-gifts-button"');
     expect(page).toContain("navigateTo('gifts')");
+  });
+
+  it('홈과 선택 화면이 열려 있을 때 뒤쪽 앱 조작을 차단한다', () => {
+    expect(page).toContain("onboardingStep !== 'app' ? 'onboarding-open' : ''");
+    expect(page).toContain('className="onboarding-overlay"');
+    expect(page).toContain('aria-modal="true"');
   });
 
   it('자유 녹음 진입점을 성경 읽기로 표시한다', () => {

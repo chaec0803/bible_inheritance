@@ -14,8 +14,8 @@ describe('이어 녹음 종료 버튼 문구', () => {
     expect(getRecordingFinishLabel({ isLastVerse: true, isDailyJourney: true, isLastDailyPassage: false, book: '창세기', chapter: 1 })).toBe('창세기 1장 완료');
   });
 
-  it('자유 읽기의 마지막 절에서는 해당 장 완료로 표시한다', () => {
-    expect(getRecordingFinishLabel({ isLastVerse: true, isDailyJourney: false, book: '창세기', chapter: 1 })).toBe('창세기 1장 완료');
-    expect(getRecordingFinishLabel({ isLastVerse: true, isDailyJourney: false, book: '시편', chapter: 23 })).toBe('시편 23편 완료');
+  it('자유 읽기의 마지막 절에서는 여정 완료와 구분해 녹음 마치기로 표시한다', () => {
+    expect(getRecordingFinishLabel({ isLastVerse: true, isDailyJourney: false, book: '창세기', chapter: 1 })).toBe('이 범위 녹음 마치기');
+    expect(getRecordingFinishLabel({ isLastVerse: true, isDailyJourney: false, book: '시편', chapter: 23 })).toBe('이 범위 녹음 마치기');
   });
 });

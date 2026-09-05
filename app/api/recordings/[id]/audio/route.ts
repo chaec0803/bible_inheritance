@@ -147,10 +147,6 @@ export async function DELETE(request: Request, context: RouteContext) {
     .limit(1);
 
   if (!existing) return Response.json({ error: '삭제할 녹음을 찾을 수 없습니다.' }, { status: 404 });
-  if (await isRecordingMutationLocked(ownerKey, { id, projectId: existing.projectId, book: existing.book, chapter: existing.chapter, verse: existing.verse })) {
-    return Response.json({ error: '완료된 말씀은 더 이상 수정하거나 삭제할 수 없어요.' }, { status: 409 });
-  }
-
   await getDb().delete(recordings).where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)));
   await env.FILES.delete(existing.objectKey);
   return Response.json({ id });

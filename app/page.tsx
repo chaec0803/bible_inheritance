@@ -1,38 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Archive,
-  ArrowRight,
-  AudioLines,
-  BookOpen,
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  CircleStop,
-  Cloud,
-  Gift,
-  Headphones,
-  Home,
-  List,
-  LoaderCircle,
-  LogOut,
-  Mic,
-  Moon,
-  Music2,
-  Pause,
-  Play,
-  RotateCcw,
-  Search,
-  Send,
-  Sparkles,
-  Sun,
-  Target,
-  Users,
-  Volume2,
-  X,
-} from 'lucide-react';
+import { Archive, ArrowRight, AudioLines, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, CircleStop, Cloud, Gift, Headphones, Home, List, LoaderCircle, LogOut, Mic, Moon, Music2, Pause, Play, RotateCcw, Search, Sparkles, Sun, Target, Trash2, Users, Volume2, X } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
 import { normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
@@ -52,6 +21,14 @@ import { AuthGate } from './auth-gate';
 import { FriendsPanel } from './friends-panel';
 import { GiftSendDialog } from './gift-send-dialog';
 import { GiftsPanel } from './gifts-panel';
+import { GiftStudio } from './gift-studio';
+import { BibleRangePicker } from './bible-range-picker';
+import type { GiftDraftScope } from '@/lib/gift-draft';
+import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
+import { createRecordingAudioGraph as createRawRecordingAudioGraph } from '@/lib/recording-audio';
+import { encodeAudioBufferSegmentAsMp4 } from '@/lib/audio-mp4';
+import { toAudibleBgmGain } from '@/lib/audio-volume';
+export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
 
 const defaultVerses = [
   '여호와는 나의 목자시니 내게 부족함이 없으리로다.',
@@ -61,8 +38,6 @@ const defaultVerses = [
   '주께서 내 원수의 목전에서 내게 상을 차려 주시고 기름을 내 머리에 부으셨으니 내 잔이 넘치나이다.',
   '내 평생에 선하심과 인자하심이 반드시 나를 따르리니 내가 여호와의 집에 영원히 살리로다.',
 ];
-
-const reverbOptions = ['원음', '따뜻하게', '예배당'];
 
 type ProjectTemplate = {
   id: string;
@@ -87,12 +62,24 @@ type ActiveProject = {
   readingDay?: number;
   readingDayDate?: string;
   dailySchedule?: ProjectPassage[][];
+  completedAt?: number;
 };
 
-type ProjectPassage = { code: string; name: string; chapter: number; startVerse: number; endVerse: number };
+type ProjectPassage = {
+  code: string;
+  name: string;
+  chapter: number;
+  startVerse: number;
+  endVerse: number;
+};
 
 function getKstDateKey(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '';
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
@@ -105,16 +92,38 @@ function getProjectDay(project: ActiveProject, today: string) {
   return Math.min(project.duration, Math.max(1, Math.floor((todayTime - startTime) / 86_400_000) + 1));
 }
 
-const projectTemplates: ProjectTemplate[] = [
-  ...themedProjects,
-];
+const projectTemplates: ProjectTemplate[] = [...themedProjects];
 
-const customPlanModes: Array<{ id: ReadingPlanMode; title: string; description: string }> = [
-  { id: 'single', title: '한 권 읽기', description: '한 권에서 시작할 장·절과 끝낼 장·절을 정해요.' },
-  { id: 'multiple', title: '여러 권 읽기', description: '고른 책은 모든 장을 순서대로 읽어요.' },
-  { id: 'old', title: '구약 통독', description: '창세기부터 말라기까지 읽어요.' },
-  { id: 'new', title: '신약 통독', description: '마태복음부터 요한계시록까지 읽어요.' },
-  { id: 'whole', title: '성경 통독', description: '구약과 신약 66권 전체를 읽어요.' },
+const customPlanModes: Array<{
+  id: ReadingPlanMode;
+  title: string;
+  description: string;
+}> = [
+  {
+    id: 'chapter',
+    title: '한 장 읽기',
+    description: '성경책과 읽을 장을 골라요.',
+  },
+  {
+    id: 'range',
+    title: '범위 지정',
+    description: '시작 권·장·절부터 끝 권·장·절까지 정해요.',
+  },
+  {
+    id: 'old',
+    title: '구약 통독',
+    description: '창세기부터 말라기까지 읽어요.',
+  },
+  {
+    id: 'new',
+    title: '신약 통독',
+    description: '마태복음부터 요한계시록까지 읽어요.',
+  },
+  {
+    id: 'whole',
+    title: '성경 통독',
+    description: '구약과 신약 66권 전체를 읽어요.',
+  },
 ];
 
 type BgmOption = {
@@ -130,19 +139,19 @@ const bgmOptions: readonly BgmOption[] = [
     id: 'still-waters',
     name: 'Aeternum',
     description: 'Christoffer Moe Ditlevsen',
-    audioSrc: '/api/bgm/aeternum?v=1',
+    audioSrc: '/api/bgm/aeternum?v=2',
   },
   {
     id: 'peaceful-morning',
     name: 'Unto Thee',
     description: 'JOYSPRING',
-    audioSrc: '/api/bgm/unto-thee?v=1',
+    audioSrc: '/api/bgm/unto-thee?v=2',
   },
   {
     id: 'word-breath',
     name: "The King's Return",
     description: 'Adriel Fair',
-    audioSrc: '/api/bgm/the-kings-return?v=1',
+    audioSrc: '/api/bgm/the-kings-return?v=2',
     recommended: true,
   },
   {
@@ -163,58 +172,356 @@ type WordCard = {
 };
 
 const wordCards: readonly WordCard[] = [
-  { id: 'jacob', name: '야곱', heading: '붙들고 씨름하며 새 이름을 받은 사람', detail: '야곱은 부족함과 실수 속에서도 하나님의 약속을 놓지 않았어요. 하나님은 그에게 이스라엘이라는 새 이름을 주시고, 한 민족의 시작이 되게 하셨어요.', spriteIndex: 0 },
-  { id: 'jesus', name: '예수님', heading: '사랑으로 우리에게 가장 가까이 오신 구원자', detail: '예수님은 하나님의 사랑을 삶으로 보여 주시고, 아픈 사람을 고치며 소외된 이들을 품으셨어요. 십자가와 부활을 통해 모든 사람에게 구원의 길을 열어 주셨어요.', spriteIndex: 1 },
-  { id: 'peter', name: '베드로', heading: '넘어져도 다시 부르심을 따라간 제자', detail: '베드로는 성급하고 두려움도 많았지만 예수님의 용서와 격려로 다시 일어났어요. 이후 복음을 담대하게 전하며 초대 교회를 든든히 세웠어요.', spriteIndex: 2 },
-  { id: 'god', name: '하나님', heading: '세상을 지으시고 끝까지 사랑하시는 분', detail: '하나님은 모든 생명의 창조자이며 약속을 지키시는 분이에요. 성경 전체를 통해 사람을 찾고 회복시키며 선한 길로 이끄시는 사랑을 보여 주세요.', spriteIndex: 3 },
-  { id: 'holy-spirit', name: '성령님', heading: '우리와 함께하며 힘과 지혜를 주시는 분', detail: '성령님은 믿는 사람 안에 함께하시며 예수님의 말씀을 기억하게 하세요. 두려울 때 용기를 주고, 사랑과 기쁨과 평화의 열매를 맺도록 도와주세요.', spriteIndex: 4 },
-  { id: 'david', name: '다윗', heading: '하나님의 마음을 노래한 목동이자 왕', detail: '다윗은 작은 목동이었지만 하나님을 신뢰하며 골리앗 앞에 섰어요. 왕이 된 뒤에도 기쁨과 슬픔, 회개와 소망을 시편의 노래로 남겼어요.', spriteIndex: 5 },
-  { id: 'goliath', name: '골리앗', heading: '크기보다 믿음이 더 강하다는 것을 보여 준 거인', detail: '골리앗은 강한 무기와 큰 몸을 자랑했지만, 하나님을 의지한 다윗 앞에서 무너졌어요. 이 이야기는 눈앞의 크기보다 믿음의 방향이 중요하다는 것을 보여 줘요.', spriteIndex: 6 },
-  { id: 'samson', name: '삼손', heading: '큰 힘과 함께 책임도 배워야 했던 사사', detail: '삼손은 이스라엘을 돕도록 특별한 힘을 받았지만 자신의 선택 때문에 어려움을 겪었어요. 마지막 순간 하나님을 다시 찾으며 맡겨진 힘의 의미를 깨달았어요.', spriteIndex: 7 },
-  { id: 'mary', name: '마리아', heading: '두려움 속에서도 믿음으로 응답한 사람', detail: '마리아는 놀라운 소식을 들었을 때 모든 것을 다 알 수 없었지만 하나님을 믿고 순종했어요. 예수님의 어머니로서 약속을 마음에 간직하며 길을 걸었어요.', spriteIndex: 8 },
-  { id: 'magi', name: '동방박사들', heading: '별을 따라 먼 길을 걸어온 예배자들', detail: '동방박사들은 새 왕의 탄생을 알리는 별을 보고 먼 길을 떠났어요. 아기 예수님을 만나 기뻐하며 귀한 예물을 드리고 경배했어요.', spriteIndex: 9 },
-  { id: 'magi-1', name: '동방박사 1', heading: '왕을 위한 황금을 준비한 지혜로운 여행자', detail: '황금은 왕에게 드리는 귀한 예물이었어요. 이 박사는 긴 여정 끝에 예수님을 참된 왕으로 높이며 자신의 가장 귀한 것을 기쁨으로 드렸어요.', spriteIndex: 10 },
-  { id: 'magi-2', name: '동방박사 2', heading: '예배의 향기인 유향을 들고 온 여행자', detail: '유향은 하나님께 예배할 때 사용하던 향이었어요. 이 박사의 선물은 아기 예수님께 드리는 경배와 존경을 담고 있어요.', spriteIndex: 11 },
-  { id: 'magi-3', name: '동방박사 3', heading: '깊은 의미를 품은 몰약을 준비한 여행자', detail: '몰약은 매우 귀한 향품이었어요. 이 선물은 예수님의 삶과 희생을 미리 떠올리게 하며, 동방박사들의 진심 어린 경배를 보여 줘요.', spriteIndex: 12 },
-  { id: 'abraham', name: '아브라함', heading: '믿음으로 익숙한 곳을 떠난 약속의 사람', detail: '아브라함은 하나님의 부르심을 따라 고향을 떠나 약속의 땅으로 갔어요. 모든 답을 알지 못했지만 하나님을 믿었고, 그의 삶은 믿음으로 한 걸음 내딛는 용기를 보여 줘요.', spriteIndex: 0, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'joseph', name: '요셉', heading: '상처를 용서와 구원으로 바꾼 사람', detail: '요셉은 형들에게 미움을 받아 먼 나라로 팔려 갔지만 하나님을 잊지 않았어요. 훗날 애굽의 지도자가 되어 가족과 많은 사람을 살리고, 자신을 해친 형들을 용서했어요.', spriteIndex: 1, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'moses', name: '모세', heading: '하나님의 백성을 자유로 이끈 지도자', detail: '모세는 자신의 부족함을 두려워했지만 하나님의 부르심에 응답했어요. 이스라엘 백성을 애굽에서 이끌어 내고, 광야에서 하나님의 말씀을 전했어요.', spriteIndex: 2, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'joshua', name: '여호수아', heading: '두려움보다 하나님의 약속을 붙든 지도자', detail: '여호수아는 모세의 뒤를 이어 이스라엘 백성을 이끌었어요. 강하고 담대하라는 말씀을 의지하며 약속의 땅을 향해 나아갔어요.', spriteIndex: 3, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'ruth', name: '룻', heading: '사랑과 신실함으로 새로운 가족을 선택한 사람', detail: '룻은 어려움 속에서도 시어머니 나오미를 떠나지 않았어요. 낯선 땅에서 성실하게 살아가며 사랑과 신실함을 보여 주었고, 다윗의 가문에 이어졌어요.', spriteIndex: 4, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'samuel', name: '사무엘', heading: '어린 시절부터 하나님의 음성을 들은 사람', detail: '사무엘은 어린 시절 성전에서 하나님의 부르심을 들었어요. “말씀하세요”라고 응답한 뒤 이스라엘을 바른 길로 이끄는 선지자가 되었어요.', spriteIndex: 5, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'elijah', name: '엘리야', heading: '홀로 서는 순간에도 하나님을 신뢰한 선지자', detail: '엘리야는 사람들이 하나님을 떠났을 때에도 믿음을 지켰어요. 갈멜산에서 참된 하나님을 증언했고, 지쳤을 때는 하나님의 조용한 위로를 경험했어요.', spriteIndex: 6, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'esther', name: '에스더', heading: '두려움을 넘어 백성을 위해 나아간 왕비', detail: '에스더는 위험을 무릅쓰고 왕 앞에 나아가 자기 민족을 살렸어요. 자신에게 주어진 자리와 용기를 다른 사람을 지키는 데 사용했어요.', spriteIndex: 7, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'john-baptist', name: '세례 요한', heading: '예수님의 길을 준비한 광야의 목소리', detail: '세례 요한은 광야에서 회개를 전하며 사람들의 마음을 준비시켰어요. 자신보다 예수님을 높이며 맡은 사명을 흔들림 없이 감당했어요.', spriteIndex: 8, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'martha', name: '마르다', heading: '섬김 속에서 가장 중요한 것을 배운 사람', detail: '마르다는 예수님과 사람들을 정성껏 섬겼어요. 바쁜 마음을 솔직히 말씀드렸고, 슬픔 속에서도 예수님이 부활과 생명이심을 믿는다고 고백했어요.', spriteIndex: 9, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'mary-magdalene', name: '막달라 마리아', heading: '부활하신 예수님을 가장 먼저 전한 제자', detail: '막달라 마리아는 예수님을 충실히 따르며 십자가 곁을 지켰어요. 부활하신 예수님을 만나 제자들에게 기쁜 소식을 전했어요.', spriteIndex: 10, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'paul', name: '바울', heading: '삶의 방향을 바꾸어 복음을 전한 사도', detail: '바울은 예수님을 만난 뒤 박해하던 사람에서 복음을 전하는 사도로 변화되었어요. 여러 지역을 여행하고 편지를 써서 많은 교회를 격려했어요.', spriteIndex: 11, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'barnabas', name: '바나바', heading: '사람의 가능성을 믿고 세워 준 위로의 사람', detail: '바나바는 새롭게 믿게 된 바울을 공동체에 소개하고 믿어 주었어요. 마가에게도 다시 기회를 주며 사람을 격려하고 함께 성장하도록 도왔어요.', spriteIndex: 12, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'stephen', name: '스데반', heading: '끝까지 사랑과 용서를 선택한 증인', detail: '스데반은 지혜와 믿음으로 예수님을 전했어요. 박해를 받는 마지막 순간에도 자신을 해치는 사람들을 용서해 달라고 기도했어요.', spriteIndex: 13, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'timothy', name: '디모데', heading: '배운 말씀을 삶으로 이어 간 젊은 동역자', detail: '디모데는 어머니와 외할머니에게 믿음을 배웠고 바울과 함께 복음을 전했어요. 젊지만 말과 행동과 사랑에서 본이 되도록 격려받았어요.', spriteIndex: 14, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'zacchaeus', name: '삭개오', heading: '예수님을 만난 뒤 삶으로 돌이킨 사람', detail: '삭개오는 예수님을 보기 위해 나무에 올라갔어요. 예수님을 집에 모신 뒤 잘못을 바로잡고 가진 것을 나누겠다고 결단했어요.', spriteIndex: 15, spriteSheet: '/cards/bible-character-sprite-v2.webp' },
-  { id: 'noah', name: '노아', heading: '긴 기다림 속에서도 말씀을 따른 사람', detail: '노아는 사람들이 믿지 않을 때에도 하나님의 말씀을 따라 방주를 만들었어요. 오랜 시간 묵묵히 순종하며 가족과 생명을 지켰고, 무지개 언약을 받았어요.', spriteIndex: 0, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'isaac', name: '이삭', heading: '약속 안에서 평화를 선택한 사람', detail: '이삭은 아브라함에게 주신 약속을 이어받았어요. 우물을 둘러싼 다툼을 피하고 새로운 자리를 찾으며, 하나님이 마련하신 평화를 기다렸어요.', spriteIndex: 1, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'hagar', name: '하갈', heading: '광야에서 자신을 보시는 하나님을 만난 사람', detail: '하갈은 외롭고 막막한 광야에서 하나님의 돌보심을 경험했어요. 하나님은 그의 눈물을 들으시고 아들과 함께 살아갈 길을 열어 주셨어요.', spriteIndex: 2, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'miriam', name: '미리암', heading: '구원의 기쁨을 노래와 춤으로 이끈 사람', detail: '미리암은 어린 모세를 지혜롭게 지켜보았고, 홍해를 건넌 뒤에는 소고를 들고 백성의 찬양을 이끌었어요. 기쁨을 공동체와 함께 나누었어요.', spriteIndex: 3, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'aaron', name: '아론', heading: '백성을 위해 하나님 앞에 섰던 제사장', detail: '아론은 모세와 함께 이스라엘 백성을 이끌고 첫 대제사장으로 섬겼어요. 백성을 대신해 예배드리며 하나님과 사람 사이의 화해를 나타냈어요.', spriteIndex: 4, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'caleb', name: '갈렙', heading: '세월이 지나도 약속을 향한 용기를 지킨 사람', detail: '갈렙은 가나안 땅을 살핀 뒤 두려움보다 하나님의 약속을 믿었어요. 오랜 시간이 지나서도 믿음과 용기를 잃지 않고 맡겨진 땅을 향해 나아갔어요.', spriteIndex: 5, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'rahab', name: '라합', heading: '용기 있는 선택으로 가족을 지킨 사람', detail: '라합은 위험을 무릅쓰고 이스라엘의 정탐꾼들을 도왔어요. 창문에 붉은 줄을 매어 약속을 기억했고, 믿음으로 자신과 가족을 지켰어요.', spriteIndex: 6, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'gideon', name: '기드온', heading: '작은 자신을 통해 일하시는 하나님을 믿은 사람', detail: '기드온은 자신이 약하고 부족하다고 느꼈지만 하나님의 부르심을 따랐어요. 적은 수의 사람들과 횃불과 항아리를 들고 큰 군대에 맞섰어요.', spriteIndex: 7, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'hannah', name: '한나', heading: '슬픔을 숨기지 않고 기도로 맡긴 사람', detail: '한나는 깊은 슬픔과 소원을 하나님께 솔직하게 기도했어요. 응답으로 얻은 사무엘을 하나님께 맡기고 감사의 노래를 드렸어요.', spriteIndex: 8, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'solomon', name: '솔로몬', heading: '많은 것보다 지혜를 먼저 구한 왕', detail: '솔로몬은 왕이 되었을 때 부나 권력보다 백성을 잘 이끌 지혜를 구했어요. 성전을 세우고 지혜로운 판결과 말씀을 남겼어요.', spriteIndex: 9, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'nehemiah', name: '느헤미야', heading: '기도하며 무너진 성벽을 다시 세운 지도자', detail: '느헤미야는 예루살렘의 무너진 소식을 듣고 울며 기도했어요. 방해와 두려움 속에서도 사람들을 하나로 모아 성벽을 다시 세웠어요.', spriteIndex: 10, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'daniel', name: '다니엘', heading: '낯선 땅에서도 믿음의 습관을 지킨 사람', detail: '다니엘은 포로로 끌려간 낯선 나라에서도 하나님께 기도하는 일을 멈추지 않았어요. 사자굴에서도 보호받으며 흔들리지 않는 믿음을 보여 주었어요.', spriteIndex: 11, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'jonah', name: '요나', heading: '도망친 자리에서도 다시 사명을 배운 선지자', detail: '요나는 하나님의 말씀을 피해 달아났지만 큰 물고기 속에서 기도하고 다시 기회를 얻었어요. 하나님의 긍휼이 자신이 생각한 경계보다 넓음을 배웠어요.', spriteIndex: 12, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'elisha', name: '엘리사', heading: '평범한 일상 속에서 이웃을 도운 선지자', detail: '엘리사는 엘리야의 뒤를 이어 하나님의 말씀을 전했어요. 병든 사람을 고치고 배고픈 이들을 먹이며 삶 가까이에서 하나님의 돌보심을 보여 주었어요.', spriteIndex: 13, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'luke', name: '누가', heading: '꼼꼼히 기록해 복음을 전한 의사', detail: '누가는 여러 증언을 자세히 살펴 예수님의 이야기를 기록했어요. 바울의 여행에 함께하며 사람을 돌보고, 모든 이에게 열린 복음을 전했어요.', spriteIndex: 14, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
-  { id: 'philip', name: '빌립', heading: '한 사람에게도 기쁜 소식을 전한 전도자', detail: '빌립은 성령의 인도를 따라 광야 길에서 한 여행자를 만났어요. 그의 질문을 듣고 성경을 설명하며 예수님의 기쁜 소식을 전했어요.', spriteIndex: 15, spriteSheet: '/cards/bible-character-sprite-v3.webp' },
+  {
+    id: 'jacob',
+    name: '야곱',
+    heading: '붙들고 씨름하며 새 이름을 받은 사람',
+    detail: '야곱은 부족함과 실수 속에서도 하나님의 약속을 놓지 않았어요. 하나님은 그에게 이스라엘이라는 새 이름을 주시고, 한 민족의 시작이 되게 하셨어요.',
+    spriteIndex: 0,
+  },
+  {
+    id: 'jesus',
+    name: '예수님',
+    heading: '사랑으로 우리에게 가장 가까이 오신 구원자',
+    detail: '예수님은 하나님의 사랑을 삶으로 보여 주시고, 아픈 사람을 고치며 소외된 이들을 품으셨어요. 십자가와 부활을 통해 모든 사람에게 구원의 길을 열어 주셨어요.',
+    spriteIndex: 1,
+  },
+  {
+    id: 'peter',
+    name: '베드로',
+    heading: '넘어져도 다시 부르심을 따라간 제자',
+    detail: '베드로는 성급하고 두려움도 많았지만 예수님의 용서와 격려로 다시 일어났어요. 이후 복음을 담대하게 전하며 초대 교회를 든든히 세웠어요.',
+    spriteIndex: 2,
+  },
+  {
+    id: 'god',
+    name: '하나님',
+    heading: '세상을 지으시고 끝까지 사랑하시는 분',
+    detail: '하나님은 모든 생명의 창조자이며 약속을 지키시는 분이에요. 성경 전체를 통해 사람을 찾고 회복시키며 선한 길로 이끄시는 사랑을 보여 주세요.',
+    spriteIndex: 3,
+  },
+  {
+    id: 'holy-spirit',
+    name: '성령님',
+    heading: '우리와 함께하며 힘과 지혜를 주시는 분',
+    detail: '성령님은 믿는 사람 안에 함께하시며 예수님의 말씀을 기억하게 하세요. 두려울 때 용기를 주고, 사랑과 기쁨과 평화의 열매를 맺도록 도와주세요.',
+    spriteIndex: 4,
+  },
+  {
+    id: 'david',
+    name: '다윗',
+    heading: '하나님의 마음을 노래한 목동이자 왕',
+    detail: '다윗은 작은 목동이었지만 하나님을 신뢰하며 골리앗 앞에 섰어요. 왕이 된 뒤에도 기쁨과 슬픔, 회개와 소망을 시편의 노래로 남겼어요.',
+    spriteIndex: 5,
+  },
+  {
+    id: 'goliath',
+    name: '골리앗',
+    heading: '크기보다 믿음이 더 강하다는 것을 보여 준 거인',
+    detail: '골리앗은 강한 무기와 큰 몸을 자랑했지만, 하나님을 의지한 다윗 앞에서 무너졌어요. 이 이야기는 눈앞의 크기보다 믿음의 방향이 중요하다는 것을 보여 줘요.',
+    spriteIndex: 6,
+  },
+  {
+    id: 'samson',
+    name: '삼손',
+    heading: '큰 힘과 함께 책임도 배워야 했던 사사',
+    detail: '삼손은 이스라엘을 돕도록 특별한 힘을 받았지만 자신의 선택 때문에 어려움을 겪었어요. 마지막 순간 하나님을 다시 찾으며 맡겨진 힘의 의미를 깨달았어요.',
+    spriteIndex: 7,
+  },
+  {
+    id: 'mary',
+    name: '마리아',
+    heading: '두려움 속에서도 믿음으로 응답한 사람',
+    detail: '마리아는 놀라운 소식을 들었을 때 모든 것을 다 알 수 없었지만 하나님을 믿고 순종했어요. 예수님의 어머니로서 약속을 마음에 간직하며 길을 걸었어요.',
+    spriteIndex: 8,
+  },
+  {
+    id: 'magi',
+    name: '동방박사들',
+    heading: '별을 따라 먼 길을 걸어온 예배자들',
+    detail: '동방박사들은 새 왕의 탄생을 알리는 별을 보고 먼 길을 떠났어요. 아기 예수님을 만나 기뻐하며 귀한 예물을 드리고 경배했어요.',
+    spriteIndex: 9,
+  },
+  {
+    id: 'magi-1',
+    name: '동방박사 1',
+    heading: '왕을 위한 황금을 준비한 지혜로운 여행자',
+    detail: '황금은 왕에게 드리는 귀한 예물이었어요. 이 박사는 긴 여정 끝에 예수님을 참된 왕으로 높이며 자신의 가장 귀한 것을 기쁨으로 드렸어요.',
+    spriteIndex: 10,
+  },
+  {
+    id: 'magi-2',
+    name: '동방박사 2',
+    heading: '예배의 향기인 유향을 들고 온 여행자',
+    detail: '유향은 하나님께 예배할 때 사용하던 향이었어요. 이 박사의 선물은 아기 예수님께 드리는 경배와 존경을 담고 있어요.',
+    spriteIndex: 11,
+  },
+  {
+    id: 'magi-3',
+    name: '동방박사 3',
+    heading: '깊은 의미를 품은 몰약을 준비한 여행자',
+    detail: '몰약은 매우 귀한 향품이었어요. 이 선물은 예수님의 삶과 희생을 미리 떠올리게 하며, 동방박사들의 진심 어린 경배를 보여 줘요.',
+    spriteIndex: 12,
+  },
+  {
+    id: 'abraham',
+    name: '아브라함',
+    heading: '믿음으로 익숙한 곳을 떠난 약속의 사람',
+    detail: '아브라함은 하나님의 부르심을 따라 고향을 떠나 약속의 땅으로 갔어요. 모든 답을 알지 못했지만 하나님을 믿었고, 그의 삶은 믿음으로 한 걸음 내딛는 용기를 보여 줘요.',
+    spriteIndex: 0,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'joseph',
+    name: '요셉',
+    heading: '상처를 용서와 구원으로 바꾼 사람',
+    detail: '요셉은 형들에게 미움을 받아 먼 나라로 팔려 갔지만 하나님을 잊지 않았어요. 훗날 애굽의 지도자가 되어 가족과 많은 사람을 살리고, 자신을 해친 형들을 용서했어요.',
+    spriteIndex: 1,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'moses',
+    name: '모세',
+    heading: '하나님의 백성을 자유로 이끈 지도자',
+    detail: '모세는 자신의 부족함을 두려워했지만 하나님의 부르심에 응답했어요. 이스라엘 백성을 애굽에서 이끌어 내고, 광야에서 하나님의 말씀을 전했어요.',
+    spriteIndex: 2,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'joshua',
+    name: '여호수아',
+    heading: '두려움보다 하나님의 약속을 붙든 지도자',
+    detail: '여호수아는 모세의 뒤를 이어 이스라엘 백성을 이끌었어요. 강하고 담대하라는 말씀을 의지하며 약속의 땅을 향해 나아갔어요.',
+    spriteIndex: 3,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'ruth',
+    name: '룻',
+    heading: '사랑과 신실함으로 새로운 가족을 선택한 사람',
+    detail: '룻은 어려움 속에서도 시어머니 나오미를 떠나지 않았어요. 낯선 땅에서 성실하게 살아가며 사랑과 신실함을 보여 주었고, 다윗의 가문에 이어졌어요.',
+    spriteIndex: 4,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'samuel',
+    name: '사무엘',
+    heading: '어린 시절부터 하나님의 음성을 들은 사람',
+    detail: '사무엘은 어린 시절 성전에서 하나님의 부르심을 들었어요. “말씀하세요”라고 응답한 뒤 이스라엘을 바른 길로 이끄는 선지자가 되었어요.',
+    spriteIndex: 5,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'elijah',
+    name: '엘리야',
+    heading: '홀로 서는 순간에도 하나님을 신뢰한 선지자',
+    detail: '엘리야는 사람들이 하나님을 떠났을 때에도 믿음을 지켰어요. 갈멜산에서 참된 하나님을 증언했고, 지쳤을 때는 하나님의 조용한 위로를 경험했어요.',
+    spriteIndex: 6,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'esther',
+    name: '에스더',
+    heading: '두려움을 넘어 백성을 위해 나아간 왕비',
+    detail: '에스더는 위험을 무릅쓰고 왕 앞에 나아가 자기 민족을 살렸어요. 자신에게 주어진 자리와 용기를 다른 사람을 지키는 데 사용했어요.',
+    spriteIndex: 7,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'john-baptist',
+    name: '세례 요한',
+    heading: '예수님의 길을 준비한 광야의 목소리',
+    detail: '세례 요한은 광야에서 회개를 전하며 사람들의 마음을 준비시켰어요. 자신보다 예수님을 높이며 맡은 사명을 흔들림 없이 감당했어요.',
+    spriteIndex: 8,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'martha',
+    name: '마르다',
+    heading: '섬김 속에서 가장 중요한 것을 배운 사람',
+    detail: '마르다는 예수님과 사람들을 정성껏 섬겼어요. 바쁜 마음을 솔직히 말씀드렸고, 슬픔 속에서도 예수님이 부활과 생명이심을 믿는다고 고백했어요.',
+    spriteIndex: 9,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'mary-magdalene',
+    name: '막달라 마리아',
+    heading: '부활하신 예수님을 가장 먼저 전한 제자',
+    detail: '막달라 마리아는 예수님을 충실히 따르며 십자가 곁을 지켰어요. 부활하신 예수님을 만나 제자들에게 기쁜 소식을 전했어요.',
+    spriteIndex: 10,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'paul',
+    name: '바울',
+    heading: '삶의 방향을 바꾸어 복음을 전한 사도',
+    detail: '바울은 예수님을 만난 뒤 박해하던 사람에서 복음을 전하는 사도로 변화되었어요. 여러 지역을 여행하고 편지를 써서 많은 교회를 격려했어요.',
+    spriteIndex: 11,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'barnabas',
+    name: '바나바',
+    heading: '사람의 가능성을 믿고 세워 준 위로의 사람',
+    detail: '바나바는 새롭게 믿게 된 바울을 공동체에 소개하고 믿어 주었어요. 마가에게도 다시 기회를 주며 사람을 격려하고 함께 성장하도록 도왔어요.',
+    spriteIndex: 12,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'stephen',
+    name: '스데반',
+    heading: '끝까지 사랑과 용서를 선택한 증인',
+    detail: '스데반은 지혜와 믿음으로 예수님을 전했어요. 박해를 받는 마지막 순간에도 자신을 해치는 사람들을 용서해 달라고 기도했어요.',
+    spriteIndex: 13,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'timothy',
+    name: '디모데',
+    heading: '배운 말씀을 삶으로 이어 간 젊은 동역자',
+    detail: '디모데는 어머니와 외할머니에게 믿음을 배웠고 바울과 함께 복음을 전했어요. 젊지만 말과 행동과 사랑에서 본이 되도록 격려받았어요.',
+    spriteIndex: 14,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'zacchaeus',
+    name: '삭개오',
+    heading: '예수님을 만난 뒤 삶으로 돌이킨 사람',
+    detail: '삭개오는 예수님을 보기 위해 나무에 올라갔어요. 예수님을 집에 모신 뒤 잘못을 바로잡고 가진 것을 나누겠다고 결단했어요.',
+    spriteIndex: 15,
+    spriteSheet: '/cards/bible-character-sprite-v2.webp',
+  },
+  {
+    id: 'noah',
+    name: '노아',
+    heading: '긴 기다림 속에서도 말씀을 따른 사람',
+    detail: '노아는 사람들이 믿지 않을 때에도 하나님의 말씀을 따라 방주를 만들었어요. 오랜 시간 묵묵히 순종하며 가족과 생명을 지켰고, 무지개 언약을 받았어요.',
+    spriteIndex: 0,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'isaac',
+    name: '이삭',
+    heading: '약속 안에서 평화를 선택한 사람',
+    detail: '이삭은 아브라함에게 주신 약속을 이어받았어요. 우물을 둘러싼 다툼을 피하고 새로운 자리를 찾으며, 하나님이 마련하신 평화를 기다렸어요.',
+    spriteIndex: 1,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'hagar',
+    name: '하갈',
+    heading: '광야에서 자신을 보시는 하나님을 만난 사람',
+    detail: '하갈은 외롭고 막막한 광야에서 하나님의 돌보심을 경험했어요. 하나님은 그의 눈물을 들으시고 아들과 함께 살아갈 길을 열어 주셨어요.',
+    spriteIndex: 2,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'miriam',
+    name: '미리암',
+    heading: '구원의 기쁨을 노래와 춤으로 이끈 사람',
+    detail: '미리암은 어린 모세를 지혜롭게 지켜보았고, 홍해를 건넌 뒤에는 소고를 들고 백성의 찬양을 이끌었어요. 기쁨을 공동체와 함께 나누었어요.',
+    spriteIndex: 3,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'aaron',
+    name: '아론',
+    heading: '백성을 위해 하나님 앞에 섰던 제사장',
+    detail: '아론은 모세와 함께 이스라엘 백성을 이끌고 첫 대제사장으로 섬겼어요. 백성을 대신해 예배드리며 하나님과 사람 사이의 화해를 나타냈어요.',
+    spriteIndex: 4,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'caleb',
+    name: '갈렙',
+    heading: '세월이 지나도 약속을 향한 용기를 지킨 사람',
+    detail: '갈렙은 가나안 땅을 살핀 뒤 두려움보다 하나님의 약속을 믿었어요. 오랜 시간이 지나서도 믿음과 용기를 잃지 않고 맡겨진 땅을 향해 나아갔어요.',
+    spriteIndex: 5,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'rahab',
+    name: '라합',
+    heading: '용기 있는 선택으로 가족을 지킨 사람',
+    detail: '라합은 위험을 무릅쓰고 이스라엘의 정탐꾼들을 도왔어요. 창문에 붉은 줄을 매어 약속을 기억했고, 믿음으로 자신과 가족을 지켰어요.',
+    spriteIndex: 6,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'gideon',
+    name: '기드온',
+    heading: '작은 자신을 통해 일하시는 하나님을 믿은 사람',
+    detail: '기드온은 자신이 약하고 부족하다고 느꼈지만 하나님의 부르심을 따랐어요. 적은 수의 사람들과 횃불과 항아리를 들고 큰 군대에 맞섰어요.',
+    spriteIndex: 7,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'hannah',
+    name: '한나',
+    heading: '슬픔을 숨기지 않고 기도로 맡긴 사람',
+    detail: '한나는 깊은 슬픔과 소원을 하나님께 솔직하게 기도했어요. 응답으로 얻은 사무엘을 하나님께 맡기고 감사의 노래를 드렸어요.',
+    spriteIndex: 8,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'solomon',
+    name: '솔로몬',
+    heading: '많은 것보다 지혜를 먼저 구한 왕',
+    detail: '솔로몬은 왕이 되었을 때 부나 권력보다 백성을 잘 이끌 지혜를 구했어요. 성전을 세우고 지혜로운 판결과 말씀을 남겼어요.',
+    spriteIndex: 9,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'nehemiah',
+    name: '느헤미야',
+    heading: '기도하며 무너진 성벽을 다시 세운 지도자',
+    detail: '느헤미야는 예루살렘의 무너진 소식을 듣고 울며 기도했어요. 방해와 두려움 속에서도 사람들을 하나로 모아 성벽을 다시 세웠어요.',
+    spriteIndex: 10,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'daniel',
+    name: '다니엘',
+    heading: '낯선 땅에서도 믿음의 습관을 지킨 사람',
+    detail: '다니엘은 포로로 끌려간 낯선 나라에서도 하나님께 기도하는 일을 멈추지 않았어요. 사자굴에서도 보호받으며 흔들리지 않는 믿음을 보여 주었어요.',
+    spriteIndex: 11,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'jonah',
+    name: '요나',
+    heading: '도망친 자리에서도 다시 사명을 배운 선지자',
+    detail: '요나는 하나님의 말씀을 피해 달아났지만 큰 물고기 속에서 기도하고 다시 기회를 얻었어요. 하나님의 긍휼이 자신이 생각한 경계보다 넓음을 배웠어요.',
+    spriteIndex: 12,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'elisha',
+    name: '엘리사',
+    heading: '평범한 일상 속에서 이웃을 도운 선지자',
+    detail: '엘리사는 엘리야의 뒤를 이어 하나님의 말씀을 전했어요. 병든 사람을 고치고 배고픈 이들을 먹이며 삶 가까이에서 하나님의 돌보심을 보여 주었어요.',
+    spriteIndex: 13,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'luke',
+    name: '누가',
+    heading: '꼼꼼히 기록해 복음을 전한 의사',
+    detail: '누가는 여러 증언을 자세히 살펴 예수님의 이야기를 기록했어요. 바울의 여행에 함께하며 사람을 돌보고, 모든 이에게 열린 복음을 전했어요.',
+    spriteIndex: 14,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
+  {
+    id: 'philip',
+    name: '빌립',
+    heading: '한 사람에게도 기쁜 소식을 전한 전도자',
+    detail: '빌립은 성령의 인도를 따라 광야 길에서 한 여행자를 만났어요. 그의 질문을 듣고 성경을 설명하며 예수님의 기쁜 소식을 전했어요.',
+    spriteIndex: 15,
+    spriteSheet: '/cards/bible-character-sprite-v3.webp',
+  },
 ];
 
-const WORD_CARD_SPRITE_SHEETS = [
-  '/cards/bible-character-sprite.webp',
-  '/cards/bible-character-sprite-v2.webp',
-  '/cards/bible-character-sprite-v3.webp',
-] as const;
+const WORD_CARD_SPRITE_SHEETS = ['/cards/bible-character-sprite.webp', '/cards/bible-character-sprite-v2.webp', '/cards/bible-character-sprite-v3.webp'] as const;
 
 type RecordingTake = {
   url: string;
@@ -230,40 +537,6 @@ type ContinuousVerseBoundary = {
   transitionSource: 'manual' | 'stop';
 };
 
-function encodeAudioBufferAsWav(buffer: AudioBuffer, startMs: number, endMs: number) {
-  const startFrame = Math.max(0, Math.floor((startMs / 1_000) * buffer.sampleRate));
-  const endFrame = Math.min(buffer.length, Math.ceil((endMs / 1_000) * buffer.sampleRate));
-  const frameCount = Math.max(1, endFrame - startFrame);
-  const channelCount = Math.min(2, buffer.numberOfChannels);
-  const bytesPerSample = 2;
-  const wav = new ArrayBuffer(44 + frameCount * channelCount * bytesPerSample);
-  const view = new DataView(wav);
-  const write = (offset: number, value: string) => Array.from(value).forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
-  write(0, 'RIFF');
-  view.setUint32(4, wav.byteLength - 8, true);
-  write(8, 'WAVE');
-  write(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, channelCount, true);
-  view.setUint32(24, buffer.sampleRate, true);
-  view.setUint32(28, buffer.sampleRate * channelCount * bytesPerSample, true);
-  view.setUint16(32, channelCount * bytesPerSample, true);
-  view.setUint16(34, 16, true);
-  write(36, 'data');
-  view.setUint32(40, frameCount * channelCount * bytesPerSample, true);
-  const channels = Array.from({ length: channelCount }, (_, index) => buffer.getChannelData(index));
-  let offset = 44;
-  for (let frame = startFrame; frame < endFrame; frame += 1) {
-    for (let channel = 0; channel < channelCount; channel += 1) {
-      const sample = Math.max(-1, Math.min(1, channels[channel][frame] ?? 0));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-      offset += bytesPerSample;
-    }
-  }
-  return new Blob([wav], { type: 'audio/wav' });
-}
-
 type SavedRecording = {
   id: string;
   projectId: string;
@@ -275,7 +548,6 @@ type SavedRecording = {
   verse: number;
   verseText: string;
   bgmId: string;
-  reverb: string;
   mimeType: string;
   sizeBytes: number;
   durationSeconds: number;
@@ -304,7 +576,9 @@ async function saveUserState(state: UserStateSnapshot) {
 }
 
 function formatTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const minutes = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, '0');
   const remainder = (seconds % 60).toString().padStart(2, '0');
   return `${minutes}:${remainder}`;
 }
@@ -322,8 +596,7 @@ function recordingBelongsToJourney(recording: SavedRecording, project: ActivePro
   if (!project) return true;
   if (recording.projectId === project.id) return true;
   if (project.kind !== 'free' || !project.passage) return false;
-  return recording.projectId.startsWith(`free-${project.passage.code}-`)
-    || (recording.projectId === 'free-recording' && recording.book === project.passage.name);
+  return recording.projectId.startsWith(`free-${project.passage.code}-`) || (recording.projectId === 'free-recording' && recording.book === project.passage.name);
 }
 
 async function fetchLibrary() {
@@ -335,78 +608,7 @@ async function fetchLibrary() {
 
 function getSupportedMimeType() {
   if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
-  return (
-    ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'].find((type) =>
-      MediaRecorder.isTypeSupported(type),
-    ) ?? ''
-  );
-}
-
-function createRecordingAudioGraph(stream: MediaStream, reverb: string) {
-  if (reverb === '원음') return { context: null, stream };
-
-  const context = new AudioContext();
-  const source = context.createMediaStreamSource(stream);
-  const highPass = context.createBiquadFilter();
-  const leveler = context.createDynamicsCompressor();
-  const makeupGain = context.createGain();
-  const dryGain = context.createGain();
-  const mix = context.createGain();
-  const limiter = context.createDynamicsCompressor();
-  const destination = context.createMediaStreamDestination();
-
-  highPass.type = 'highpass';
-  highPass.frequency.value = 70;
-  highPass.Q.value = 0.7;
-
-  // Gentle speech levelling keeps softly and loudly read verses closer together.
-  leveler.threshold.value = -18;
-  leveler.knee.value = 12;
-  leveler.ratio.value = 2;
-  leveler.attack.value = 0.015;
-  leveler.release.value = 0.22;
-  makeupGain.gain.value = 1;
-  dryGain.gain.value = reverb === '원음' ? 1 : 0.94;
-
-  // The final limiter protects the recorded file from clipping after make-up gain.
-  limiter.threshold.value = -1;
-  limiter.knee.value = 0;
-  limiter.ratio.value = 20;
-  limiter.attack.value = 0.002;
-  limiter.release.value = 0.12;
-
-  source.connect(highPass);
-  highPass.connect(leveler);
-  leveler.connect(makeupGain);
-  makeupGain.connect(dryGain);
-  dryGain.connect(mix);
-
-  if (reverb !== '원음') {
-    const convolver = context.createConvolver();
-    const wetGain = context.createGain();
-    const duration = reverb === '예배당' ? 1.8 : 0.55;
-    const decay = reverb === '예배당' ? 3.4 : 7;
-    const impulse = context.createBuffer(2, Math.ceil(context.sampleRate * duration), context.sampleRate);
-
-    for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
-      const samples = impulse.getChannelData(channel);
-      for (let index = 0; index < samples.length; index += 1) {
-        const envelope = Math.pow(1 - index / samples.length, decay);
-        samples[index] = (Math.random() * 2 - 1) * envelope;
-      }
-    }
-
-    convolver.buffer = impulse;
-    wetGain.gain.value = reverb === '예배당' ? 0.22 : 0.1;
-    makeupGain.connect(convolver);
-    convolver.connect(wetGain);
-    wetGain.connect(mix);
-  }
-
-  mix.connect(limiter);
-  limiter.connect(destination);
-
-  return { context, stream: destination.stream };
+  return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'].find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
 function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?: string; onSignOut: () => Promise<void> }) {
@@ -428,17 +630,29 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [seconds, setSeconds] = useState(0);
   const [takes, setTakes] = useState<(RecordingTake | null)[]>(() => defaultVerses.map(() => null));
   const [saved, setSaved] = useState<boolean[]>(() => defaultVerses.map(() => false));
-  const [reverb, setReverb] = useState('원음');
   const [bgm, setBgm] = useState('still-waters');
   const [volume, setVolume] = useState(12);
   const [notice, setNotice] = useState('');
-  const [completionModal, setCompletionModal] = useState<{ title: string; description: string; showLibraryAction?: boolean } | null>(null);
+  const [completionModal, setCompletionModal] = useState<{
+    title: string;
+    description: string;
+    showLibraryAction?: boolean;
+  } | null>(null);
+  const [confirmJourneyCompletion, setConfirmJourneyCompletion] = useState(false);
+  const [completedJourneyModal, setCompletedJourneyModal] = useState<ActiveProject | null>(null);
+  const [completedGiftProjectIds, setCompletedGiftProjectIds] = useState<string[]>([]);
+  const [completedSort, setCompletedSort] = useState<'date' | 'name'>('date');
+  const [completedPlaybackIndex, setCompletedPlaybackIndex] = useState(0);
+  const [completedPlaybackPaused, setCompletedPlaybackPaused] = useState(true);
+  const [completedPlaybackListOpen, setCompletedPlaybackListOpen] = useState(false);
+  const completedPlaybackRef = useRef<HTMLAudioElement | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [activePreview, setActivePreview] = useState<string | null>(null);
   const [bgmPaused, setBgmPaused] = useState(false);
   const [bgmLoadingId, setBgmLoadingId] = useState<string | null>(null);
   const [headphoneWarningOpen, setHeadphoneWarningOpen] = useState(false);
   const [earnedCard, setEarnedCard] = useState<WordCard | null>(null);
+  const [queuedEarnedCard, setQueuedEarnedCard] = useState<WordCard | null>(null);
   const [collectedCardIds, setCollectedCardIds] = useState<string[]>([]);
   const [pendingCardAwards, setPendingCardAwards] = useState<WordCardAward[]>([]);
   const [wordCardCollectionMode, setWordCardCollectionMode] = useState(false);
@@ -469,22 +683,27 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [confirmFullRetakeOpen, setConfirmFullRetakeOpen] = useState(false);
   const [fullRetakeActive, setFullRetakeActive] = useState(false);
   const [clearingForRetake, setClearingForRetake] = useState(false);
-  const [confirmQuitJourneyOpen, setConfirmQuitJourneyOpen] = useState(false);
+  const [confirmQuitJourneyOpen, setConfirmQuitJourneyOpen] = useState<ActiveProject | null>(null);
   const [deletingJourney, setDeletingJourney] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app'>('welcome');
+  const [onboardingStep, setOnboardingStep] = useState<'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'giftStudio' | 'app'>('welcome');
+  const [giftStudioScope, setGiftStudioScope] = useState<GiftDraftScope | null>(null);
+  const [giftStudioFriend, setGiftStudioFriend] = useState<{ userId: string; nickname: string; emailHint: string } | null>(null);
+  const [selectedSentGiftId, setSelectedSentGiftId] = useState<string | null>(null);
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [projectPickerMode, setProjectPickerMode] = useState<'recommended' | 'custom'>('recommended');
-  const [customPlanMode, setCustomPlanMode] = useState<ReadingPlanMode>('single');
+  const [customPlanMode, setCustomPlanMode] = useState<ReadingPlanMode>('chapter');
+  const [customBibleRange, setCustomBibleRange] = useState<BibleRange>(() => ({
+    start: { bookCode: bibleBooks[0].code, chapter: 1, verse: 1 },
+    end: {
+      bookCode: bibleBooks[0].code,
+      chapter: 1,
+      verse: bibleBooks[0].chapters[0],
+    },
+  }));
   const [customProjectName, setCustomProjectName] = useState('창세기 읽기 계획');
-  const [customBookId, setCustomBookId] = useState(bibleBooks[0].code);
-  const [customStartChapter, setCustomStartChapter] = useState(1);
-  const [customStartVerse, setCustomStartVerse] = useState(1);
-  const [customEndChapter, setCustomEndChapter] = useState(bibleBooks[0].chapters.length);
-  const [customEndVerse, setCustomEndVerse] = useState(bibleBooks[0].chapters.at(-1) ?? 1);
-  const [customSelectedBookIds, setCustomSelectedBookIds] = useState<string[]>([]);
   const [customDurationDays, setCustomDurationDays] = useState(30);
   const [activeDailyPassageIndex, setActiveDailyPassageIndex] = useState(0);
   const [activeProject, setActiveProject] = useState<ActiveProject | null>(null);
@@ -494,6 +713,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [selectedBibleBook, setSelectedBibleBook] = useState<BibleBook>(bibleBooks[0]);
   const [selectedBibleChapter, setSelectedBibleChapter] = useState(1);
   const [selectedBibleVerses, setSelectedBibleVerses] = useState<string[]>([]);
+  const [bibleScopeMode, setBibleScopeMode] = useState<'chapter' | 'range'>('chapter');
+  const [readingBibleRange, setReadingBibleRange] = useState<BibleRange>(() => ({ start: { bookCode: bibleBooks[0].code, chapter: 1, verse: 1 }, end: { bookCode: bibleBooks[0].code, chapter: 1, verse: bibleBooks[0].chapters[0] } }));
   const [bibleLoading, setBibleLoading] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -516,9 +737,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const chapterPausedRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
   const playbackAudioContextRef = useRef<AudioContext | null>(null);
-  const playbackBgmSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const playbackBgmGainRef = useRef<GainNode | null>(null);
-  const playbackBgmBuffersRef = useRef(new Map<string, AudioBuffer>());
+  const playbackBgmAudioRef = useRef<HTMLAudioElement | null>(null);
   const bgmArrayBufferPromisesRef = useRef(new Map<string, Promise<ArrayBuffer>>());
   const cardPreloadImagesRef = useRef<ReturnType<typeof preloadImages>>([]);
   const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
@@ -546,23 +765,26 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     book: passageBook.name,
     chapter: passageChapter,
   });
-  const moveContinuousVerse = useCallback((nextIndex: number, source: 'manual') => {
-    const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
-    if (safeIndex === verseIndex) return;
-    const now = performance.now();
-    const sessionStart = recordingStartedAtRef.current;
-    const boundary: ContinuousVerseBoundary = {
-      verseIndex,
-      startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - sessionStart)),
-      endMs: Math.max(0, Math.round(now - sessionStart)),
-      transitionSource: source,
-    };
-    continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-    setContinuousBoundaries(continuousBoundariesRef.current);
-    continuousVerseStartedAtRef.current = now;
-    continuousVerseIndexRef.current = safeIndex;
-    setVerseIndex(safeIndex);
-  }, [passageVerses.length, verseIndex]);
+  const moveContinuousVerse = useCallback(
+    (nextIndex: number, source: 'manual') => {
+      const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
+      if (safeIndex === verseIndex) return;
+      const now = performance.now();
+      const sessionStart = recordingStartedAtRef.current;
+      const boundary: ContinuousVerseBoundary = {
+        verseIndex,
+        startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - sessionStart)),
+        endMs: Math.max(0, Math.round(now - sessionStart)),
+        transitionSource: source,
+      };
+      continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
+      setContinuousBoundaries(continuousBoundariesRef.current);
+      continuousVerseStartedAtRef.current = now;
+      continuousVerseIndexRef.current = safeIndex;
+      setVerseIndex(safeIndex);
+    },
+    [passageVerses.length, verseIndex],
+  );
 
   const completeContinuousVerse = useCallback(() => {
     if (!recording || recordingMode !== 'continuous') return;
@@ -642,19 +864,23 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             return {
               ...project,
               startedOn,
-              readingDay: project.kind === 'free' ? undefined : project.readingDay ?? getProjectDay({ ...project, startedOn }, getKstDateKey()),
-              readingDayDate: project.kind === 'free' ? undefined : project.readingDayDate ?? getKstDateKey(),
+              readingDay: project.kind === 'free' ? undefined : (project.readingDay ?? getProjectDay({ ...project, startedOn }, getKstDateKey())),
+              readingDayDate: project.kind === 'free' ? undefined : (project.readingDayDate ?? getKstDateKey()),
             };
           });
           const freeProjectsByBook = new Map<string, ActiveProject>();
-          parsedProjects.filter((project) => project.kind === 'free' && project.passage).forEach((project) => {
-            const passage = project.passage!;
-            freeProjectsByBook.set(passage.code, { ...project, id: `free-${passage.code}`, title: `${passage.name} 녹음` });
-          });
-          restoredProjects = [
-            ...parsedProjects.filter((project) => project.kind !== 'free'),
-            ...freeProjectsByBook.values(),
-          ];
+          parsedProjects
+            .filter((project) => project.kind === 'free' && project.passage)
+            .forEach((project) => {
+              const passage = project.passage!;
+              freeProjectsByBook.set(passage.code, {
+                ...project,
+                id: `free-${passage.code}`,
+                title: `${passage.name} 녹음`,
+              });
+            });
+          const freeRangeProjects = parsedProjects.filter((project) => project.kind === 'free' && !project.passage);
+          restoredProjects = [...parsedProjects.filter((project) => project.kind !== 'free'), ...freeProjectsByBook.values(), ...freeRangeProjects];
           setActiveProjects(restoredProjects);
           window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(restoredProjects));
         } catch {
@@ -664,13 +890,22 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       if (savedProjectId) {
         setSelectedTemplateId(savedProjectId);
         const template = projectTemplates.find((item) => item.id === savedProjectId);
-        const restoredActiveProject = restoredProjects.find((item) => item.id === savedProjectId)
-          ?? (savedProjectId.startsWith('free-') ? restoredProjects.find((item) => item.kind === 'free' && savedProjectId.startsWith(item.id)) : undefined);
+        const restoredActiveProject = restoredProjects.find((item) => item.id === savedProjectId) ?? (savedProjectId.startsWith('free-') ? restoredProjects.find((item) => item.kind === 'free' && savedProjectId.startsWith(item.id)) : undefined);
         if (restoredActiveProject) {
           setActiveProject(restoredActiveProject);
           window.localStorage.setItem('verse-legacy-project', restoredActiveProject.id);
         } else if (template) {
-          const restoredProject: ActiveProject = { id: template.id, title: template.title, duration: template.duration, scope: template.scope, tasks: template.tasks, kind: 'guided', startedOn: getKstDateKey(), readingDay: 1, readingDayDate: getKstDateKey() };
+          const restoredProject: ActiveProject = {
+            id: template.id,
+            title: template.title,
+            duration: template.duration,
+            scope: template.scope,
+            tasks: template.tasks,
+            kind: 'guided',
+            startedOn: getKstDateKey(),
+            readingDay: 1,
+            readingDayDate: getKstDateKey(),
+          };
           setActiveProject(restoredProject);
           setActiveProjects((current) => {
             const next = restoreJourney(current, restoredProject);
@@ -681,7 +916,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       }
       if (!savedProjectId && savedFreePassage) {
         try {
-          const passage = JSON.parse(savedFreePassage) as { code: string; name: string; chapter: number };
+          const passage = JSON.parse(savedFreePassage) as {
+            code: string;
+            name: string;
+            chapter: number;
+          };
           fetch(`/data/bible/${encodeURIComponent(passage.code)}.json`)
             .then((response) => response.json() as Promise<string[][]>)
             .then((chapters) => {
@@ -815,14 +1054,17 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       } catch {
         wordCardAwards = [];
       }
-      void saveUserState({ activeProjects, activeProjectId: activeProject?.id ?? null, wordCardAwards })
-        .catch(() => setNotice('말씀 여정 상태를 서버에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      void saveUserState({
+        activeProjects,
+        activeProjectId: activeProject?.id ?? null,
+        wordCardAwards,
+      }).catch(() => setNotice('말씀 여정 상태를 서버에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
     }, 300);
     return () => window.clearTimeout(timeout);
   }, [activeProject?.id, activeProjects, collectedCardIds, pendingCardAwards, userStateReady]);
 
   useEffect(() => {
-    if (playbackBgmGainRef.current) playbackBgmGainRef.current.gain.value = volume / 100;
+    if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.volume = toAudibleBgmGain(volume);
   }, [volume]);
 
   useEffect(() => {
@@ -840,16 +1082,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       void recordingAudioContextRef.current?.close();
+      playbackBgmAudioRef.current?.pause();
+      playbackBgmAudioRef.current = null;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
 
   const completedCount = saved.filter(Boolean).length;
-  const progress = useMemo(
-    () => Math.round((completedCount / passageVerses.length) * 100),
-    [completedCount, passageVerses.length],
-  );
-  const currentPassageComplete = passageVerses.length > 0 && saved.length === passageVerses.length && saved.every(Boolean);
+  const progress = useMemo(() => Math.round((completedCount / passageVerses.length) * 100), [completedCount, passageVerses.length]);
   const activeLibraryRecordings = useMemo(() => {
     if (!activeProject) return libraryRecordings;
     return libraryRecordings.filter((item) => recordingBelongsToJourney(item, activeProject));
@@ -857,8 +1097,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const currentProjectDay = activeProject ? getProjectDay(activeProject, kstToday) : 1;
   const displayedProjectDay = viewedProjectDay ?? currentProjectDay;
   const displayedProjectDayIndex = Math.max(0, displayedProjectDay - 1);
-  const displayedProjectTask = activeProject?.tasks[displayedProjectDayIndex]
-    ?? (activeProject && displayedProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
+  const displayedProjectTask = activeProject?.tasks[displayedProjectDayIndex] ?? (activeProject && displayedProjectDay === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음');
   const currentSavedRecording = activeLibraryRecordings.find((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse === currentVerseNumber) ?? null;
   const playbackRecording = currentSavedRecording;
   const savedPassageVerseNumbers = new Set(activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter).map((item) => item.verse));
@@ -868,6 +1107,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     if (!activeProject || activeProject.kind === 'free') return completed;
 
     const recorded = new Set(activeLibraryRecordings.map((item) => `${item.book}-${item.chapter}-${item.verse}`));
+    const activePassageComplete = passageVerses.length > 0 && passageVerses.every((_, index) =>
+      recorded.has(`${passageBook.name}-${passageChapter}-${passageStartVerse + index}`),
+    );
     let currentBook = '';
     let currentChapter = 0;
 
@@ -902,53 +1144,89 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       for (let chapter = startChapter; chapter <= endChapter; chapter += 1) {
         const metadataChapter = chapter;
         const firstVerse = chapter === startChapter ? startVerse : 1;
-        const lastVerse = chapter === endChapter ? endVerse : bookMetadata?.chapters[metadataChapter - 1] ?? 0;
+        const lastVerse = chapter === endChapter ? endVerse : (bookMetadata?.chapters[metadataChapter - 1] ?? 0);
         for (let verse = firstVerse; verse <= lastVerse; verse += 1) required.push(`${currentBook}-${chapter}-${verse}`);
       }
       if (required.length > 0 && required.every((reference) => recorded.has(reference))) completed.add(index);
     });
 
-    if (currentPassageComplete) completed.add(0);
+    if (activePassageComplete) completed.add(0);
 
     return completed;
-  }, [activeLibraryRecordings, activeProject, currentPassageComplete]);
+  }, [activeLibraryRecordings, activeProject, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
   const displayedProjectDayComplete = completedProjectTaskIndexes.has(displayedProjectDayIndex);
-  const freeRecordingChapterKeys = useMemo(() => new Set(
-    libraryRecordings
-      .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
-      .map((item) => `${item.book}-${item.chapter}`),
-  ), [libraryRecordings]);
-  const freeRecordingBookNames = useMemo(() => new Set(
-    libraryRecordings
-      .filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-'))
-      .map((item) => item.book),
-  ), [libraryRecordings]);
+  const freeRecordingChapterKeys = useMemo(() => new Set(libraryRecordings.filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-')).map((item) => `${item.book}-${item.chapter}`)), [libraryRecordings]);
+  const freeRecordingBookNames = useMemo(() => new Set(libraryRecordings.filter((item) => item.projectId === 'free-recording' || item.projectId.startsWith('free-')).map((item) => item.book)), [libraryRecordings]);
   const activeProjectIds = useMemo(() => new Set(activeProjects.map((project) => project.id)), [activeProjects]);
   const journeyProjects = activeProjects;
   const chapterCountsByBook = useMemo(() => Object.fromEntries(bibleBooks.map((book) => [book.name, book.chapters])), []);
-  const completedJourneyIds = useMemo(() => new Set(activeProjects.filter((project) => {
-    if (project.kind === 'free') return false;
-    const required = project.dailySchedule
-      ? getPlanPassageReferences(project.dailySchedule.flat())
-      : getRequiredJourneyReferences(project.tasks, chapterCountsByBook);
-    const recorded = new Set(libraryRecordings
-      .filter((recording) => recordingBelongsToJourney(recording, project))
-      .map((recording) => `${recording.book}-${recording.chapter}-${recording.verse}`));
-    return isJourneyCompleted(required, recorded);
-  }).map((project) => project.id)), [activeProjects, chapterCountsByBook, libraryRecordings]);
-  const ongoingJourneyProjects = journeyProjects.filter((project) => !completedJourneyIds.has(project.id));
+  const recordingCompleteJourneyIds = useMemo(
+    () =>
+      new Set(
+        activeProjects
+          .filter((project) => {
+            if (project.kind === 'free') return false;
+            const required = project.dailySchedule ? getPlanPassageReferences(project.dailySchedule.flat()) : getRequiredJourneyReferences(project.tasks, chapterCountsByBook);
+            const recorded = new Set(libraryRecordings.filter((recording) => recordingBelongsToJourney(recording, project)).map((recording) => `${recording.book}-${recording.chapter}-${recording.verse}`));
+            return isJourneyCompleted(required, recorded);
+          })
+          .map((project) => project.id),
+      ),
+    [activeProjects, chapterCountsByBook, libraryRecordings],
+  );
+  const completedJourneyIds = useMemo(() => new Set(activeProjects.filter((project) => project.completedAt).map((project) => project.id)), [activeProjects]);
+  const ongoingJourneyProjects = journeyProjects.filter((project) => !project.completedAt);
   const ongoingJourneyGroups = splitOngoingJourneys(ongoingJourneyProjects);
-  const completedJourneyProjects = journeyProjects.filter((project) => completedJourneyIds.has(project.id));
+  const completedJourneyProjects = journeyProjects
+    .filter((project) => project.completedAt)
+    .sort((a, b) => completedSort === 'name' ? a.title.localeCompare(b.title, 'ko') : (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  const completedModalRecordings = useMemo(() => completedJourneyModal
+    ? orderJourneyRecordings(libraryRecordings.filter((recording) => recordingBelongsToJourney(recording, completedJourneyModal)), completedJourneyModal.tasks, chapterCountsByBook, completedJourneyModal.dailySchedule ? [...getPlanPassageReferences(completedJourneyModal.dailySchedule.flat())] : undefined)
+    : [], [chapterCountsByBook, completedJourneyModal, libraryRecordings]);
+  const completedNowPlaying = completedModalRecordings[completedPlaybackIndex] ?? completedModalRecordings[0] ?? null;
+
+  const playCompletedRecording = (index = completedPlaybackIndex) => {
+    const recording = completedModalRecordings[index];
+    const audio = completedPlaybackRef.current;
+    if (!recording || !audio) return;
+    setCompletedPlaybackIndex(index);
+    if (audio.src !== new URL(`/api/recordings/${recording.id}/audio`, window.location.href).href) {
+      audio.src = `/api/recordings/${recording.id}/audio`;
+      audio.load();
+    }
+    void audio.play().then(() => setCompletedPlaybackPaused(false)).catch(() => setNotice('완료된 말씀을 재생하지 못했어요.'));
+  };
+
+  const closeCompletedPlayback = () => {
+    completedPlaybackRef.current?.pause();
+    setCompletedPlaybackPaused(true);
+    setCompletedPlaybackIndex(0);
+    setCompletedPlaybackListOpen(false);
+    setCompletedJourneyModal(null);
+  };
   const completedFreeChapterKeys = useMemo(() => getCompletedFreeChapterKeys(libraryRecordings, chapterCountsByBook), [chapterCountsByBook, libraryRecordings]);
   const journeyBookLocked = bibleBackTarget === 'projectHome' && activeProject?.kind === 'free';
-  const currentUnitLocked = Boolean(activeProject && (activeProject.kind === 'free'
-    ? completedFreeChapterKeys.has(`${passageBook.name}-${passageChapter}`)
-    : completedJourneyIds.has(activeProject.id)));
+  const currentUnitLocked = Boolean(activeProject?.completedAt);
   const libraryChapterGroups = useMemo(() => {
-    const groups = new Map<string, { key: string; book: string; chapter: number; recordings: SavedRecording[]; updatedAt: number }>();
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        book: string;
+        chapter: number;
+        recordings: SavedRecording[];
+        updatedAt: number;
+      }
+    >();
     activeLibraryRecordings.forEach((item) => {
       const key = `${item.book}-${item.chapter}`;
-      const group = groups.get(key) ?? { key, book: item.book, chapter: item.chapter, recordings: [], updatedAt: item.createdAt };
+      const group = groups.get(key) ?? {
+        key,
+        book: item.book,
+        chapter: item.chapter,
+        recordings: [],
+        updatedAt: item.createdAt,
+      };
       group.recordings.push(item);
       group.updatedAt = Math.max(group.updatedAt, item.createdAt);
       groups.set(key, group);
@@ -988,13 +1266,19 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         'sermon-medium': { name: '마태복음', chapter: 5 },
         'philippians-advanced': { name: '빌립보서', chapter: 1 },
       };
-      const fallback = fallbacks[activeProject.id] ?? { name: '시편', chapter: 23 };
+      const fallback = fallbacks[activeProject.id] ?? {
+        name: '시편',
+        chapter: 23,
+      };
       addReference(fallback.name, fallback.chapter);
     }
 
     const bibleOrder = new Map(bibleBooks.map((book, index) => [book.name, index]));
     return [...references.values()]
-      .map((reference) => ({ ...reference, hasRecording: libraryChapterGroups.some((group) => group.key === reference.key) }))
+      .map((reference) => ({
+        ...reference,
+        hasRecording: libraryChapterGroups.some((group) => group.key === reference.key),
+      }))
       .sort((a, b) => (bibleOrder.get(a.book) ?? 999) - (bibleOrder.get(b.book) ?? 999) || a.chapter - b.chapter);
   }, [activeProject, libraryChapterGroups]);
   const selectedLibraryGroup = libraryChapterGroups.find((group) => group.key === selectedLibraryChapter) ?? libraryChapterGroups[0] ?? null;
@@ -1008,43 +1292,43 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, [selectedLibraryGroup]);
   const playbackQueue = useMemo(() => {
     if (isGuidedJourneyPlayback) {
-      const orderedReferences = activeProject?.dailySchedule
-        ? [...getPlanPassageReferences(activeProject.dailySchedule.flat())]
-        : undefined;
+      const orderedReferences = activeProject?.dailySchedule ? [...getPlanPassageReferences(activeProject.dailySchedule.flat())] : undefined;
       return orderJourneyRecordings(activeLibraryRecordings, activeProject?.tasks ?? [], chapterCountsByBook, orderedReferences);
     }
     return selectedChapterQueue;
   }, [activeLibraryRecordings, activeProject, chapterCountsByBook, isGuidedJourneyPlayback, selectedChapterQueue]);
-  const giftableFreeChapterGroups = useMemo(() => libraryChapterGroups
-    .filter((group) => group.book === selectedLibraryGroup?.book && completedFreeChapterKeys.has(group.key))
-    .sort((a, b) => a.chapter - b.chapter), [completedFreeChapterKeys, libraryChapterGroups, selectedLibraryGroup?.book]);
+  const giftableFreeChapterGroups = useMemo(() => libraryChapterGroups.filter((group) => group.book === selectedLibraryGroup?.book && completedFreeChapterKeys.has(group.key)).sort((a, b) => a.chapter - b.chapter), [completedFreeChapterKeys, libraryChapterGroups, selectedLibraryGroup?.book]);
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
       const key = selectedLibraryGroup?.key;
       const next = !isGuidedJourneyPlayback && key && completedFreeChapterKeys.has(key) ? [key] : [];
-      setGiftChapterKeys((current) => current.length === next.length && current.every((item, index) => item === next[index]) ? current : next);
+      setGiftChapterKeys((current) => (current.length === next.length && current.every((item, index) => item === next[index]) ? current : next));
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [completedFreeChapterKeys, isGuidedJourneyPlayback, selectedLibraryGroup?.key]);
-  const giftCandidateIds = useMemo(() => isGuidedJourneyPlayback
-    ? completedJourneyIds.has(activeProject?.id ?? '') ? playbackQueue.map((item) => item.id) : []
-    : giftableFreeChapterGroups.filter((group) => giftChapterKeys.includes(group.key)).flatMap((group) => group.recordings.map((item) => item.id)),
-  [activeProject?.id, completedJourneyIds, giftChapterKeys, giftableFreeChapterGroups, isGuidedJourneyPlayback, playbackQueue]);
-  const giftSelection = useMemo(() => giftCandidateIds.length ? evaluateGiftSelection({
-    recordings: activeLibraryRecordings,
-    projects: activeProjects,
-    selectedRecordingIds: giftCandidateIds,
-    chapterCounts: chapterCountsByBook,
-  }) : null, [activeLibraryRecordings, activeProjects, chapterCountsByBook, giftCandidateIds]);
-  const giftQueue = useMemo(() => giftSelection?.eligible
-    ? giftSelection.orderedRecordingIds.map((id) => activeLibraryRecordings.find((item) => item.id === id)).filter((item): item is SavedRecording => Boolean(item))
-    : [], [activeLibraryRecordings, giftSelection]);
-  const playbackGiftTitle = giftSelection?.eligible ? giftSelection.title : activeProject?.title ?? '말씀 녹음';
-  const selectedLibraryUnitLocked = Boolean(activeProject && (isGuidedJourneyPlayback
-    ? completedJourneyIds.has(activeProject.id)
-    : selectedLibraryGroup && completedFreeChapterKeys.has(selectedLibraryGroup.key)));
+  const giftCandidateIds = useMemo(
+    () => (completedGiftProjectIds.length ? completedGiftProjectIds.flatMap((projectId) => libraryRecordings.filter((recording) => recording.projectId === projectId).map((recording) => recording.id)) : isGuidedJourneyPlayback ? [] : giftableFreeChapterGroups.filter((group) => giftChapterKeys.includes(group.key)).flatMap((group) => group.recordings.map((item) => item.id))),
+    [completedGiftProjectIds, giftChapterKeys, giftableFreeChapterGroups, isGuidedJourneyPlayback, libraryRecordings],
+  );
+  const giftSelection = useMemo(
+    () =>
+      giftCandidateIds.length
+        ? evaluateGiftSelection({
+            recordings: completedGiftProjectIds.length ? libraryRecordings : activeLibraryRecordings,
+            projects: activeProjects,
+            selectedRecordingIds: giftCandidateIds,
+            chapterCounts: chapterCountsByBook,
+          })
+        : null,
+    [activeLibraryRecordings, activeProjects, chapterCountsByBook, completedGiftProjectIds.length, giftCandidateIds, libraryRecordings],
+  );
+  const giftQueue = useMemo(() => (giftSelection?.eligible ? giftSelection.orderedRecordingIds.map((id) => (completedGiftProjectIds.length ? libraryRecordings : activeLibraryRecordings).find((item) => item.id === id)).filter((item): item is SavedRecording => Boolean(item)) : []), [activeLibraryRecordings, completedGiftProjectIds.length, giftSelection, libraryRecordings]);
+  const playbackGiftTitle = giftSelection?.eligible ? giftSelection.title : (activeProject?.title ?? '말씀 녹음');
+  const selectedLibraryUnitLocked = Boolean(activeProject?.completedAt);
   const selectedLibraryVerseCount = useMemo(() => {
     if (!selectedLibraryGroup) return 0;
     const book = bibleBooks.find((item) => item.name === selectedLibraryGroup.book);
@@ -1057,7 +1341,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const activeVerseButton = verseListRef.current?.querySelector<HTMLElement>(`[data-verse-index="${verseIndex}"]`);
-      activeVerseButton?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      activeVerseButton?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [verseIndex]);
@@ -1069,7 +1357,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     if (!firstUnrecordedVerse) return;
     const frame = window.requestAnimationFrame(() => {
       const nextVerseButton = verseMenuListRef.current?.querySelector<HTMLElement>(`[data-verse-number="${firstUnrecordedVerse}"]`);
-      nextVerseButton?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      nextVerseButton?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [selectedChapterQueue, libraryChapterMenuOpen, selectedLibraryVerseCount]);
@@ -1102,26 +1394,51 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     if (!result.award || (!result.created && result.award.collected)) return;
     const card = wordCards.find((item) => item.id === result.award?.cardId);
     if (!card) return;
-    if (result.created) window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
+    if (result.created) {
+      window.localStorage.setItem(storageKey, JSON.stringify(result.awards));
+      void saveUserState({
+        activeProjects,
+        activeProjectId: activeProject.id,
+        wordCardAwards: result.awards,
+      });
+    }
     setPendingCardAwards((current) => [...current.filter((award) => award.key !== awardKey), result.award!]);
-    if (result.created) setCompletionModal({ title: '하루 읽기 완료', description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.`, showLibraryAction: true });
+    if (result.created) {
+      setEarnedCard(null);
+      setQueuedEarnedCard(card);
+      setCompletionModal({
+        title: '하루 읽기 완료',
+        description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.`,
+        showLibraryAction: true,
+      });
+    } else {
+      setEarnedCard(card);
+    }
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
     setWordCardExpanded(false);
-    setEarnedCard(card);
-  }, [activeProject, displayedProjectDay, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
+  }, [activeProject, activeProjects, displayedProjectDay, passageBook.name, passageChapter, passageStartVerse, passageVerses]);
+
+  const revealQueuedWordCard = () => {
+    setCompletionModal(null);
+    if (!queuedEarnedCard) return;
+    setEarnedCard(queuedEarnedCard);
+    setQueuedEarnedCard(null);
+  };
 
   const closeWordCard = () => {
     setEarnedCard(null);
     setWordCardCollectionMode(false);
   };
 
-  const collectStoredWordCard = (awardKey: string, cardId: string) => {
+  const collectStoredWordCard = async (awardKey: string, cardId: string) => {
     const storageKey = 'verse-legacy-word-card-awards';
     try {
       const awards = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]') as WordCardAward[];
-      window.localStorage.setItem(storageKey, JSON.stringify(collectWordCardAward(awards, awardKey, cardId)));
-      setCollectedCardIds((current) => current.includes(cardId) ? current : [...current, cardId]);
+      const nextAwards = collectWordCardAward(awards, awardKey, cardId);
+      await saveUserState({ activeProjects, activeProjectId: activeProject?.id ?? null, wordCardAwards: nextAwards });
+      window.localStorage.setItem(storageKey, JSON.stringify(nextAwards));
+      setCollectedCardIds((current) => (current.includes(cardId) ? current : [...current, cardId]));
       setPendingCardAwards((current) => current.filter((award) => !(award.key === awardKey && award.cardId === cardId)));
       setNotice('내 카드 보관함에 간직했어요.');
       return true;
@@ -1131,17 +1448,23 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
   };
 
-  const collectEarnedWordCard = () => {
+  const collectEarnedWordCard = async () => {
     if (activeProject && earnedCard) {
-      collectStoredWordCard(`${activeProject.id}:day-${displayedProjectDay}`, earnedCard.id);
+      if (await collectStoredWordCard(`${activeProject.id}:day-${displayedProjectDay}`, earnedCard.id)) closeWordCard();
+      return;
     }
     closeWordCard();
   };
 
   useEffect(() => {
-    if (!displayedProjectDayComplete || !activeProject || activeProject.kind === 'free') return;
+    if (!userStateReady || !displayedProjectDayComplete || !activeProject || activeProject.kind === 'free') return;
     queueMicrotask(() => awardDailyWordCard());
-  }, [activeProject, awardDailyWordCard, displayedProjectDayComplete]);
+  }, [
+    activeProject,
+    awardDailyWordCard,
+    displayedProjectDayComplete,
+    userStateReady,
+  ]);
 
   const prepareChapterAudio = async () => {
     let context = playbackAudioContextRef.current;
@@ -1162,28 +1485,17 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const startInternalChapterBgm = async (context: AudioContext, bgmId: string) => {
     const generation = playbackBgmRequestGateRef.current.begin();
-    playbackBgmSourceRef.current?.stop();
-    playbackBgmSourceRef.current = null;
-    playbackBgmGainRef.current = null;
+    playbackBgmAudioRef.current?.pause();
+    playbackBgmAudioRef.current = null;
     const option = bgmOptions.find((item) => item.id === bgmId);
     if (!option?.audioSrc) return true;
-    let buffer = playbackBgmBuffersRef.current.get(option.audioSrc);
-    if (!buffer) {
-      const encodedAudio = await warmBgmTrack(option.audioSrc);
-      if (!encodedAudio) return true;
-      buffer = await context.decodeAudioData(encodedAudio.slice(0));
-      playbackBgmBuffersRef.current.set(option.audioSrc, buffer);
-    }
+    await context.resume();
     if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
-    const source = context.createBufferSource();
-    const gain = context.createGain();
-    source.buffer = buffer;
-    source.loop = true;
-    gain.gain.value = volume / 100;
-    source.connect(gain).connect(context.destination);
-    playbackBgmSourceRef.current = source;
-    playbackBgmGainRef.current = gain;
-    source.start();
+    const bgmAudio = new Audio(option.audioSrc);
+    bgmAudio.loop = true;
+    bgmAudio.volume = toAudibleBgmGain(volume);
+    playbackBgmAudioRef.current = bgmAudio;
+    await bgmAudio.play();
     return true;
   };
 
@@ -1203,9 +1515,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setChapterPlaying(false);
     setChapterPaused(false);
     setPlaybackListOpen(false);
-    playbackBgmSourceRef.current?.stop();
-    playbackBgmSourceRef.current = null;
-    playbackBgmGainRef.current = null;
+    playbackBgmAudioRef.current?.pause();
+    if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.currentTime = 0;
+    playbackBgmAudioRef.current = null;
     void playbackAudioContextRef.current?.suspend();
     libraryAudioRefs.current.forEach((audio) => {
       if (!audio.paused) audio.pause();
@@ -1234,6 +1546,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setOnboardingStep('projects');
       return;
     }
+    if (route === 'gift-studio') {
+      setOnboardingStep('giftStudio');
+      return;
+    }
     if (route === 'bible' || route === 'schedule' || route === 'cards') {
       setOnboardingStep(route);
       return;
@@ -1254,13 +1570,23 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const openGiftStudioWithFriend = (friend: { userId: string; nickname: string; emailHint: string }) => {
+    setGiftStudioFriend(friend);
+    setGiftStudioScope(null);
+    navigateTo('gift-studio');
+  };
+
+  const openGiftStudio = (scope?: GiftDraftScope) => {
+    setGiftStudioFriend(null);
+    setGiftStudioScope(scope ?? null);
+    navigateTo('gift-studio');
+  };
+
   useEffect(() => {
     window.history.replaceState({ verseLegacyRoute: 'home' }, '', getNavigationHash('home'));
     const handlePopState = (event: PopStateEvent) => {
       stopChapterPlaybackRef.current();
-      const stateRoute = typeof event.state?.verseLegacyRoute === 'string'
-        ? getNavigationHash(event.state.verseLegacyRoute as NavigationRoute)
-        : window.location.hash;
+      const stateRoute = typeof event.state?.verseLegacyRoute === 'string' ? getNavigationHash(event.state.verseLegacyRoute as NavigationRoute) : window.location.hash;
       const route = parseNavigationRoute(stateRoute);
       applyNavigationRoute(route);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1286,7 +1612,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const openLibraryFromCompletion = () => {
-    setCompletionModal(null);
+    revealQueuedWordCard();
     openLibraryTab();
   };
 
@@ -1300,10 +1626,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const stopPreview = () => {
     playbackBgmRequestGateRef.current.cancel();
-    playbackBgmSourceRef.current?.stop();
-    playbackBgmSourceRef.current = null;
-    playbackBgmGainRef.current = null;
-    void playbackAudioContextRef.current?.suspend();
+    playbackBgmAudioRef.current?.pause();
+    if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.currentTime = 0;
+    playbackBgmAudioRef.current = null;
     restartBgmOnNextPlayRef.current = true;
     setActivePreview(null);
     setBgmPaused(false);
@@ -1351,12 +1676,50 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
   };
 
+  const activeJourneyRecordingComplete = () => Boolean(activeProject && (activeProject.kind === 'free'
+      ? activeProject.passage
+        ? completedFreeChapterKeys.has(`${activeProject.passage.name}-${activeProject.passage.chapter}`)
+        : isJourneyCompleted(
+            activeProject.dailySchedule ? getPlanPassageReferences(activeProject.dailySchedule.flat()) : getRequiredJourneyReferences(activeProject.tasks, chapterCountsByBook),
+            new Set(activeLibraryRecordings.map((recording) => `${recording.book}-${recording.chapter}-${recording.verse}`)),
+          )
+      : recordingCompleteJourneyIds.has(activeProject.id)));
+
+  const requestJourneyCompletion = () => {
+    if (!activeJourneyRecordingComplete()) {
+      setNotice('아직 녹음하지 않은 절이 있어요. 범위의 모든 말씀을 녹음한 뒤 저장해 주세요.');
+      return;
+    }
+    setConfirmJourneyCompletion(true);
+  };
+
+  const saveCompletedJourney = async (completedAt: number) => {
+    if (!activeProject || activeProject.completedAt || !activeJourneyRecordingComplete()) return;
+    const completedProjectId = activeProject.id;
+    const nextProjects = activeProjects.map((project) => project.id === completedProjectId ? { ...project, completedAt } : project);
+    let wordCardAwards: WordCardAward[] = [];
+    try {
+      wordCardAwards = JSON.parse(window.localStorage.getItem('verse-legacy-word-card-awards') ?? '[]') as WordCardAward[];
+      await saveUserState({ activeProjects: nextProjects, activeProjectId: null, wordCardAwards });
+    } catch {
+      setNotice('여정 완료 상태를 서버에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(nextProjects));
+    setActiveProjects(nextProjects);
+    setActiveProject(null);
+    window.localStorage.removeItem('verse-legacy-project');
+    setNotice('여정을 완료된 말씀으로 저장했어요.');
+    navigateTo('journeys');
+  };
+
   const pauseChapterPlayback = () => {
     if (!chapterPlayingRef.current || chapterPausedRef.current) return;
     chapterPausedRef.current = true;
     setChapterPaused(true);
     const audio = activeLibraryRef.current ? libraryAudioRefs.current.get(activeLibraryRef.current) : undefined;
     audio?.pause();
+    playbackBgmAudioRef.current?.pause();
     void playbackAudioContextRef.current?.suspend();
   };
 
@@ -1370,11 +1733,19 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
     chapterPausedRef.current = false;
     setChapterPaused(false);
-    void playbackAudioContextRef.current?.resume().then(() => audio.play()).catch(() => {
-      chapterPausedRef.current = true;
-      setChapterPaused(true);
-      setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
-    });
+    void playbackAudioContextRef.current
+      ?.resume()
+      .then(() => Promise.all([
+        audio.play(),
+        playbackBgmAudioRef.current?.src
+          ? playbackBgmAudioRef.current.play()
+          : Promise.resolve(),
+      ]))
+      .catch(() => {
+        chapterPausedRef.current = true;
+        setChapterPaused(true);
+        setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
+      });
   };
 
   const handleLibraryEnded = (recordingId: string) => {
@@ -1387,9 +1758,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const next = playbackQueue[currentIndex + 1];
     if (!next) {
       stopChapterPlayback();
-      setNotice(isGuidedJourneyPlayback
-        ? `‘${activeProject?.title ?? '말씀 여정'}’ 전체 이어듣기를 모두 마쳤어요.`
-        : `${selectedLibraryGroup?.book ?? passageBook.name} ${selectedLibraryGroup?.chapter ?? passageChapter}${selectedLibraryGroup?.book === '시편' ? '편' : '장'} 이어듣기를 모두 마쳤어요.`);
+      setNotice(isGuidedJourneyPlayback ? `‘${activeProject?.title ?? '말씀 여정'}’ 전체 이어듣기를 모두 마쳤어요.` : `${selectedLibraryGroup?.book ?? passageBook.name} ${selectedLibraryGroup?.chapter ?? passageChapter}${selectedLibraryGroup?.book === '시편' ? '편' : '장'} 이어듣기를 모두 마쳤어요.`);
       return;
     }
 
@@ -1441,7 +1810,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         playbackAudioContextRef.current = context;
       }
       await context.resume();
-      if (activePreview === option.id && bgmPaused && playbackBgmSourceRef.current) {
+      if (activePreview === option.id && bgmPaused && playbackBgmAudioRef.current) {
+        await playbackBgmAudioRef.current.play();
         setBgmPaused(false);
       } else {
         const started = await startInternalChapterBgm(context, option.id);
@@ -1453,12 +1823,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     } catch {
       setNotice('배경음악을 재생하지 못했어요. 다시 눌러 주세요.');
     } finally {
-      setBgmLoadingId((current) => current === option.id ? null : current);
+      setBgmLoadingId((current) => (current === option.id ? null : current));
     }
   };
 
   const pauseSelectedBgm = () => {
-    void playbackAudioContextRef.current?.suspend();
+    playbackBgmAudioRef.current?.pause();
     setBgmPaused(true);
   };
 
@@ -1495,9 +1865,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const startRetake = async (item: SavedRecording) => {
     if (deletingVerseId) return;
-    const locked = item.projectId === 'free-recording' || item.projectId.startsWith('free-')
-      ? completedFreeChapterKeys.has(`${item.book}-${item.chapter}`)
-      : completedJourneyIds.has(item.projectId);
+    const locked = Boolean(activeProjects.find((project) => project.id === item.projectId)?.completedAt);
     if (locked) {
       setNotice('완료된 말씀은 더 이상 수정할 수 없어요. 듣거나 선물로 남겨 주세요.');
       return;
@@ -1513,7 +1881,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setFullRetakeActive(false);
       setRecordingMode('verse');
       setBgm(item.bgmId);
-      setReverb(item.reverb);
       if (item.book === passageBook.name && item.chapter === passageChapter) {
         const targetIndex = item.verse - passageStartVerse;
         if (targetIndex >= 0 && targetIndex < passageVerses.length) setVerseIndex(targetIndex);
@@ -1543,10 +1910,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const recordingsToDelete = activeLibraryRecordings.filter((item) => item.book === passageBook.name && item.chapter === passageChapter && item.verse >= passageStartVerse && item.verse <= passageEndVerse);
     setClearingForRetake(true);
     try {
-      await Promise.all(recordingsToDelete.map(async (item) => {
-        const response = await fetch(`/api/recordings/${item.id}/audio`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('기존 녹음을 모두 지우지 못했어요. 다시 시도해 주세요.');
-      }));
+      await Promise.all(
+        recordingsToDelete.map(async (item) => {
+          const response = await fetch(`/api/recordings/${item.id}/audio`, {
+            method: 'DELETE',
+          });
+          if (!response.ok) throw new Error('기존 녹음을 모두 지우지 못했어요. 다시 시도해 주세요.');
+        }),
+      );
       await refreshLibrary();
       setConfirmFullRetakeOpen(false);
       setRecordingManageOpen(false);
@@ -1563,21 +1934,20 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
   };
 
-  const quitDailyJourney = async () => {
-    if (!activeProject || activeProject.kind === 'free' || deletingJourney) return;
-    if (completedJourneyIds.has(activeProject.id)) {
-      setConfirmQuitJourneyOpen(false);
-      setNotice('완료된 말씀 여정은 보관되며 더 이상 삭제하거나 수정할 수 없어요.');
-      return;
-    }
-    const journey = activeProject;
+  const quitDailyJourney = async (targetProject: ActiveProject | null = activeProject) => {
+    if (!targetProject || deletingJourney) return;
+    const journey = targetProject;
     const recordingIds = getJourneyRecordingIds(libraryRecordings, journey.id);
     setDeletingJourney(true);
     try {
-      await Promise.all(recordingIds.map(async (recordingId) => {
-        const response = await fetch(`/api/recordings/${recordingId}/audio`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('말씀 여정의 녹음본을 모두 지우지 못했어요. 다시 시도해 주세요.');
-      }));
+      await Promise.all(
+        recordingIds.map(async (recordingId) => {
+          const response = await fetch(`/api/recordings/${recordingId}/audio`, {
+            method: 'DELETE',
+          });
+          if (!response.ok) throw new Error('말씀 여정의 녹음본을 모두 지우지 못했어요. 다시 시도해 주세요.');
+        }),
+      );
       const remainingRecordings = await fetchLibrary();
       setLibraryRecordings(remainingRecordings);
       setActiveProjects((current) => {
@@ -1589,7 +1959,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       stopChapterPlayback();
       setActiveProject(null);
       setViewedProjectDay(null);
-      setConfirmQuitJourneyOpen(false);
+      setConfirmQuitJourneyOpen(null);
+      setCompletedJourneyModal(null);
       navigateTo('home');
       setNotice(`‘${journey.title}’ 말씀 읽기와 녹음본을 모두 삭제했어요.`);
     } catch (error) {
@@ -1641,35 +2012,40 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const decodeContext = new AudioContext();
     try {
       const decoded = await decodeContext.decodeAudioData(await sourceBlob.arrayBuffer());
-      await Promise.all(boundaries.map(async (boundary) => {
-        const verseNumber = passageStartVerse + boundary.verseIndex;
-        const verseAudio = encodeAudioBufferAsWav(decoded, boundary.startMs, boundary.endMs);
-        const formData = new FormData();
-        formData.append('audio', new File([verseAudio], `${passageBook.name}${passageChapter}장_${verseNumber}절.wav`, { type: 'audio/wav' }));
-        formData.append('book', passageBook.name);
-        formData.append('chapter', String(passageChapter));
-        formData.append('verse', String(verseNumber));
-        formData.append('verseText', passageVerses[boundary.verseIndex] ?? '');
-        formData.append('projectId', activeProject?.id ?? 'free-recording');
-        formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
-        formData.append('recordingGroupId', continuousRecordingGroupIdRef.current ?? '');
-        formData.append('recordingMode', 'continuous');
-        formData.append('bgmId', bgm);
-        formData.append('reverb', reverb);
-        formData.append('durationSeconds', String(Math.max(1, Math.round((boundary.endMs - boundary.startMs) / 1_000))));
-        const response = await fetch('/api/recordings', { method: 'POST', body: formData });
-        if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
-      }));
+      await Promise.all(
+        boundaries.map(async (boundary) => {
+          const verseNumber = passageStartVerse + boundary.verseIndex;
+          const verseAudio = await encodeAudioBufferSegmentAsMp4(decoded, boundary.startMs, boundary.endMs);
+          const formData = new FormData();
+          formData.append('audio', new File([verseAudio], `${passageBook.name}${passageChapter}장_${verseNumber}절.mp4`, { type: 'audio/mp4' }));
+          formData.append('book', passageBook.name);
+          formData.append('chapter', String(passageChapter));
+          formData.append('verse', String(verseNumber));
+          formData.append('verseText', passageVerses[boundary.verseIndex] ?? '');
+          formData.append('projectId', activeProject?.id ?? 'free-recording');
+          formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
+          formData.append('recordingGroupId', continuousRecordingGroupIdRef.current ?? '');
+          formData.append('recordingMode', 'continuous');
+          formData.append('bgmId', bgm);
+          formData.append('durationSeconds', String(Math.max(1, Math.round((boundary.endMs - boundary.startMs) / 1_000))));
+          const response = await fetch('/api/recordings', {
+            method: 'POST',
+            body: formData,
+          });
+          if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
+        }),
+      );
       await refreshLibrary();
       setFullRetakeActive(false);
       const verseNumbers = boundaries.map((boundary) => passageStartVerse + boundary.verseIndex);
       const firstVerse = Math.min(...verseNumbers);
       const lastVerse = Math.max(...verseNumbers);
+      const finishedCurrentPassage = lastVerse >= passageStartVerse + passageVerses.length - 1;
       setCompletionModal({
-        title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
-        description: `${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
-        showLibraryAction: lastVerse >= passageStartVerse + passageVerses.length - 1,
-      });
+          title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
+          description: `${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
+          showLibraryAction: finishedCurrentPassage,
+        });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
     } finally {
@@ -1709,9 +2085,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           sampleSize: { ideal: 16 },
         },
       });
-      const audioGraph = createRecordingAudioGraph(stream, reverb);
+      const audioGraph = createRawRecordingAudioGraph(stream);
       const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(audioGraph.stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 256_000 });
+      const recorder = new MediaRecorder(audioGraph.stream, {
+        ...(mimeType ? { mimeType } : {}),
+        audioBitsPerSecond: 256_000,
+      });
       const targetVerseIndex = verseIndex;
 
       streamRef.current = stream;
@@ -1772,14 +2151,19 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           const url = URL.createObjectURL(blob);
           objectUrlsRef.current.add(url);
           setTakes((current) => {
-          const next = [...current];
-          const previousTake = next[targetVerseIndex];
-          if (previousTake) {
-            URL.revokeObjectURL(previousTake.url);
-            objectUrlsRef.current.delete(previousTake.url);
-          }
-          next[targetVerseIndex] = { url, blob, mimeType: finalMimeType, duration };
-          return next;
+            const next = [...current];
+            const previousTake = next[targetVerseIndex];
+            if (previousTake) {
+              URL.revokeObjectURL(previousTake.url);
+              objectUrlsRef.current.delete(previousTake.url);
+            }
+            next[targetVerseIndex] = {
+              url,
+              blob,
+              mimeType: finalMimeType,
+              duration,
+            };
+            return next;
           });
         }
         setSeconds(duration);
@@ -1794,28 +2178,25 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
       };
 
-      if (recordingMode === 'verse') setTakes((current) => {
-        const next = [...current];
-        const previousTake = next[targetVerseIndex];
-        if (previousTake) {
-          URL.revokeObjectURL(previousTake.url);
-          objectUrlsRef.current.delete(previousTake.url);
-        }
-        next[targetVerseIndex] = null;
-        return next;
-      });
+      if (recordingMode === 'verse')
+        setTakes((current) => {
+          const next = [...current];
+          const previousTake = next[targetVerseIndex];
+          if (previousTake) {
+            URL.revokeObjectURL(previousTake.url);
+            objectUrlsRef.current.delete(previousTake.url);
+          }
+          next[targetVerseIndex] = null;
+          return next;
+        });
       setSaved((current) => current.map((value, index) => (index === targetVerseIndex ? false : value)));
       setSeconds(0);
       recorder.start(250);
       setRecording(true);
-      setNotice(`자동 음량 보정과 ‘${reverb}’ 효과로 녹음을 시작했어요.`);
+      setNotice('원음 녹음을 시작했어요.');
     } catch (error) {
       const denied = error instanceof DOMException && error.name === 'NotAllowedError';
-      setNotice(
-        denied
-          ? '마이크 권한이 필요해요. 브라우저 주소창의 마이크 권한을 허용해 주세요.'
-          : '마이크를 연결할 수 없어요. 연결 상태를 확인하고 다시 시도해 주세요.',
-      );
+      setNotice(denied ? '마이크 권한이 필요해요. 브라우저 주소창의 마이크 권한을 허용해 주세요.' : '마이크를 연결할 수 없어요. 연결 상태를 확인하고 다시 시도해 주세요.');
     } finally {
       setRequestingMic(false);
     }
@@ -1869,13 +2250,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     try {
       const decodeContext = new AudioContext();
       const decoded = await decodeContext.decodeAudioData(await currentTake.blob.arrayBuffer());
-      const uploadAudio = encodeAudioBufferAsWav(decoded, 0, decoded.duration * 1_000);
+      const uploadAudio = await encodeAudioBufferSegmentAsMp4(decoded, 0, decoded.duration * 1_000);
       await decodeContext.close();
       const formData = new FormData();
-      formData.append(
-        'audio',
-        new File([uploadAudio], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.wav`, { type: 'audio/wav' }),
-      );
+      formData.append('audio', new File([uploadAudio], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.mp4`, { type: 'audio/mp4' }));
       formData.append('book', passageBook.name);
       formData.append('chapter', String(passageChapter));
       formData.append('verse', String(currentVerseNumber));
@@ -1884,38 +2262,38 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
       formData.append('recordingMode', 'verse');
       formData.append('bgmId', bgm);
-      formData.append('reverb', reverb);
       formData.append('durationSeconds', String(currentTake.duration));
 
-      const response = await fetch(
-        '/api/recordings',
-        {
+      const response = await fetch('/api/recordings', {
         method: 'POST',
         body: formData,
-        },
-      );
+      });
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(payload?.error || '보관함에 저장하지 못했어요.');
       }
 
       await refreshLibrary();
       setReplacingRecording(null);
       setRecordingMode('continuous');
-      setTakes((current) => current.map((take, index) => {
-        if (index !== verseIndex || !take) return take;
-        URL.revokeObjectURL(take.url);
-        objectUrlsRef.current.delete(take.url);
-        return null;
-      }));
+      setTakes((current) =>
+        current.map((take, index) => {
+          if (index !== verseIndex || !take) return take;
+          URL.revokeObjectURL(take.url);
+          objectUrlsRef.current.delete(take.url);
+          return null;
+        }),
+      );
       setSeconds(0);
       const reference = `${passageBook.name}-${passageChapter}-${currentVerseNumber}`;
       setRecentlyUpdatedReference(wasReplacement ? reference : null);
       setCompletionModal({
-        title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
-        description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 보관함에 안전하게 저장했어요.',
-        showLibraryAction: completesPassage,
-      });
+          title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
+          description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 보관함에 안전하게 저장했어요.',
+          showLibraryAction: completesPassage,
+        });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
     } finally {
@@ -1935,9 +2313,15 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     try {
       const response = await fetch(`/data/bible/${encodeURIComponent(selectedBibleBook.code)}.json`);
       if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
-      const chapters = await response.json() as string[][];
+      const chapters = (await response.json()) as string[][];
       setSelectedBibleVerses(chapters[chapter - 1] ?? []);
-      if (!journeyBookLocked) window.requestAnimationFrame(() => bibleVersePaneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      if (!journeyBookLocked)
+        window.requestAnimationFrame(() =>
+          bibleVersePaneRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          }),
+        );
     } catch {
       setSelectedBibleVerses([]);
       setNotice('성경 본문을 불러오지 못했어요. 다시 시도해 주세요.');
@@ -1946,57 +2330,95 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
   };
 
-  const resolveProjectPassage = useCallback((project: ActiveProject, taskIndex: number): ProjectPassage => {
-    if (project.passage) return project.passage;
-    const scheduledPassages = project.dailySchedule?.[taskIndex];
-    if (scheduledPassages?.length) return scheduledPassages[Math.min(activeDailyPassageIndex, scheduledPassages.length - 1)];
-    let contextBook = '';
-    let contextChapter = 0;
-    for (let index = 0; index <= taskIndex; index += 1) {
-      const task = project.tasks[index] ?? '';
-      const full = task.match(/^(.+?)\s+(\d+)(?:장|편)\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)(?:장|편)\s+(\d+)절)?/);
-      const short = task.match(/^(\d+)(?:–(\d+))절/);
-      if (full) {
-        contextBook = full[1];
-        contextChapter = Number(full[2]);
+  const resolveProjectPassage = useCallback(
+    (project: ActiveProject, taskIndex: number): ProjectPassage => {
+      if (project.passage) return project.passage;
+      const scheduledPassages = project.dailySchedule?.[taskIndex];
+      if (scheduledPassages?.length) return scheduledPassages[Math.min(activeDailyPassageIndex, scheduledPassages.length - 1)];
+      let contextBook = '';
+      let contextChapter = 0;
+      for (let index = 0; index <= taskIndex; index += 1) {
+        const task = project.tasks[index] ?? '';
+        const full = task.match(/^(.+?)\s+(\d+)(?:장|편)\s+(\d+)(?:–(\d+))?절(?:\s*~\s*(\d+)(?:장|편)\s+(\d+)절)?/);
+        const short = task.match(/^(\d+)(?:–(\d+))절/);
+        if (full) {
+          contextBook = full[1];
+          contextChapter = Number(full[2]);
+        }
+        if (index !== taskIndex || (!full && !short)) continue;
+        const book = bibleBooks.find((item) => item.name === contextBook);
+        if (book && contextChapter) {
+          const startVerse = Number(full?.[3] ?? short?.[1] ?? 1);
+          const crossesChapter = Boolean(full?.[5]);
+          const endVerse = crossesChapter ? book.chapters[contextChapter - 1] : Number(full?.[4] ?? short?.[2] ?? startVerse);
+          return {
+            code: book.code,
+            name: book.name,
+            chapter: contextChapter,
+            startVerse,
+            endVerse,
+          };
+        }
       }
-      if (index !== taskIndex || (!full && !short)) continue;
-      const book = bibleBooks.find((item) => item.name === contextBook);
-      if (book && contextChapter) {
-        const startVerse = Number(full?.[3] ?? short?.[1] ?? 1);
-        const crossesChapter = Boolean(full?.[5]);
-        const endVerse = crossesChapter ? book.chapters[contextChapter - 1] : Number(full?.[4] ?? short?.[2] ?? startVerse);
-        return { code: book.code, name: book.name, chapter: contextChapter, startVerse, endVerse };
-      }
-    }
-    const fallback: Record<string, ProjectPassage> = {
-      'comfort-14-beginner': { code: '시', name: '시편', chapter: 34, startVerse: 18, endVerse: 18 },
-      'sermon-medium': { code: '마', name: '마태복음', chapter: 5, startVerse: 1, endVerse: 4 },
-      'philippians-advanced': { code: '빌', name: '빌립보서', chapter: 1, startVerse: 1, endVerse: 8 },
-    };
-    return fallback[project.id] ?? { code: '시', name: '시편', chapter: 23, startVerse: 1, endVerse: 1 };
-  }, [activeDailyPassageIndex]);
+      const fallback: Record<string, ProjectPassage> = {
+        'comfort-14-beginner': {
+          code: '시',
+          name: '시편',
+          chapter: 34,
+          startVerse: 18,
+          endVerse: 18,
+        },
+        'sermon-medium': {
+          code: '마',
+          name: '마태복음',
+          chapter: 5,
+          startVerse: 1,
+          endVerse: 4,
+        },
+        'philippians-advanced': {
+          code: '빌',
+          name: '빌립보서',
+          chapter: 1,
+          startVerse: 1,
+          endVerse: 8,
+        },
+      };
+      return (
+        fallback[project.id] ?? {
+          code: '시',
+          name: '시편',
+          chapter: 23,
+          startVerse: 1,
+          endVerse: 1,
+        }
+      );
+    },
+    [activeDailyPassageIndex],
+  );
 
-  const loadProjectPassage = useCallback(async (project: ActiveProject, taskIndex: number) => {
-    const target = resolveProjectPassage(project, taskIndex);
-    try {
-      const response = await fetch(`/data/bible/${encodeURIComponent(target.code)}.json`);
-      if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
-      const chapters = await response.json() as string[][];
-      const selectedVerses = (chapters[target.chapter - 1] ?? []).slice(target.startVerse - 1, target.endVerse);
-      if (!selectedVerses.length) throw new Error('오늘의 본문이 비어 있어요.');
-      setPassageBook({ code: target.code, name: target.name });
-      setPassageChapter(target.chapter);
-      setPassageStartVerse(target.startVerse);
-      setPassageVerses(selectedVerses);
-      setVerseIndex(0);
-      setTakes(selectedVerses.map(() => null));
-      setSaved(selectedVerses.map(() => false));
-      setReplacingRecording(null);
-    } catch {
-      setNotice('말씀 여정의 본문을 불러오지 못했어요. 다시 선택해 주세요.');
-    }
-  }, [resolveProjectPassage]);
+  const loadProjectPassage = useCallback(
+    async (project: ActiveProject, taskIndex: number) => {
+      const target = resolveProjectPassage(project, taskIndex);
+      try {
+        const response = await fetch(`/data/bible/${encodeURIComponent(target.code)}.json`);
+        if (!response.ok) throw new Error('본문을 불러오지 못했어요.');
+        const chapters = (await response.json()) as string[][];
+        const selectedVerses = (chapters[target.chapter - 1] ?? []).slice(target.startVerse - 1, target.endVerse);
+        if (!selectedVerses.length) throw new Error('오늘의 본문이 비어 있어요.');
+        setPassageBook({ code: target.code, name: target.name });
+        setPassageChapter(target.chapter);
+        setPassageStartVerse(target.startVerse);
+        setPassageVerses(selectedVerses);
+        setVerseIndex(0);
+        setTakes(selectedVerses.map(() => null));
+        setSaved(selectedVerses.map(() => false));
+        setReplacingRecording(null);
+      } catch {
+        setNotice('말씀 여정의 본문을 불러오지 못했어요. 다시 선택해 주세요.');
+      }
+    },
+    [resolveProjectPassage],
+  );
 
   useEffect(() => {
     const scheduledPassages = activeProject?.dailySchedule?.[displayedProjectDayIndex];
@@ -2020,16 +2442,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const activatedProject = {
       ...project,
       startedOn: project.startedOn ?? existingProject?.startedOn ?? getKstDateKey(),
-      readingDay: project.kind === 'free' ? undefined : project.readingDay ?? existingProject?.readingDay ?? 1,
-      readingDayDate: project.kind === 'free' ? undefined : project.readingDayDate ?? existingProject?.readingDayDate ?? getKstDateKey(),
+      readingDay: project.kind === 'free' ? undefined : (project.readingDay ?? existingProject?.readingDay ?? 1),
+      readingDayDate: project.kind === 'free' ? undefined : (project.readingDayDate ?? existingProject?.readingDayDate ?? getKstDateKey()),
     };
     setViewedProjectDay(null);
     setActiveDailyPassageIndex(0);
     setActiveProject(activatedProject);
     setActiveProjects((current) => {
-      const next = current.some((item) => item.id === activatedProject.id)
-        ? current.map((item) => item.id === activatedProject.id ? activatedProject : item)
-        : [...current, activatedProject];
+      const next = current.some((item) => item.id === activatedProject.id) ? current.map((item) => (item.id === activatedProject.id ? activatedProject : item)) : [...current, activatedProject];
       window.localStorage.setItem('verse-legacy-active-projects', JSON.stringify(next));
       return next;
     });
@@ -2064,16 +2484,32 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       tasks: [`${selectedBibleBook.name} ${selectedBibleChapter}장 전체`],
       totalVerses: selectedBibleVerses.length,
       kind: 'free',
-      passage: { code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter, startVerse: 1, endVerse: selectedBibleVerses.length },
+      passage: {
+        code: selectedBibleBook.code,
+        name: selectedBibleBook.name,
+        chapter: selectedBibleChapter,
+        startVerse: 1,
+        endVerse: selectedBibleVerses.length,
+      },
     };
-    setPassageBook({ code: selectedBibleBook.code, name: selectedBibleBook.name });
+    setPassageBook({
+      code: selectedBibleBook.code,
+      name: selectedBibleBook.name,
+    });
     setPassageChapter(selectedBibleChapter);
     setPassageStartVerse(1);
     setPassageVerses(selectedBibleVerses);
     setVerseIndex(0);
     setTakes(selectedBibleVerses.map(() => null));
     setSaved(selectedBibleVerses.map(() => false));
-    window.localStorage.setItem('verse-legacy-free-passage', JSON.stringify({ code: selectedBibleBook.code, name: selectedBibleBook.name, chapter: selectedBibleChapter }));
+    window.localStorage.setItem(
+      'verse-legacy-free-passage',
+      JSON.stringify({
+        code: selectedBibleBook.code,
+        name: selectedBibleBook.name,
+        chapter: selectedBibleChapter,
+      }),
+    );
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
     activateProject(freeProject);
     if (completedFreeChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`)) {
@@ -2085,6 +2521,27 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setNotice(`${selectedBibleBook.name} ${selectedBibleChapter}장을 자유 녹음으로 열었어요.`);
     navigateTo('recording');
   };
+  const startBibleRange = async () => {
+    if (!normalizeBibleRange(readingBibleRange, bibleBooks)) {
+      setNotice('시작 말씀은 끝 말씀보다 앞서야 해요.');
+      return;
+    }
+    try {
+      const plan = buildCustomReadingPlan({ books: bibleBooks, mode: bibleScopeMode, range: readingBibleRange, durationDays: 1 });
+      const passages = plan.days[0]?.passages ?? [];
+      const first = passages[0];
+      if (!first) throw new Error('empty range');
+      const response = await fetch(`/data/bible/${encodeURIComponent(first.code)}.json`);
+      if (!response.ok) throw new Error('failed to load Bible');
+      const chapters = await response.json() as string[][];
+      const verses = chapters[first.chapter - 1]?.slice(first.startVerse - 1, first.endVerse) ?? [];
+      if (!verses.length) throw new Error('empty passage');
+      const project: ActiveProject = { id: `free-range-${readingBibleRange.start.bookCode}-${readingBibleRange.start.chapter}-${readingBibleRange.start.verse}-${readingBibleRange.end.bookCode}-${readingBibleRange.end.chapter}-${readingBibleRange.end.verse}`, title: plan.scope, duration: 0, scope: plan.scope, tasks: [plan.scope], totalVerses: plan.totalVerses, kind: 'free', dailySchedule: [passages] };
+      setPassageBook({ code: first.code, name: first.name }); setPassageChapter(first.chapter); setPassageStartVerse(first.startVerse); setPassageVerses(verses); setTakes(verses.map(() => null)); setSaved(verses.map(() => false)); setVerseIndex(0); activateProject(project); navigateTo('recording');
+    } catch {
+      setNotice('선택한 범위의 말씀을 불러오지 못했어요. 다시 시도해 주세요.');
+    }
+  };
 
   const finishOnboarding = (projectId?: string) => {
     window.localStorage.setItem('verse-legacy-onboarding-complete', 'true');
@@ -2092,7 +2549,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setSelectedTemplateId(projectId);
       const project = projectTemplates.find((item) => item.id === projectId);
       if (project) {
-        activateProject({ id: project.id, title: project.title, duration: project.duration, scope: project.scope, tasks: project.tasks, kind: 'guided' });
+        activateProject({
+          id: project.id,
+          title: project.title,
+          duration: project.duration,
+          scope: project.scope,
+          tasks: project.tasks,
+          kind: 'guided',
+        });
       }
       setNotice(`‘${project?.title}’ 말씀 여정을 시작했어요.`);
     } else {
@@ -2108,23 +2572,17 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const selectedVisibleTemplateIndex = visibleTemplates.findIndex((item) => item.id === selectedTemplateId);
   const visibleBibleBooks = bibleBooks.filter((book) => book.testament === bibleTestament && book.name.includes(bibleSearch.trim()));
   const selectedFreeChapterInProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`);
-  const selectedFreeRecordedVerses = new Set(
-    libraryRecordings
-      .filter((item) => (item.projectId === 'free-recording' || item.projectId.startsWith('free-')) && item.book === selectedBibleBook.name && item.chapter === selectedBibleChapter)
-      .map((item) => item.verse),
+  const selectedFreeRecordedVerses = new Set(libraryRecordings.filter((item) => (item.projectId === 'free-recording' || item.projectId.startsWith('free-')) && item.book === selectedBibleBook.name && item.chapter === selectedBibleChapter).map((item) => item.verse));
+  const customPlan = useMemo(
+    () =>
+      buildCustomReadingPlan({
+        books: bibleBooks,
+        mode: customPlanMode,
+        durationDays: customDurationDays,
+        range: customBibleRange,
+      }),
+    [customBibleRange, customDurationDays, customPlanMode],
   );
-  const customBook = bibleBooks.find((item) => item.code === customBookId) ?? bibleBooks[0];
-  const customPlan = useMemo(() => buildCustomReadingPlan({
-    books: bibleBooks,
-    mode: customPlanMode,
-    singleBookId: customBookId,
-    startChapter: customStartChapter,
-    startVerse: customStartVerse,
-    endChapter: customEndChapter,
-    endVerse: customEndVerse,
-    selectedBookIds: customSelectedBookIds,
-    durationDays: customDurationDays,
-  }), [customBookId, customDurationDays, customEndChapter, customEndVerse, customPlanMode, customSelectedBookIds, customStartChapter, customStartVerse]);
   const customPlanReady = customPlan.totalVerses > 0 && customPlan.days.length > 0;
   const collectedWordCards = wordCards.filter((card) => collectedCardIds.includes(card.id));
   const pendingWordCards = pendingCardAwards.flatMap((award) => {
@@ -2137,16 +2595,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setWordCardFlipped(false);
     setWordCardExpanded(false);
     setEarnedCard(card);
-  };
-
-  const changeCustomBook = (bookId: string) => {
-    const book = bibleBooks.find((item) => item.code === bookId) ?? bibleBooks[0];
-    setCustomBookId(book.code);
-    setCustomStartChapter(1);
-    setCustomStartVerse(1);
-    setCustomEndChapter(book.chapters.length);
-    setCustomEndVerse(book.chapters.at(-1) ?? 1);
-    setCustomProjectName(`${book.name} 읽기 계획`);
   };
 
   const saveCustomProject = () => {
@@ -2169,15 +2617,21 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${onboardingStep !== 'app' ? 'onboarding-open' : ''}`}>
       {onboardingStep !== 'app' && (
-        <section className="onboarding-overlay" aria-label="말씀유산 시작 설정">
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 전체 화면 선택 패널은 스크롤 가능한 비모달 레이아웃을 유지해야 합니다.
+        <section className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="말씀유산 시작 설정">
           <div className="onboarding-brand">
-            <span className="brand-mark"><BookOpen size={20} /></span><strong>말씀유산</strong>
-            <button className="icon-button onboarding-theme-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
+            <span className="brand-mark">
+              <BookOpen size={20} />
+            </span>
+            <strong>말씀유산</strong>
+            <button className="icon-button onboarding-theme-button" onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button className="icon-button" onClick={() => void onSignOut()} type="button" aria-label={`${userEmail ?? '사용자'} 로그아웃`} title="로그아웃"><LogOut size={18} /></button>
+            <button className="icon-button" onClick={() => void onSignOut()} type="button" aria-label={`${userEmail ?? '사용자'} 로그아웃`} title="로그아웃">
+              <LogOut size={18} />
+            </button>
           </div>
           {onboardingStep === 'welcome' ? (
             <div className="onboarding-card welcome-card">
@@ -2185,478 +2639,1072 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               <h1>{returningHome ? '무엇을 선택할까요?' : '어떤 방식으로 시작할까요?'}</h1>
               <p className="onboarding-lead">{returningHome ? '진행 중인 말씀 여정을 열거나, 원하는 말씀을 골라 자유롭게 녹음하세요.' : '지금 마음에 맞는 방법을 골라보세요. 나중에 언제든 바꿀 수 있어요.'}</p>
               <div className="start-choice-grid">
-                <button type="button" onClick={() => { setBibleBackTarget('welcome'); navigateTo('bible'); }}>
-                  <span><Sparkles size={22} /></span>
+                <button className="gift-start-card" type="button" onClick={() => openGiftStudio()}>
+                  <span>
+                    <Gift size={22} />
+                  </span>
+                  <strong>말씀 선물하기</strong>
+                  <small>오늘, 마음에 떠오른 말씀을 소중한 사람에게 목소리로 전해 보세요.</small>
+                  <em>
+                    말씀 골라 선물하기 <ArrowRight size={15} />
+                  </em>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBibleBackTarget('welcome');
+                    navigateTo('bible');
+                  }}
+                >
+                  <span>
+                    <Sparkles size={22} />
+                  </span>
                   <strong>성경 읽기</strong>
                   <small>원하는 말씀을 골라 일정 없이 자유롭게 녹음해요.</small>
-                  <em>성경 고르기 <ArrowRight size={15} /></em>
+                  <em>
+                    성경 고르기 <ArrowRight size={15} />
+                  </em>
                 </button>
-                <button className="recommended" type="button" onClick={() => { setSelectedTemplateId(''); navigateTo('daily-reading'); }}>
-                  <i>추천</i><span><Target size={22} /></span>
+                <button
+                  className="recommended"
+                  type="button"
+                  onClick={() => {
+                    setSelectedTemplateId('');
+                    navigateTo('daily-reading');
+                  }}
+                >
+                  <i>추천</i>
+                  <span>
+                    <Target size={22} />
+                  </span>
                   <strong>매일 말씀 읽기 시작하기</strong>
                   <small>분량과 기간을 정해 매일 조금씩 말씀을 녹음해요.</small>
-                  <em>읽기 일정 고르기 <ArrowRight size={15} /></em>
+                  <em>
+                    읽기 일정 고르기 <ArrowRight size={15} />
+                  </em>
                 </button>
               </div>
               <button className="word-card-library-entry journey-library-entry" type="button" onClick={() => navigateTo('journeys')}>
-                <span><Target size={21} /></span>
-                <div><strong>내 말씀 여정</strong><small>{journeyProjects.length ? `진행 중인 말씀 여정 ${journeyProjects.length}개 · ${journeyProjects.slice(0, 2).map((project) => project.title).join(' · ')}` : '아직 진행 중인 말씀 여정이 없어요.'}</small></div>
+                <span>
+                  <Target size={21} />
+                </span>
+                <div>
+                  <strong>내 말씀 여정</strong>
+                  <small>
+                    {journeyProjects.length
+                      ? `진행 중인 말씀 여정 ${journeyProjects.length}개 · ${journeyProjects
+                          .slice(0, 2)
+                          .map((project) => project.title)
+                          .join(' · ')}`
+                      : '아직 진행 중인 말씀 여정이 없어요.'}
+                  </small>
+                </div>
                 <ArrowRight size={18} />
               </button>
               <button className="word-card-library-entry" type="button" onClick={() => navigateTo('cards')}>
-                <span><Sparkles size={21} /></span>
-                <div><strong>내 카드 보관함</strong><small>간직한 말씀 카드 {collectedWordCards.length}장을 모아봐요.</small></div>
+                <span>
+                  <Sparkles size={21} />
+                </span>
+                <div>
+                  <strong>내 카드 보관함</strong>
+                  <small>간직한 말씀 카드 {collectedWordCards.length}장을 모아봐요.</small>
+                </div>
                 <ArrowRight size={18} />
               </button>
             </div>
           ) : onboardingStep === 'cards' ? (
             <div className="onboarding-card word-card-library-card">
-              <button className="onboarding-back" type="button" onClick={() => navigateTo('home')}><ChevronLeft size={16} /> 홈으로</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo('home')}>
+                <ChevronLeft size={16} /> 홈으로
+              </button>
               <p className="eyebrow">MY WORD CARDS</p>
               <h1>내 카드 보관함</h1>
               <p className="onboarding-lead">말씀 여정의 하루 분량을 마치고 직접 간직한 카드들이에요. 카드를 누르면 자세히 볼 수 있어요.</p>
-              {pendingWordCards.length > 0 && <section className="pending-word-cards" aria-label="아직 간직하지 않은 받은 카드">
-                <div><span><Sparkles size={18} /></span><div><strong>오늘 받은 카드가 기다리고 있어요</strong><small>다시 팝업으로 띄우지 않았어요. 여기서 간직하면 아래 보관함에 들어가요.</small></div></div>
-                {pendingWordCards.map(({ award, card }) => <article key={award.key}>
-                  <strong>{card.name}</strong><span>{card.heading}</span>
-                  <button type="button" onClick={() => collectStoredWordCard(award.key, card.id)}>내 카드로 간직하기</button>
-                </article>)}
-              </section>}
+              {pendingWordCards.length > 0 && (
+                <section className="pending-word-cards" aria-label="아직 간직하지 않은 받은 카드">
+                  <div>
+                    <span>
+                      <Sparkles size={18} />
+                    </span>
+                    <div>
+                      <strong>오늘 받은 카드가 기다리고 있어요</strong>
+                      <small>다시 팝업으로 띄우지 않았어요. 여기서 간직하면 아래 보관함에 들어가요.</small>
+                    </div>
+                  </div>
+                  {pendingWordCards.map(({ award, card }) => (
+                    <article key={award.key}>
+                      <strong>{card.name}</strong>
+                      <span>{card.heading}</span>
+                      <button type="button" onClick={() => void collectStoredWordCard(award.key, card.id)}>
+                        내 카드로 간직하기
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              )}
               {collectedWordCards.length ? (
                 <div className="word-card-collection-grid">
                   {collectedWordCards.map((card) => {
                     const column = card.spriteIndex % 4;
                     const row = Math.floor(card.spriteIndex / 4);
-                    return <button className="word-card-collection-item" type="button" onClick={() => openCollectedWordCard(card)} key={card.id}>
-                      <span className="word-card-collection-art" style={{ backgroundImage: `url(${card.spriteSheet ?? '/cards/bible-character-sprite.webp'})`, backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
-                      <small>성경 속 말씀 인물</small><strong>{card.name}</strong>
-                    </button>;
+                    return (
+                      <button className="word-card-collection-item" type="button" onClick={() => openCollectedWordCard(card)} key={card.id}>
+                        <span
+                          className="word-card-collection-art"
+                          style={{
+                            backgroundImage: `url(${card.spriteSheet ?? '/cards/bible-character-sprite.webp'})`,
+                            backgroundPosition: `${(column / 3) * 100}% ${(row / 3) * 100}%`,
+                          }}
+                        />
+                        <small>성경 속 말씀 인물</small>
+                        <strong>{card.name}</strong>
+                      </button>
+                    );
                   })}
                 </div>
               ) : pendingWordCards.length === 0 ? (
-                <div className="word-card-collection-empty"><Sparkles size={28} /><strong>아직 간직한 카드가 없어요</strong><p>말씀 여정의 하루 분량을 완료한 뒤<br />‘내 카드로 간직하기’를 눌러보세요.</p></div>
+                <div className="word-card-collection-empty">
+                  <Sparkles size={28} />
+                  <strong>아직 간직한 카드가 없어요</strong>
+                  <p>
+                    말씀 여정의 하루 분량을 완료한 뒤<br />
+                    ‘내 카드로 간직하기’를 눌러보세요.
+                  </p>
+                </div>
               ) : null}
             </div>
+          ) : onboardingStep === 'giftStudio' ? (
+            <GiftStudio
+              initialScope={giftStudioScope}
+              initialFriend={giftStudioFriend}
+              onBack={() => navigateTo('home')}
+              onSent={(giftId) => {
+                setSelectedSentGiftId(giftId);
+                navigateTo('gifts');
+              }}
+            />
           ) : onboardingStep === 'projectHome' ? (
             <div className="onboarding-card project-home-card">
-              <button className="onboarding-back" type="button" onClick={() => navigateTo('home')}><ChevronLeft size={16} /> 홈으로</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo('home')}>
+                <ChevronLeft size={16} /> 홈으로
+              </button>
               <p className="eyebrow">MY PROJECTS</p>
               <h1>어떤 말씀 여정을 이어갈까요?</h1>
               <p className="onboarding-lead">말씀 여정을 선택하면 해당 녹음 화면으로 바로 이어져요.</p>
-              {journeyProjects.length ? <div className="journey-status-sections">
-                <section aria-labelledby="ongoing-journeys-title">
-                  <div className="journey-status-heading"><h2 id="ongoing-journeys-title">진행 중</h2><span>{ongoingJourneyProjects.length}</span></div>
-                  {ongoingJourneyProjects.length ? <div className="ongoing-journey-groups">
-                    <section aria-labelledby="guided-ongoing-title">
-                      <h3 id="guided-ongoing-title">매일 말씀 읽기</h3>
-                      {ongoingJourneyGroups.guided.length ? <div className="running-project-list">
-                        {ongoingJourneyGroups.guided.map((project, index) => <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><Target size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 말씀 여정`}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
-                      </div> : <p className="journey-status-empty compact">진행 중인 매일 말씀 읽기가 없어요.</p>}
+              {journeyProjects.length ? (
+                <div className="journey-status-sections">
+                  <section aria-labelledby="ongoing-journeys-title">
+                    <div className="journey-status-heading">
+                      <h2 id="ongoing-journeys-title">진행 중</h2>
+                      <span>{ongoingJourneyProjects.length}</span>
+                    </div>
+                    {ongoingJourneyProjects.length ? (
+                      <div className="ongoing-journey-groups">
+                        <section aria-labelledby="guided-ongoing-title">
+                          <h3 id="guided-ongoing-title">매일 말씀 읽기</h3>
+                          {ongoingJourneyGroups.guided.length ? (
+                            <div className="running-project-list">
+                              {ongoingJourneyGroups.guided.map((project, index) => (
+                                <button className={`project-color-${index % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}>
+                                  <span>
+                                    <Target size={20} />
+                                  </span>
+                                  <div>
+                                    <small>{activeProject?.id === project.id ? '현재 진행 중' : `${project.duration}일 말씀 여정`}</small>
+                                    <strong>{project.title}</strong>
+                                    <p>{project.scope}</p>
+                                  </div>
+                                  <ArrowRight size={18} />
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="journey-status-empty compact">진행 중인 매일 말씀 읽기가 없어요.</p>
+                          )}
+                        </section>
+                        <section aria-labelledby="free-ongoing-title">
+                          <h3 id="free-ongoing-title">자유롭게 · 성경책별</h3>
+                          {ongoingJourneyGroups.free.length ? (
+                            <div className="running-project-list">
+                              {ongoingJourneyGroups.free.map((project, index) => (
+                                <button className={`project-color-${(ongoingJourneyGroups.guided.length + index) % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}>
+                                  <span>
+                                    <BookOpen size={20} />
+                                  </span>
+                                  <div>
+                                    <small>{activeProject?.id === project.id ? '현재 읽는 중' : '자유롭게 읽기'}</small>
+                                    <strong>{project.title}</strong>
+                                    <p>{project.scope}</p>
+                                  </div>
+                                  <ArrowRight size={18} />
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="journey-status-empty compact">진행 중인 자유 읽기가 없어요.</p>
+                          )}
+                        </section>
+                      </div>
+                    ) : (
+                      <p className="journey-status-empty">진행 중인 말씀 여정이 없어요.</p>
+                    )}
+                  </section>
+                  {completedJourneyProjects.length > 0 && (
+                    <section aria-labelledby="completed-journeys-title">
+                      <div className="journey-status-heading completed">
+                        <h2 id="completed-journeys-title">완료</h2>
+                        <span>{completedJourneyProjects.length}</span>
+                      </div>
+                      <div className="completed-sort" aria-label="완료된 말씀 정렬">
+                        <button className={completedSort === 'date' ? 'selected' : ''} type="button" onClick={() => setCompletedSort('date')}>완료일순</button>
+                        <button className={completedSort === 'name' ? 'selected' : ''} type="button" onClick={() => setCompletedSort('name')}>이름순</button>
+                      </div>
+                      <div className="running-project-list completed-project-list">
+                        {completedJourneyProjects.map((project, index) => {
+                          const selected = completedGiftProjectIds.includes(project.id);
+                          return <div className="completed-project-row" key={project.id}>
+                            <label aria-label={`${project.scope} 선물 선택`}><input type="checkbox" checked={selected} onChange={() => setCompletedGiftProjectIds((current) => selected ? current.filter((id) => id !== project.id) : [...current, project.id])} /></label>
+                            <button className={`project-color-${(ongoingJourneyProjects.length + index) % 5}`} type="button" onClick={() => setCompletedJourneyModal(project)}>
+                              <span><Check size={20} /></span>
+                              <div><small>{project.completedAt ? formatSavedDate(project.completedAt) : '말씀 여정 완료'}</small><strong>{project.scope}</strong><p>{project.title}</p></div>
+                              <Headphones size={18} />
+                            </button>
+                          </div>;
+                        })}
+                      </div>
+                      <button className="gift-send-confirm completed-selection-gift" type="button" disabled={!giftSelection?.eligible} onClick={() => setGiftSendOpen(true)}><Gift size={17} /> 선택한 말씀 {completedGiftProjectIds.length}개 선물하기</button>
                     </section>
-                    <section aria-labelledby="free-ongoing-title">
-                      <h3 id="free-ongoing-title">자유롭게 · 성경책별</h3>
-                      {ongoingJourneyGroups.free.length ? <div className="running-project-list">
-                        {ongoingJourneyGroups.free.map((project, index) => <button className={`project-color-${(ongoingJourneyGroups.guided.length + index) % 5} ${activeProject?.id === project.id ? 'current' : ''}`} type="button" onClick={() => openJourney(project)} key={project.id}><span><BookOpen size={20} /></span><div><small>{activeProject?.id === project.id ? '현재 읽는 중' : '자유롭게 읽기'}</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
-                      </div> : <p className="journey-status-empty compact">진행 중인 자유 읽기가 없어요.</p>}
-                    </section>
-                  </div> : <p className="journey-status-empty">진행 중인 말씀 여정이 없어요.</p>}
-                </section>
-                {completedJourneyProjects.length > 0 && <section aria-labelledby="completed-journeys-title">
-                  <div className="journey-status-heading completed"><h2 id="completed-journeys-title">완료</h2><span>{completedJourneyProjects.length}</span></div>
-                  <div className="running-project-list completed-project-list">
-                    {completedJourneyProjects.map((project, index) => <button className={`project-color-${(ongoingJourneyProjects.length + index) % 5}`} type="button" onClick={() => openJourney(project, 'library')} key={project.id}><span><Check size={20} /></span><div><small>말씀 여정 완료</small><strong>{project.title}</strong><p>{project.scope}</p></div><ArrowRight size={18} /></button>)}
-                  </div>
-                </section>}
-              </div> : <div className="project-home-empty"><Target size={28} /><strong>진행 중인 말씀 여정이 없어요</strong><p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p></div>}
+                  )}
+                </div>
+              ) : (
+                <div className="project-home-empty">
+                  <Target size={28} />
+                  <strong>진행 중인 말씀 여정이 없어요</strong>
+                  <p>첫 말씀 여정을 시작하고 매일 조금씩 완성해보세요.</p>
+                </div>
+              )}
             </div>
           ) : onboardingStep === 'bible' ? (
-            <div className="onboarding-card bible-browser-card">
-              <button className="onboarding-back" type="button" onClick={() => navigateTo(bibleBackTarget === 'projectHome' ? 'journeys' : bibleBackTarget === 'app' ? 'recording' : 'home')}><ChevronLeft size={16} /> 이전</button>
+            <div className={`onboarding-card bible-browser-card ${bibleScopeMode === 'range' ? 'range-mode' : ''}`}>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo(bibleBackTarget === 'projectHome' ? 'journeys' : bibleBackTarget === 'app' ? 'recording' : 'home')}>
+                <ChevronLeft size={16} /> 이전
+              </button>
               <p className="eyebrow">자유롭게 녹음하기</p>
               <h1>{activeProject?.kind === 'free' && activeProject.passage?.code === selectedBibleBook.code ? `${selectedBibleBook.name}에서 몇 장을 읽을까요?` : '어떤 말씀부터 읽어볼까요?'}</h1>
               <p className="onboarding-lead">이미 진행 중인 장은 흰색으로 표시돼요. 새로 읽거나 이어갈 장을 선택해 주세요.</p>
-              {!journeyBookLocked && <div className="bible-browser-toolbar">
-                <div className="testament-tabs" aria-label="구약 또는 신약 선택">
-                  <button className={bibleTestament === 'old' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('old'); setBibleSearch(''); chooseBibleBook(bibleBooks[0]); }}>구약 <small>39권</small></button>
-                  <button className={bibleTestament === 'new' ? 'selected' : ''} type="button" onClick={() => { setBibleTestament('new'); setBibleSearch(''); chooseBibleBook(bibleBooks[39]); }}>신약 <small>27권</small></button>
-                </div>
-                <label className="bible-search"><Search size={16} /><input value={bibleSearch} onChange={(event) => setBibleSearch(event.target.value)} placeholder="성경책 이름 검색" /></label>
-              </div>}
-              {journeyBookLocked ? <section className="journey-chapter-picker" aria-label={`${selectedBibleBook.name} 장 선택`}>
-                <div className="pane-heading"><span>1</span><div><strong>장 선택</strong><small>{selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장</small></div></div>
-                <div className="bible-chapter-grid">
-                  {selectedBibleBook.chapters.map((verseCount, index) => {
-                    const chapter = index + 1;
-                    const inProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${chapter}`);
-                    return <button className={`${selectedBibleChapter === chapter && selectedBibleVerses.length ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => void chooseBibleChapter(chapter)} key={index}><strong>{chapter}</strong><small>{inProgress ? `진행 중 · ${verseCount}절` : `${verseCount}절`}</small></button>;
-                  })}
-                </div>
-                <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={bibleLoading || !selectedBibleVerses.length}>{bibleLoading ? <><LoaderCircle className="spin" size={16} /> 불러오는 중</> : <>{selectedBibleBook.name} {selectedBibleChapter}장 확인 <ArrowRight size={16} /></>}</button>
-              </section> : <div className="bible-browser-layout">
-                {!journeyBookLocked && <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
-                  <div className="pane-heading"><span>1</span><div><strong>성경책</strong><small>{bibleTestament === 'old' ? '구약 39권' : '신약 27권'}</small></div></div>
-                  <div className="bible-book-grid">
-                    {visibleBibleBooks.map((book) => {
-                      const inProgress = freeRecordingBookNames.has(book.name);
-                      return <button className={`${selectedBibleBook.code === book.code ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => chooseBibleBook(book)} key={book.code}><strong>{book.name}</strong><small>{inProgress ? `진행 중 · ${book.chapters.length}장` : `${book.chapters.length}장`}</small></button>;
-                    })}
+              <div className="bible-scope-mode" role="tablist" aria-label="읽기 범위 방식">
+                <button className={bibleScopeMode === 'chapter' ? 'selected' : ''} type="button" onClick={() => { setBibleScopeMode('chapter'); setNotice(''); }}>한 장 읽기</button>
+                <button className={bibleScopeMode === 'range' ? 'selected' : ''} type="button" onClick={() => { setBibleScopeMode('range'); setNotice(''); }}>범위 지정</button>
+              </div>
+              {bibleScopeMode === 'range' && <section className="bible-direct-range"><BibleRangePicker value={readingBibleRange} onChange={setReadingBibleRange} /><button className="start-project-button" type="button" onClick={() => void startBibleRange()}>이 범위 읽기 시작 <ArrowRight size={16} /></button></section>}
+              {!journeyBookLocked && (
+                <div className="bible-browser-toolbar">
+                  <div className="testament-tabs" aria-label="구약 또는 신약 선택">
+                    <button
+                      className={bibleTestament === 'old' ? 'selected' : ''}
+                      type="button"
+                      onClick={() => {
+                        setBibleTestament('old');
+                        setBibleSearch('');
+                        chooseBibleBook(bibleBooks[0]);
+                      }}
+                    >
+                      구약 <small>39권</small>
+                    </button>
+                    <button
+                      className={bibleTestament === 'new' ? 'selected' : ''}
+                      type="button"
+                      onClick={() => {
+                        setBibleTestament('new');
+                        setBibleSearch('');
+                        chooseBibleBook(bibleBooks[39]);
+                      }}
+                    >
+                      신약 <small>27권</small>
+                    </button>
                   </div>
-                </section>}
-                <section className="bible-chapter-pane" aria-label={`${selectedBibleBook.name} 장 선택`}>
-                  <div className="pane-heading"><span>2</span><div><strong>장 선택</strong><small>{selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장</small></div></div>
+                  <label className="bible-search">
+                    <Search size={16} />
+                    <input value={bibleSearch} onChange={(event) => setBibleSearch(event.target.value)} placeholder="성경책 이름 검색" />
+                  </label>
+                </div>
+              )}
+              {journeyBookLocked ? (
+                <section className="journey-chapter-picker" aria-label={`${selectedBibleBook.name} 장 선택`}>
+                  <div className="pane-heading">
+                    <span>1</span>
+                    <div>
+                      <strong>장 선택</strong>
+                      <small>
+                        {selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장
+                      </small>
+                    </div>
+                  </div>
                   <div className="bible-chapter-grid">
                     {selectedBibleBook.chapters.map((verseCount, index) => {
                       const chapter = index + 1;
                       const inProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${chapter}`);
-                      return <button className={`${selectedBibleChapter === chapter && selectedBibleVerses.length ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => void chooseBibleChapter(chapter)} key={index}><strong>{chapter}</strong><small>{inProgress ? `진행 중 · ${verseCount}절` : `${verseCount}절`}</small></button>;
+                      return (
+                        <button className={`${selectedBibleChapter === chapter && selectedBibleVerses.length ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => void chooseBibleChapter(chapter)} key={index}>
+                          <strong>{chapter}</strong>
+                          <small>{inProgress ? `진행 중 · ${verseCount}절` : `${verseCount}절`}</small>
+                        </button>
+                      );
                     })}
                   </div>
+                  <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={bibleLoading || !selectedBibleVerses.length}>
+                    {bibleLoading ? (
+                      <>
+                        <LoaderCircle className="spin" size={16} /> 불러오는 중
+                      </>
+                    ) : (
+                      <>
+                        {selectedBibleBook.name} {selectedBibleChapter}장 확인 <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
                 </section>
-                <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절" ref={bibleVersePaneRef}>
-                  <div className="pane-heading"><span>3</span><div><strong>본문 확인</strong><small>{selectedBibleBook.name} {selectedBibleChapter}장</small></div></div>
-                  {bibleLoading ? <div className="bible-empty"><LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요</div> : selectedBibleVerses.length ? <div className="bible-verse-preview">{selectedBibleVerses.map((text, index) => {
-                    const verse = index + 1;
-                    const completed = selectedFreeRecordedVerses.has(verse);
-                    return <p className={completed ? 'completed' : ''} key={index}><span>{completed ? <Check size={12} /> : verse}</span>{text}</p>;
-                  })}</div> : <div className="bible-empty"><BookOpen size={25} /><strong>읽을 장을 선택해 주세요</strong><small>선택하면 그 장의 모든 절이 여기에 나타나요.</small></div>}
-                  <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>{selectedBibleBook.name} {selectedBibleChapter}{selectedBibleBook.name === '시편' ? '편' : '장'} {completedFreeChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`) ? '완료 · 듣기' : selectedFreeChapterInProgress ? '계속하기' : '녹음 시작'} <ArrowRight size={16} /></button>
-                </aside>
-              </div>}
+              ) : (
+                <div className="bible-browser-layout">
+                  {!journeyBookLocked && (
+                    <section className="bible-book-pane" aria-label={`${bibleTestament === 'old' ? '구약' : '신약'} 성경책`}>
+                      <div className="pane-heading">
+                        <span>1</span>
+                        <div>
+                          <strong>성경책</strong>
+                          <small>{bibleTestament === 'old' ? '구약 39권' : '신약 27권'}</small>
+                        </div>
+                      </div>
+                      <div className="bible-book-grid">
+                        {visibleBibleBooks.map((book) => {
+                          const inProgress = freeRecordingBookNames.has(book.name);
+                          return (
+                            <button className={`${selectedBibleBook.code === book.code ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => chooseBibleBook(book)} key={book.code}>
+                              <strong>{book.name}</strong>
+                              <small>{inProgress ? `진행 중 · ${book.chapters.length}장` : `${book.chapters.length}장`}</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+                  <section className="bible-chapter-pane" aria-label={`${selectedBibleBook.name} 장 선택`}>
+                    <div className="pane-heading">
+                      <span>2</span>
+                      <div>
+                        <strong>장 선택</strong>
+                        <small>
+                          {selectedBibleBook.name} · 총 {selectedBibleBook.chapters.length}장
+                        </small>
+                      </div>
+                    </div>
+                    <div className="bible-chapter-grid">
+                      {selectedBibleBook.chapters.map((verseCount, index) => {
+                        const chapter = index + 1;
+                        const inProgress = freeRecordingChapterKeys.has(`${selectedBibleBook.name}-${chapter}`);
+                        return (
+                          <button className={`${selectedBibleChapter === chapter && selectedBibleVerses.length ? 'selected' : ''} ${inProgress ? 'in-progress' : ''}`} type="button" onClick={() => void chooseBibleChapter(chapter)} key={index}>
+                            <strong>{chapter}</strong>
+                            <small>{inProgress ? `진행 중 · ${verseCount}절` : `${verseCount}절`}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  <aside className="bible-verse-pane" aria-label="선택한 장의 성경 구절" ref={bibleVersePaneRef}>
+                    <div className="pane-heading">
+                      <span>3</span>
+                      <div>
+                        <strong>본문 확인</strong>
+                        <small>
+                          {selectedBibleBook.name} {selectedBibleChapter}장
+                        </small>
+                      </div>
+                    </div>
+                    {bibleLoading ? (
+                      <div className="bible-empty">
+                        <LoaderCircle className="spin" size={22} /> 본문을 불러오고 있어요
+                      </div>
+                    ) : selectedBibleVerses.length ? (
+                      <div className="bible-verse-preview">
+                        {selectedBibleVerses.map((text, index) => {
+                          const verse = index + 1;
+                          const completed = selectedFreeRecordedVerses.has(verse);
+                          return (
+                            <p className={completed ? 'completed' : ''} key={index}>
+                              <span>{completed ? <Check size={12} /> : verse}</span>
+                              {text}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="bible-empty">
+                        <BookOpen size={25} />
+                        <strong>읽을 장을 선택해 주세요</strong>
+                        <small>선택하면 그 장의 모든 절이 여기에 나타나요.</small>
+                      </div>
+                    )}
+                    <button className="start-project-button" type="button" onClick={startFreeChapter} disabled={!selectedBibleVerses.length}>
+                      {selectedBibleBook.name} {selectedBibleChapter}
+                      {selectedBibleBook.name === '시편' ? '편' : '장'} {completedFreeChapterKeys.has(`${selectedBibleBook.name}-${selectedBibleChapter}`) ? '완료 · 듣기' : selectedFreeChapterInProgress ? '계속하기' : '녹음 시작'} <ArrowRight size={16} />
+                    </button>
+                  </aside>
+                </div>
+              )}
               <p className="bible-credit">본문: PLAY X 번역(플레이엑스) · 번역 김무송 · CC BY 4.0</p>
             </div>
-          ) : onboardingStep === 'schedule' && activeProject ? (
+          ) : onboardingStep === 'schedule' && activeProject && activeProject.kind !== 'free' ? (
             <div className="onboarding-card project-schedule-card">
-              <button className="onboarding-back" type="button" onClick={() => navigateTo('recording')}><ChevronLeft size={16} /> 말씀 여정으로 돌아가기</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo('recording')}>
+                <ChevronLeft size={16} /> 말씀 여정으로 돌아가기
+              </button>
               <p className="eyebrow">PROJECT SCHEDULE</p>
               <h1>{activeProject.title}</h1>
               <p className="onboarding-lead">{activeProject.scope}</p>
               <div className="project-schedule-only">
                 <div className="schedule-summary">
-                  <span><CalendarDays size={20} /></span>
-                  <div><small>{activeProject.kind === 'free' ? '자유 녹음' : `총 ${activeProject.duration}일`}</small><strong>말씀 여정 전체 일정</strong></div>
+                  <span>
+                    <CalendarDays size={20} />
+                  </span>
+                  <div>
+                    <small>총 {activeProject.duration}일</small>
+                    <strong>말씀 여정 전체 일정</strong>
+                  </div>
                 </div>
                 <ol>
                   {activeProject.tasks.map((task, index) => {
                     const completed = completedProjectTaskIndexes.has(index);
-                    return <li className={completed ? 'completed' : ''} key={`${task}-${index}`}><span>{completed ? <Check size={14} aria-label="완료" /> : activeProject.kind === 'free' ? '자유' : `${index + 1}일`}</span><strong>{task}</strong>{completed && <small>완료</small>}</li>;
+                    return (
+                      <li className={completed ? 'completed' : ''} key={`${task}-${index}`}>
+                        <span>{completed ? <Check size={14} aria-label="완료" /> : `${index + 1}일`}</span>
+                        <strong>{task}</strong>
+                        {completed && <small>완료</small>}
+                      </li>
+                    );
                   })}
-                  {activeProject.kind !== 'free' && activeProject.tasks.length < activeProject.duration && Array.from({ length: activeProject.duration - activeProject.tasks.length }, (_, index) => {
-                    const day = activeProject.tasks.length + index + 1;
-                    const task = day === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음';
-                    return <li key={`finish-${day}`}><span>{day}일</span><strong>{task}</strong></li>;
-                  })}
+                  {activeProject.tasks.length < activeProject.duration &&
+                    Array.from(
+                      {
+                        length: activeProject.duration - activeProject.tasks.length,
+                      },
+                      (_, index) => {
+                        const day = activeProject.tasks.length + index + 1;
+                        const task = day === activeProject.duration ? '전체 확인하고 완성하기' : '밀린 녹음과 다시 녹음';
+                        return (
+                          <li key={`finish-${day}`}>
+                            <span>{day}일</span>
+                            <strong>{task}</strong>
+                          </li>
+                        );
+                      },
+                    )}
                 </ol>
               </div>
-              <button className="start-project-button" type="button" onClick={() => navigateTo('recording')}>이 말씀 여정 계속하기 <ArrowRight size={16} /></button>
-              {activeProject.kind !== 'free' && !completedJourneyIds.has(activeProject.id) && <button className="quit-journey-button" type="button" onClick={() => setConfirmQuitJourneyOpen(true)}>말씀 읽기 그만하기</button>}
+              <button className="start-project-button" type="button" onClick={() => navigateTo('recording')}>
+                이 말씀 여정 계속하기 <ArrowRight size={16} />
+              </button>
+              {!completedJourneyIds.has(activeProject.id) && (
+                <button className="quit-journey-button" type="button" onClick={() => setConfirmQuitJourneyOpen(activeProject)}>
+                  말씀 읽기 그만하기
+                </button>
+              )}
             </div>
           ) : (
             <div className="onboarding-card project-picker-card">
-              <button className="onboarding-back" type="button" onClick={() => navigateTo(getBackStep('projects') === 'welcome' ? 'home' : 'daily-reading')}><ChevronLeft size={16} /> 이전</button>
+              <button className="onboarding-back" type="button" onClick={() => navigateTo(getBackStep('projects') === 'welcome' ? 'home' : 'daily-reading')}>
+                <ChevronLeft size={16} /> 이전
+              </button>
               <p className="eyebrow">말씀 여정 만들기</p>
               <h1>{projectPickerMode === 'recommended' ? '어떤 말씀을 따라 걸어볼까요?' : '나에게 맞는 읽기 계획을 만들어요'}</h1>
               <div className="project-creator-tabs" role="tablist" aria-label="말씀 여정 만들기 방식">
-                <button className={projectPickerMode === 'recommended' ? 'selected' : ''} type="button" role="tab" aria-selected={projectPickerMode === 'recommended'} onClick={() => { setProjectPickerMode('recommended'); setSelectedTemplateId(''); }}>추천 여정</button>
-                <button className={projectPickerMode === 'custom' ? 'selected' : ''} type="button" role="tab" aria-selected={projectPickerMode === 'custom'} onClick={() => { setProjectPickerMode('custom'); setSelectedTemplateId(''); }}>나만의 읽기 계획</button>
+                <button
+                  className={projectPickerMode === 'recommended' ? 'selected' : ''}
+                  type="button"
+                  role="tab"
+                  aria-selected={projectPickerMode === 'recommended'}
+                  onClick={() => {
+                    setProjectPickerMode('recommended');
+                    setSelectedTemplateId('');
+                  }}
+                >
+                  추천 여정
+                </button>
+                <button
+                  className={projectPickerMode === 'custom' ? 'selected' : ''}
+                  type="button"
+                  role="tab"
+                  aria-selected={projectPickerMode === 'custom'}
+                  onClick={() => {
+                    setProjectPickerMode('custom');
+                    setSelectedTemplateId('');
+                  }}
+                >
+                  나만의 읽기 계획
+                </button>
               </div>
-              {projectPickerMode === 'recommended' ? <>
-                <div className="duration-picker" aria-label="추천 말씀 여정 기간">
-                  <button className={projectDuration === 7 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(7); setSelectedTemplateId(''); }}>1주</button>
-                  <button className={projectDuration === 14 ? 'selected' : ''} type="button" onClick={() => { setProjectDuration(14); setSelectedTemplateId(''); }}>2주</button>
-                </div>
-                <div className="project-picker-layout">
-                  <div className="project-template-list">
-                    {visibleTemplates.map((project, index) => {
-                      const isActive = activeProjectIds.has(project.id);
-                      return (
-                      <button className={`${selectedTemplateId === project.id ? 'selected' : ''} ${isActive ? 'in-progress' : ''}`} style={{ gridRow: index * 2 + 1 }} type="button" onClick={() => setSelectedTemplateId((current) => current === project.id ? '' : project.id)} aria-expanded={selectedTemplateId === project.id} disabled={isActive} key={project.id}>
-                        <span className={`difficulty ${project.theme ? `theme-${project.theme}` : ''}`}>{isActive ? '진행 중' : project.theme}</span>
-                        <strong>{project.title}</strong>
-                        <small>{project.scope}</small>
-                        <em><CalendarDays size={13} /> {project.duration}일 · {project.minutes}</em>
-                      </button>
-                    )})}
+              {projectPickerMode === 'recommended' ? (
+                <>
+                  <div className="duration-picker" aria-label="추천 말씀 여정 기간">
+                    <button
+                      className={projectDuration === 7 ? 'selected' : ''}
+                      type="button"
+                      onClick={() => {
+                        setProjectDuration(7);
+                        setSelectedTemplateId('');
+                      }}
+                    >
+                      1주
+                    </button>
+                    <button
+                      className={projectDuration === 14 ? 'selected' : ''}
+                      type="button"
+                      onClick={() => {
+                        setProjectDuration(14);
+                        setSelectedTemplateId('');
+                      }}
+                    >
+                      2주
+                    </button>
                   </div>
-                  {selectedTemplateId && <aside className="project-schedule-preview selected-schedule-subtab" style={{ gridRow: selectedVisibleTemplateIndex * 2 + 2 }}>
-                    <p className="eyebrow">읽기 일정</p>
-                    <h2>{selectedTemplate.title}</h2>
-                    <ol>{selectedTemplate.tasks.map((task, index) => <li key={task}><span>{index + 1}일</span><strong>{task}</strong></li>)}</ol>
-                    <button className="start-project-button" type="button" onClick={() => finishOnboarding(selectedTemplate.id)} disabled={activeProjectIds.has(selectedTemplate.id)}>{activeProjectIds.has(selectedTemplate.id) ? '이미 진행 중인 말씀 여정' : '이 말씀 여정 시작하기'} {!activeProjectIds.has(selectedTemplate.id) && <ArrowRight size={16} />}</button>
-                  </aside>}
-                </div>
-              </> : <div className="custom-reading-plan-builder">
-                <section className="custom-plan-step" aria-labelledby="custom-plan-range-title">
-                  <div className="custom-plan-step-heading"><span>1</span><div><h2 id="custom-plan-range-title">읽을 범위</h2><p>한 가지 방식을 골라 주세요.</p></div></div>
-                  <div className="custom-plan-mode-grid">{customPlanModes.map((mode) => <button className={customPlanMode === mode.id ? 'selected' : ''} type="button" aria-pressed={customPlanMode === mode.id} onClick={() => {
-                    setCustomPlanMode(mode.id);
-                    if (mode.id === 'single') setCustomProjectName(`${customBook.name} 읽기 계획`);
-                    else if (mode.id === 'multiple') setCustomProjectName('함께 읽는 성경책');
-                    else setCustomProjectName(mode.title);
-                  }} key={mode.id}><strong>{mode.title}</strong><small>{mode.description}</small></button>)}</div>
-                  {customPlanMode === 'single' && <div className="custom-single-book-options">
-                    <label><span>성경</span><select value={customBookId} onChange={(event) => changeCustomBook(event.target.value)}>{bibleBooks.map((book) => <option value={book.code} key={book.code}>{book.name}</option>)}</select></label>
-                    <div className="passage-range-row">
-                      <fieldset>
-                        <legend>시작 위치</legend>
-                        <div className="range-row">
-                          <label><span>장</span><select value={customStartChapter} onChange={(event) => { const chapter = Number(event.target.value); const maxVerse = customBook.chapters[chapter - 1]; setCustomStartChapter(chapter); setCustomStartVerse((current) => Math.min(current, maxVerse)); if (chapter > customEndChapter) { setCustomEndChapter(chapter); setCustomEndVerse(maxVerse); } }}>{customBook.chapters.map((_, index) => <option value={index + 1} key={index}>{index + 1}장</option>)}</select></label>
-                          <label><span>절</span><select value={customStartVerse} onChange={(event) => { const verse = Number(event.target.value); setCustomStartVerse(verse); if (customStartChapter === customEndChapter && verse > customEndVerse) setCustomEndVerse(verse); }}>{Array.from({ length: customBook.chapters[customStartChapter - 1] }, (_, index) => <option value={index + 1} key={index}>{index + 1}절</option>)}</select></label>
-                        </div>
-                      </fieldset>
-                      <span className="passage-range-arrow" aria-hidden="true">→</span>
-                      <fieldset>
-                        <legend>마지막 위치</legend>
-                        <div className="range-row">
-                          <label><span>장</span><select value={customEndChapter} onChange={(event) => { const chapter = Number(event.target.value); const maxVerse = customBook.chapters[chapter - 1]; setCustomEndChapter(chapter); setCustomEndVerse((current) => Math.min(current, maxVerse)); if (chapter < customStartChapter) { setCustomStartChapter(chapter); setCustomStartVerse(1); } }}>{customBook.chapters.map((_, index) => <option value={index + 1} key={index}>{index + 1}장</option>)}</select></label>
-                          <label><span>절</span><select value={customEndVerse} onChange={(event) => { const verse = Number(event.target.value); setCustomEndVerse(verse); if (customStartChapter === customEndChapter && verse < customStartVerse) setCustomStartVerse(verse); }}>{Array.from({ length: customBook.chapters[customEndChapter - 1] }, (_, index) => <option value={index + 1} key={index}>{index + 1}절</option>)}</select></label>
-                        </div>
-                      </fieldset>
+                  <div className="project-picker-layout">
+                    <div className="project-template-list">
+                      {visibleTemplates.map((project, index) => {
+                        const isActive = activeProjectIds.has(project.id);
+                        return (
+                          <button
+                            className={`${selectedTemplateId === project.id ? 'selected' : ''} ${isActive ? 'in-progress' : ''}`}
+                            style={{ gridRow: index * 2 + 1 }}
+                            type="button"
+                            onClick={() => setSelectedTemplateId((current) => (current === project.id ? '' : project.id))}
+                            aria-expanded={selectedTemplateId === project.id}
+                            disabled={isActive}
+                            key={project.id}
+                          >
+                            <span className={`difficulty ${project.theme ? `theme-${project.theme}` : ''}`}>{isActive ? '진행 중' : project.theme}</span>
+                            <strong>{project.title}</strong>
+                            <small>{project.scope}</small>
+                            <em>
+                              <CalendarDays size={13} /> {project.duration}일 · {project.minutes}
+                            </em>
+                          </button>
+                        );
+                      })}
                     </div>
-                  </div>}
-                  {customPlanMode === 'multiple' && <div className="custom-multiple-books">
-                    <div className="custom-book-actions"><span>읽을 책 {customSelectedBookIds.length}권</span><button type="button" onClick={() => setCustomSelectedBookIds([])}>전체 해제</button></div>
-                    {(['old', 'new'] as const).map((testament) => <fieldset key={testament}><legend>{testament === 'old' ? '구약' : '신약'}</legend><div>{bibleBooks.filter((book) => book.testament === testament).map((book) => {
-                      const selected = customSelectedBookIds.includes(book.code);
-                      return <button className={selected ? 'selected' : ''} type="button" aria-pressed={selected} onClick={() => setCustomSelectedBookIds((current) => selected ? current.filter((id) => id !== book.code) : [...current, book.code])} key={book.code}>{selected && <Check size={13} />}{book.name}</button>;
-                    })}</div></fieldset>)}
-                  </div>}
-                </section>
-                <section className="custom-plan-step" aria-labelledby="custom-plan-duration-title">
-                  <div className="custom-plan-step-heading"><span>2</span><div><h2 id="custom-plan-duration-title">완료 기간</h2><p>하루도 빠짐없이 읽는 기준으로 계산해요.</p></div></div>
-                  <label className="custom-duration-input"><span>며칠 동안 읽을까요?</span><div><input type="number" min="1" max="1095" value={customDurationDays} onChange={(event) => setCustomDurationDays(Math.max(1, Math.min(1095, Number(event.target.value) || 1)))} /><strong>일</strong></div></label>
-                  <div className="custom-duration-presets" aria-label="빠른 기간 선택">{[7, 14, 30, 90, 180, 365].map((days) => <button className={customDurationDays === days ? 'selected' : ''} type="button" onClick={() => setCustomDurationDays(days)} key={days}>{days < 30 ? `${days / 7}주` : days === 30 ? '1개월' : days === 90 ? '3개월' : days === 180 ? '6개월' : '1년'}</button>)}</div>
-                </section>
-                <section className="custom-plan-step custom-plan-result" aria-labelledby="custom-plan-result-title">
-                  <div className="custom-plan-step-heading"><span>3</span><div><h2 id="custom-plan-result-title">하루 분량</h2><p>{customPlanReady ? '선택한 기간에 맞춰 고르게 나눴어요.' : '읽을 성경책을 먼저 골라 주세요.'}</p></div></div>
-                  {customPlanReady && <>
-                    <label className="custom-plan-name"><span>계획 이름</span><input value={customProjectName} onChange={(event) => setCustomProjectName(event.target.value)} maxLength={50} /></label>
-                    <div className="custom-plan-summary"><div><small>전체 범위</small><strong>{customPlan.totalChapters.toLocaleString('ko-KR')}장 · {customPlan.totalVerses.toLocaleString('ko-KR')}절</strong></div><div><small>하루 평균</small><strong>약 {Math.ceil(customPlan.totalVerses / customPlan.days.length).toLocaleString('ko-KR')}절</strong></div><div><small>완료까지</small><strong>{customPlan.days.length.toLocaleString('ko-KR')}일</strong></div></div>
-                    {customPlan.days.length < customPlan.requestedDays && <p className="custom-plan-adjustment">선택한 범위는 {customPlan.totalVerses}절이라 하루 한 절씩 읽는 {customPlan.days.length}일 일정으로 조정했어요.</p>}
-                    <ol className="custom-plan-preview">{customPlan.days.slice(0, 60).map((day, index) => <li key={`${day.label}-${index}`}><span>{index + 1}일</span><strong>{day.label}</strong><small>{day.verseCount}절</small></li>)}</ol>
-                    {customPlan.days.length > 60 && <p className="custom-plan-more">이후 {customPlan.days.length - 60}일 일정도 계획을 시작하면 모두 확인할 수 있어요.</p>}
-                  </>}
-                  <button className="start-project-button" type="button" onClick={saveCustomProject} disabled={!customPlanReady}>이 계획 시작하기 <ArrowRight size={16} /></button>
-                </section>
-              </div>}
+                    {selectedTemplateId && (
+                      <aside
+                        className="project-schedule-preview selected-schedule-subtab"
+                        style={{
+                          gridRow: selectedVisibleTemplateIndex * 2 + 2,
+                        }}
+                      >
+                        <p className="eyebrow">읽기 일정</p>
+                        <h2>{selectedTemplate.title}</h2>
+                        <ol>
+                          {selectedTemplate.tasks.map((task, index) => (
+                            <li key={task}>
+                              <span>{index + 1}일</span>
+                              <strong>{task}</strong>
+                            </li>
+                          ))}
+                        </ol>
+                        <button className="start-project-button" type="button" onClick={() => finishOnboarding(selectedTemplate.id)} disabled={activeProjectIds.has(selectedTemplate.id)}>
+                          {activeProjectIds.has(selectedTemplate.id) ? '이미 진행 중인 말씀 여정' : '이 말씀 여정 시작하기'} {!activeProjectIds.has(selectedTemplate.id) && <ArrowRight size={16} />}
+                        </button>
+                      </aside>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="custom-reading-plan-builder">
+                  <section className="custom-plan-step" aria-labelledby="custom-plan-range-title">
+                    <div className="custom-plan-step-heading">
+                      <span>1</span>
+                      <div>
+                        <h2 id="custom-plan-range-title">읽을 범위</h2>
+                        <p>한 가지 방식을 골라 주세요.</p>
+                      </div>
+                    </div>
+                    <div className="custom-plan-mode-grid">
+                      {customPlanModes.map((mode) => (
+                        <button
+                          className={customPlanMode === mode.id ? 'selected' : ''}
+                          type="button"
+                          aria-pressed={customPlanMode === mode.id}
+                          onClick={() => {
+                            setCustomPlanMode(mode.id);
+                            setCustomProjectName(mode.title);
+                          }}
+                          key={mode.id}
+                        >
+                          <strong>{mode.title}</strong>
+                          <small>{mode.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                    {(customPlanMode === 'chapter' || customPlanMode === 'range') && <BibleRangePicker mode={customPlanMode} value={customBibleRange} onChange={setCustomBibleRange} />}
+                  </section>
+                  <section className="custom-plan-step" aria-labelledby="custom-plan-duration-title">
+                    <div className="custom-plan-step-heading">
+                      <span>2</span>
+                      <div>
+                        <h2 id="custom-plan-duration-title">완료 기간</h2>
+                        <p>하루도 빠짐없이 읽는 기준으로 계산해요.</p>
+                      </div>
+                    </div>
+                    <label className="custom-duration-input">
+                      <span>며칠 동안 읽을까요?</span>
+                      <div>
+                        <input type="number" min="1" max="1095" value={customDurationDays} onChange={(event) => setCustomDurationDays(Math.max(1, Math.min(1095, Number(event.target.value) || 1)))} />
+                        <strong>일</strong>
+                      </div>
+                    </label>
+                    <div className="custom-duration-presets" aria-label="빠른 기간 선택">
+                      {[7, 14, 30, 90, 180, 365].map((days) => (
+                        <button className={customDurationDays === days ? 'selected' : ''} type="button" onClick={() => setCustomDurationDays(days)} key={days}>
+                          {days < 30 ? `${days / 7}주` : days === 30 ? '1개월' : days === 90 ? '3개월' : days === 180 ? '6개월' : '1년'}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                  <section className="custom-plan-step custom-plan-result" aria-labelledby="custom-plan-result-title">
+                    <div className="custom-plan-step-heading">
+                      <span>3</span>
+                      <div>
+                        <h2 id="custom-plan-result-title">하루 분량</h2>
+                        <p>{customPlanReady ? '선택한 기간에 맞춰 고르게 나눴어요.' : '읽을 성경책을 먼저 골라 주세요.'}</p>
+                      </div>
+                    </div>
+                    {customPlanReady && (
+                      <>
+                        <label className="custom-plan-name">
+                          <span>계획 이름</span>
+                          <input value={customProjectName} onChange={(event) => setCustomProjectName(event.target.value)} maxLength={50} />
+                        </label>
+                        <div className="custom-plan-summary">
+                          <div>
+                            <small>전체 범위</small>
+                            <strong>
+                              {customPlan.totalChapters.toLocaleString('ko-KR')}
+                              장 · {customPlan.totalVerses.toLocaleString('ko-KR')}절
+                            </strong>
+                          </div>
+                          <div>
+                            <small>하루 평균</small>
+                            <strong>약 {Math.ceil(customPlan.totalVerses / customPlan.days.length).toLocaleString('ko-KR')}절</strong>
+                          </div>
+                          <div>
+                            <small>완료까지</small>
+                            <strong>{customPlan.days.length.toLocaleString('ko-KR')}일</strong>
+                          </div>
+                        </div>
+                        {customPlan.days.length < customPlan.requestedDays && (
+                          <p className="custom-plan-adjustment">
+                            선택한 범위는 {customPlan.totalVerses}절이라 하루 한 절씩 읽는 {customPlan.days.length}일 일정으로 조정했어요.
+                          </p>
+                        )}
+                        <ol className="custom-plan-preview">
+                          {customPlan.days.slice(0, 60).map((day, index) => (
+                            <li key={`${day.label}-${index}`}>
+                              <span>{index + 1}일</span>
+                              <strong>{day.label}</strong>
+                              <small>{day.verseCount}절</small>
+                            </li>
+                          ))}
+                        </ol>
+                        {customPlan.days.length > 60 && <p className="custom-plan-more">이후 {customPlan.days.length - 60}일 일정도 계획을 시작하면 모두 확인할 수 있어요.</p>}
+                      </>
+                    )}
+                    <button className="start-project-button" type="button" onClick={saveCustomProject} disabled={!customPlanReady}>
+                      이 계획 시작하기 <ArrowRight size={16} />
+                    </button>
+                  </section>
+                </div>
+              )}
             </div>
           )}
         </section>
       )}
       <header className="topbar">
         <a className="brand" href="#recording" aria-label="말씀유산 홈">
-          <span className="brand-mark"><BookOpen size={20} /></span>
-          <span><strong>말씀유산</strong><small>VERSE LEGACY</small></span>
+          <span className="brand-mark">
+            <BookOpen size={20} />
+          </span>
+          <span>
+            <strong>말씀유산</strong>
+            <small>VERSE LEGACY</small>
+          </span>
         </a>
         <div className="project-progress" aria-label={activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
-          <div><span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span><strong>{activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong></div>
-          <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
+          <div>
+            <span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span>
+            <strong>{activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong>
+          </div>
+          <div className="progress-track">
+            <span style={{ width: `${progress}%` }} />
+          </div>
         </div>
         <div className="topbar-actions">
           <nav className="desktop-tabs" aria-label="주요 화면">
-            <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={16} /> 녹음</button>
-            <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={16} /> 듣기</button>
-            <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}><Gift size={16} /> 선물</button>
-            <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={16} /> 친구</button>
+            <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}>
+              <Mic size={16} /> 녹음
+            </button>
+            <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}>
+              <Headphones size={16} /> 듣기
+            </button>
+            <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}>
+              <Gift size={16} /> 선물
+            </button>
+            <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}>
+              <Users size={16} /> 친구
+            </button>
           </nav>
-          <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
+          <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-          <button className="icon-button" onClick={() => void onSignOut()} type="button" aria-label={`${userEmail ?? '사용자'} 로그아웃`} title="로그아웃"><LogOut size={18} /></button>
+          <button className="icon-button" onClick={() => void onSignOut()} type="button" aria-label={`${userEmail ?? '사용자'} 로그아웃`} title="로그아웃">
+            <LogOut size={18} />
+          </button>
         </div>
       </header>
 
-      {appTab === 'recording' && <div className="prototype-note"><Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.</div>}
+      {appTab === 'recording' && (
+        <div className="prototype-note">
+          <Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.
+        </div>
+      )}
 
-      {appTab === 'recording' && <section className="workspace" id="recording">
-        <aside className="chapter-panel" aria-label="말씀 여정 정보">
-          <div>
-            <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 여정' : `${activeProject.duration}일 말씀 여정`) : '우리 가족 첫 번째 낭독'}</p>
-            <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
-            <p className="muted">{activeProject?.tasks[0] ? `${displayedProjectDay === currentProjectDay ? '오늘' : '지난 과제'} · ${displayedProjectDay}일차: ${displayedProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
-          </div>
-          {activeProject && activeProject.kind !== 'free' && <div className="project-day-progress" aria-label={`${activeProject.duration}일 말씀 여정 진행 상황`}>
-            <div><strong>{displayedProjectDay === currentProjectDay ? `${currentProjectDay}일차 진행 중` : `${displayedProjectDay}일차 다시 보기`}</strong><span>{completedProjectTaskIndexes.size}/{activeProject.duration}일 완료</span></div>
-            <div className="project-day-badges">
-              {Array.from({ length: activeProject.duration }, (_, index) => {
-                const day = index + 1;
-                const completed = completedProjectTaskIndexes.has(index);
-                const today = day === currentProjectDay;
-                const selected = day === displayedProjectDay;
-                const future = day > currentProjectDay;
-                return <button className={`${completed ? 'completed' : ''} ${today ? 'today' : ''} ${selected ? 'selected' : ''} ${future ? 'future' : ''}`} type="button" disabled={future} onClick={() => setViewedProjectDay(today ? null : day)} aria-label={completed ? `${day}일차 완료, 다시 보기` : today ? `${day}일차 진행 중` : future ? `${day}일차 아직 시작 전` : `${day}일차 다시 보기`} key={day}>{completed ? <Check size={12} /> : day}</button>;
-              })}
-            </div>
-          </div>}
-          {activeProject && activeProject.kind !== 'free' && <button className="chapter-schedule-button" type="button" onClick={() => navigateTo('schedule')}><CalendarDays size={15} /> 전체 일정 확인</button>}
-          <div className="verse-list" aria-label="구절 목록" ref={verseListRef}>
-            {passageVerses.map((_, index) => (
-              <button
-                className={`verse-item ${verseIndex === index ? 'active' : ''}`}
-                data-verse-index={index}
-                key={index}
-                onClick={() => moveVerse(index)}
-                type="button"
-              >
-                <span>{passageStartVerse + index}절</span>
-                {savedPassageVerseNumbers.has(passageStartVerse + index) ? <Check size={15} aria-label="저장 완료" /> : takes[index] ? <AudioLines size={15} aria-label="녹음 완료" /> : <span className="empty-dot" />}
-              </button>
-            ))}
-          </div>
-          <button className="family-card" type="button" onClick={openFriendsTab} aria-label="이메일이나 닉네임으로 친구 찾기">
-            <div className="avatar-stack" aria-hidden="true"><span>엄</span><span>나</span><span>설</span></div>
-            <p><strong>친구와 말씀 나누기</strong><small>이메일이나 닉네임으로 친구를 찾아보세요.</small></p>
-          </button>
-        </aside>
-
-        <section className="recording-card" aria-label="성경 녹음 화면">
-          {savedPassageVerseNumbers.size > 0 && !recording && !currentUnitLocked && <button className="recording-manage-trigger" type="button" onClick={() => setRecordingManageOpen(true)}><RotateCcw size={15} /> 녹음 관리</button>}
-          <div className="recording-heading">
+      {appTab === 'recording' && (
+        <section className="workspace" id="recording">
+          <aside className="chapter-panel" aria-label="말씀 여정 정보">
             <div>
-              <p className="eyebrow">{passageBook.name} {passageChapter}장 · {currentVerseNumber}절</p>
-              <h1>{recordingMode === 'continuous' ? fullRetakeActive ? '처음부터 새롭게 이어 읽어 주세요.' : `${currentVerseNumber}절부터 자연스럽게 이어 읽어 주세요.` : '이 절만 천천히 다시 읽어 주세요.'}</h1>
+              <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 여정' : `${activeProject.duration}일 말씀 여정`) : '우리 가족 첫 번째 낭독'}</p>
+              <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
+              <p className="muted">{activeProject?.tasks[0] ? activeProject.kind === 'free' ? activeProject.scope : `${displayedProjectDay === currentProjectDay ? '오늘' : '지난 과제'} · ${displayedProjectDay}일차: ${displayedProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
             </div>
-            <span className={`status-pill ${recording ? 'live' : hasTake || currentVerseSaved ? 'ready' : ''}`}>
-              {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : recentlyUpdatedReference === `${passageBook.name}-${passageChapter}-${currentVerseNumber}` ? '수정 완료' : currentVerseSaved ? '저장 완료' : '녹음 전'}
-            </span>
-          </div>
-
-          <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
-            <span className="verse-number">{currentVerseNumber}</span>
-            {recordingMode === 'continuous' ? <div className="continuous-verse-copy">
-              <p>{passageVerses[verseIndex]}</p>
-              {verseIndex < passageVerses.length - 1 && <span className="next-verse-preview"><small>다음 {currentVerseNumber + 1}절</small><span>{passageVerses[verseIndex + 1]}</span></span>}
-            </div> : <p>{passageVerses[verseIndex]}</p>}
-          </article>
-
-          {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행">
-            <button className="next" type="button" onClick={completeContinuousVerse} disabled={verseIndex === passageVerses.length - 1}>다음 절 <ChevronRight size={18} /></button>
-            <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}><CircleStop size={18} /> {recordingFinishLabel}</button>
-          </div>}
-
-          <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
-            {Array.from({ length: 34 }).map((_, index) => (
-              <span key={index} style={{ height: `${12 + ((index * 17) % 42)}%`, animationDelay: `${index * 45}ms` }} />
-            ))}
-          </div>
-
-          <div className="timer"><span>{formatTime(seconds)}</span><small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : currentVerseSaved ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
-
-          <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${currentVerseSaved && !replacingRecording && !fullRetakeActive ? 'saved-recording-actions' : ''}`}>
-            {currentUnitLocked && !recording ? <div className="recording-locked-actions">
-              <span><Check size={22} /></span>
-              <div><strong>{activeProject?.kind === 'free' ? '이 장의 녹음을 완료했어요' : '이 말씀 여정을 완료했어요'}</strong><small>완료된 녹음은 수정할 수 없으며, 듣거나 선물할 수 있어요.</small></div>
-              <button type="button" onClick={openLibraryTab}><Headphones size={17} /> 듣기·선물하기</button>
-            </div> : hasTake && !recording ? <>
-              <button className="record-complete-button restart" onClick={resetTake} type="button"><RotateCcw size={22} /><span>다시 녹음</span></button>
-              <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">{savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}<span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span></button>
-            </> : playbackRecording && !fullRetakeActive && !replacingRecording ? <>
-              <button className="record-complete-button saved-listen" onClick={() => void toggleSavedRecordingPlayback()} type="button">
-                {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
-                <span>{savedRecordingPlaying ? '듣기 멈춤' : '이 절 듣기'}</span>
-              </button>
-              <button className="record-complete-button restart" type="button" disabled={Boolean(deletingVerseId)} onClick={() => currentSavedRecording && void startRetake(currentSavedRecording)}>
-                {deletingVerseId === currentSavedRecording?.id ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
-                <span>{deletingVerseId === currentSavedRecording?.id ? '삭제 중' : '이 절 수정'}</span>
-              </button>
-            </> : recordingMode === 'continuous' && recording ? null : <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic || savingLibrary} type="button">
-              <span>{requestingMic || savingLibrary ? <LoaderCircle className="spin" size={27} /> : recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
-              {savingLibrary ? '녹음 저장 중' : requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : replacingRecording ? '이 절 다시 녹음' : fullRetakeActive ? '처음부터 다시 녹음' : `${currentVerseNumber}절부터 이어 녹음`}
-            </button>}
-          </div>
-
-          {playbackRecording && (
-            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
-            <audio ref={savedRecordingAudioRef} preload="auto" src={`/api/recordings/${playbackRecording.id}/audio`} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
-          )}
-
-          {currentTake && !recording && (
-            <div className="take-preview">
-              <div className="take-preview-heading">
-                <span><AudioLines size={18} /></span>
-                <p><strong>{currentVerseNumber}절 녹음 완료</strong><small>{formatTime(currentTake.duration)} · 지금 바로 재생할 수 있어요.</small></p>
+            {activeProject && activeProject.kind !== 'free' && (
+              <div className="project-day-progress" aria-label={`${activeProject.duration}일 말씀 여정 진행 상황`}>
+                <div>
+                  <strong>{displayedProjectDay === currentProjectDay ? `${currentProjectDay}일차 진행 중` : `${displayedProjectDay}일차 다시 보기`}</strong>
+                  <span>
+                    {completedProjectTaskIndexes.size}/{activeProject.duration}
+                    일 완료
+                  </span>
+                </div>
+                <div className="project-day-badges">
+                  {Array.from({ length: activeProject.duration }, (_, index) => {
+                    const day = index + 1;
+                    const completed = completedProjectTaskIndexes.has(index);
+                    const today = day === currentProjectDay;
+                    const selected = day === displayedProjectDay;
+                    const future = day > currentProjectDay;
+                    return (
+                      <button
+                        className={`${completed ? 'completed' : ''} ${today ? 'today' : ''} ${selected ? 'selected' : ''} ${future ? 'future' : ''}`}
+                        type="button"
+                        disabled={future}
+                        onClick={() => setViewedProjectDay(today ? null : day)}
+                        aria-label={completed ? `${day}일차 완료, 다시 보기` : today ? `${day}일차 진행 중` : future ? `${day}일차 아직 시작 전` : `${day}일차 다시 보기`}
+                        key={day}
+                      >
+                        {completed ? <Check size={12} /> : day}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
-              <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>녹음 재생을 지원하지 않는 브라우저입니다.</audio>
-            </div>
-          )}
-
-          {!(recordingMode === 'continuous' && recording) && <div className="verse-navigation">
-            <button onClick={() => recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex - 1, 'manual') : moveVerse(verseIndex - 1)} disabled={verseIndex === 0 || requestingMic || (recording && recordingMode === 'verse')} type="button"><ChevronLeft size={18} /> 이전 구절</button>
-            <span>{currentVerseNumber}절 · {verseIndex + 1} / {passageVerses.length}</span>
-            <button onClick={() => recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex + 1, 'manual') : moveVerse(verseIndex + 1)} disabled={verseIndex === passageVerses.length - 1 || requestingMic || (recording && recordingMode === 'verse')} type="button">다음 구절 <ChevronRight size={18} /></button>
-          </div>}
-        </section>
-
-        <aside className="sound-panel" aria-label="음향 설정">
-          <div className="panel-heading"><span><Headphones size={19} /></span><div><p className="eyebrow">간편 음향</p><h2>목소리 다듬기</h2></div></div>
-
-          <fieldset className="setting-group">
-            <legend>리버브</legend>
-            <p>깨끗한 원음을 기본으로 저장하고, 원할 때만 공간감을 더해요.</p>
-            <div className="segment-control">
-              {reverbOptions.map((option) => (
-                <button className={reverb === option ? 'selected' : ''} onClick={() => setReverb(option)} type="button" key={option}>{option}</button>
+            )}
+            {activeProject && activeProject.kind !== 'free' && (
+              <button className="chapter-schedule-button" type="button" onClick={() => navigateTo('schedule')}>
+                <CalendarDays size={15} /> 전체 일정 확인
+              </button>
+            )}
+            <div className="verse-list" aria-label="구절 목록" ref={verseListRef}>
+              {passageVerses.map((_, index) => (
+                <button className={`verse-item ${verseIndex === index ? 'active' : ''}`} data-verse-index={index} key={index} onClick={() => moveVerse(index)} type="button">
+                  <span>{passageStartVerse + index}절</span>
+                  {savedPassageVerseNumbers.has(passageStartVerse + index) ? <Check size={15} aria-label="저장 완료" /> : takes[index] ? <AudioLines size={15} aria-label="녹음 완료" /> : <span className="empty-dot" />}
+                </button>
               ))}
             </div>
-          </fieldset>
+            <button className="family-card" type="button" onClick={openFriendsTab} aria-label="이메일이나 닉네임으로 친구 찾기">
+              <div className="avatar-stack" aria-hidden="true">
+                <span>엄</span>
+                <span>나</span>
+                <span>설</span>
+              </div>
+              <p>
+                <strong>친구와 말씀 나누기</strong>
+                <small>이메일이나 닉네임으로 친구를 찾아보세요.</small>
+              </p>
+            </button>
+          </aside>
 
-          <fieldset className="setting-group">
-            <legend><Music2 size={17} /> 배경음악</legend>
-            <p>곡을 고른 뒤 녹음하면서 재생하거나 잠시 멈출 수 있어요. 선택한 곡은 저장된 말씀에도 연결돼요.</p>
-            <div className="music-list">
-              {bgmOptions.map((option) => (
-                <div className={`music-option ${bgm === option.id ? 'selected' : ''}`} key={option.id}>
-                  <button
-                    className="music-select"
-                    disabled={recording || requestingMic}
-                    onClick={() => {
-                      if (option.id !== bgm && activePreview) stopPreview();
-                      setBgm(option.id);
-                      void warmBgmTrack(option.audioSrc).catch(() => undefined);
-                      if (!option.audioSrc) stopPreview();
-                    }}
-                    type="button"
-                  >
-                    <span className="music-icon">{option.audioSrc ? (option.recommended ? <Sparkles size={15} /> : '♪') : '—'}</span>
-                    <span><strong>{option.name}</strong><small>{option.description}</small></span>
-                    <span className="radio-dot" />
+          <section className="recording-card" aria-label="성경 녹음 화면">
+            {savedPassageVerseNumbers.size > 0 && !recording && !currentUnitLocked && (
+              <button className="recording-manage-trigger" type="button" onClick={() => setRecordingManageOpen(true)}>
+                <RotateCcw size={15} /> 녹음 관리
+              </button>
+            )}
+            <div className="recording-heading">
+              <div>
+                <p className="eyebrow">
+                  {passageBook.name} {passageChapter}장 · {currentVerseNumber}절
+                </p>
+                <h1>{recordingMode === 'continuous' ? (fullRetakeActive ? '처음부터 새롭게 이어 읽어 주세요.' : `${currentVerseNumber}절부터 자연스럽게 이어 읽어 주세요.`) : '이 절만 천천히 다시 읽어 주세요.'}</h1>
+              </div>
+              <span className={`status-pill ${recording ? 'live' : hasTake || currentVerseSaved ? 'ready' : ''}`}>
+                {recording ? '녹음 중' : hasTake ? '재생 가능' : replacingRecording ? '다시 녹음' : recentlyUpdatedReference === `${passageBook.name}-${passageChapter}-${currentVerseNumber}` ? '수정 완료' : currentVerseSaved ? '저장 완료' : '녹음 전'}
+              </span>
+            </div>
+
+            <article className={`verse-paper ${recordingMode === 'continuous' ? 'continuous' : ''}`}>
+              <span className="verse-number">{currentVerseNumber}</span>
+              {recordingMode === 'continuous' ? (
+                <div className="continuous-verse-copy">
+                  <p>{passageVerses[verseIndex]}</p>
+                  {verseIndex < passageVerses.length - 1 && (
+                    <span className="next-verse-preview">
+                      <small>다음 {currentVerseNumber + 1}절</small>
+                      <span>{passageVerses[verseIndex + 1]}</span>
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p>{passageVerses[verseIndex]}</p>
+              )}
+            </article>
+
+            {recordingMode === 'continuous' && recording && (
+              <div className="continuous-record-actions" aria-label="이어 녹음 진행">
+                <button className="next" type="button" onClick={completeContinuousVerse} disabled={verseIndex === passageVerses.length - 1}>
+                  다음 절 <ChevronRight size={18} />
+                </button>
+                <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}>
+                  <CircleStop size={18} /> {recordingFinishLabel}
+                </button>
+              </div>
+            )}
+
+            <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
+              {Array.from({ length: 34 }).map((_, index) => (
+                <span
+                  key={index}
+                  style={{
+                    height: `${12 + ((index * 17) % 42)}%`,
+                    animationDelay: `${index * 45}ms`,
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="timer">
+              <span>{formatTime(seconds)}</span>
+              <small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : currentVerseSaved ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small>
+            </div>
+
+            <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${currentVerseSaved && !replacingRecording && !fullRetakeActive ? 'saved-recording-actions' : ''}`}>
+              {currentUnitLocked && !recording ? (
+                <div className="recording-locked-actions">
+                  <span>
+                    <Check size={22} />
+                  </span>
+                  <div>
+                    <strong>{activeProject?.kind === 'free' ? activeProject.passage ? '이 장의 녹음을 완료했어요' : '이 범위의 녹음을 완료했어요' : '이 말씀 여정을 완료했어요'}</strong>
+                    <small>완료된 녹음은 수정할 수 없으며, 듣거나 선물할 수 있어요.</small>
+                  </div>
+                  <button type="button" onClick={openLibraryTab}>
+                    <Headphones size={17} /> 듣기·선물하기
                   </button>
                 </div>
-              ))}
+              ) : hasTake && !recording ? (
+                <>
+                  <button className="record-complete-button restart" onClick={resetTake} type="button">
+                    <RotateCcw size={22} />
+                    <span>다시 녹음</span>
+                  </button>
+                  <button className="record-complete-button confirm" onClick={() => void saveVerse()} disabled={savingLibrary} type="button">
+                    {savingLibrary ? <LoaderCircle className="spin" size={22} /> : <Check size={24} />}
+                    <span>{savingLibrary ? '저장 중' : replacingRecording ? '교체 저장' : '보관함에 저장'}</span>
+                  </button>
+                </>
+              ) : playbackRecording && !fullRetakeActive && !replacingRecording ? (
+                <>
+                  <button className="record-complete-button saved-listen" onClick={() => void toggleSavedRecordingPlayback()} type="button">
+                    {savedRecordingPlaying ? <Pause size={22} /> : <Headphones size={22} />}
+                    <span>{savedRecordingPlaying ? '듣기 멈춤' : '이 절 듣기'}</span>
+                  </button>
+                  <button className="record-complete-button restart" type="button" disabled={Boolean(deletingVerseId)} onClick={() => currentSavedRecording && void startRetake(currentSavedRecording)}>
+                    {deletingVerseId === currentSavedRecording?.id ? <LoaderCircle className="spin" size={21} /> : <RotateCcw size={21} />}
+                    <span>{deletingVerseId === currentSavedRecording?.id ? '삭제 중' : '이 절 수정'}</span>
+                  </button>
+                </>
+              ) : recordingMode === 'continuous' && recording ? null : (
+                <button className={`record-button ${recording ? 'recording' : ''}`} onClick={toggleRecording} disabled={requestingMic || savingLibrary} type="button">
+                  <span>{requestingMic || savingLibrary ? <LoaderCircle className="spin" size={27} /> : recording ? <CircleStop size={27} /> : <Mic size={29} />}</span>
+                  {savingLibrary ? '녹음 저장 중' : requestingMic ? '마이크 연결 중' : recording ? '녹음 멈추기' : replacingRecording ? '이 절 다시 녹음' : fullRetakeActive ? '처음부터 다시 녹음' : `${currentVerseNumber}절부터 이어 녹음`}
+                </button>
+              )}
             </div>
-          </fieldset>
 
-          <div className="bgm-transport" aria-label="배경음악 재생 조작">
-            <button className={bgmIsPlaying ? 'active' : ''} type="button" onClick={() => {
-              const option = bgmOptions.find((item) => item.id === bgm);
-              if (option) void playSelectedBgm(option);
-            }} disabled={bgm === 'none' || bgmIsPlaying || bgmLoadingId === bgm} aria-label={bgmLoadingId === bgm ? '배경음악 준비 중' : bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'} aria-pressed={bgmIsPlaying}>{bgmLoadingId === bgm ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}<span>{bgmLoadingId === bgm ? '음악 준비 중' : bgmIsPlaying ? '재생 중' : '재생'}</span></button>
-            <button className={bgmIsPaused ? 'active' : ''} type="button" onClick={pauseSelectedBgm} disabled={!bgmIsPlaying} aria-label={bgmIsPaused ? '배경음악 일시정지됨' : '배경음악 일시정지'} aria-pressed={bgmIsPaused}><Pause size={16} /><span>{bgmIsPaused ? '멈춤 상태' : '일시정지'}</span></button>
-            <button type="button" onClick={stopPreview} disabled={!activePreview} aria-label="배경음악 정지"><CircleStop size={16} /><span>정지</span></button>
-          </div>
+            {playbackRecording && (
+              // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
+              <audio ref={savedRecordingAudioRef} preload="auto" src={`/api/recordings/${playbackRecording.id}/audio`} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
+            )}
 
-          <label className="volume-control">
-            <span><Volume2 size={17} /> 배경음악 음량 <strong>{volume}%</strong></span>
-            <input type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
-          </label>
+            {currentTake && !recording && (
+              <div className="take-preview">
+                <div className="take-preview-heading">
+                  <span>
+                    <AudioLines size={18} />
+                  </span>
+                  <p>
+                    <strong>{currentVerseNumber}절 녹음 완료</strong>
+                    <small>{formatTime(currentTake.duration)} · 지금 바로 재생할 수 있어요.</small>
+                  </p>
+                </div>
+                {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
+                <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>
+                  녹음 재생을 지원하지 않는 브라우저입니다.
+                </audio>
+              </div>
+            )}
 
-          <div className="sound-summary">
-            <Sparkles size={18} />
-            <p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>녹음 중에는 BGM을 들으며 읽을 수 있고, 저장 후에는 이어듣기 전체에 같은 음악을 적용할 수 있어요.</small></p>
-          </div>
-        </aside>
-      </section>}
+            {!(recordingMode === 'continuous' && recording) && (
+              <div className="verse-navigation">
+                <button onClick={() => (recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex - 1, 'manual') : moveVerse(verseIndex - 1))} disabled={verseIndex === 0 || requestingMic || (recording && recordingMode === 'verse')} type="button">
+                  <ChevronLeft size={18} /> 이전 구절
+                </button>
+                <span>
+                  {currentVerseNumber}절 · {verseIndex + 1} / {passageVerses.length}
+                </span>
+                <button onClick={() => (recording && recordingMode === 'continuous' ? moveContinuousVerse(verseIndex + 1, 'manual') : moveVerse(verseIndex + 1))} disabled={verseIndex === passageVerses.length - 1 || requestingMic || (recording && recordingMode === 'verse')} type="button">
+                  다음 구절 <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
+          </section>
+
+          <aside className="sound-panel" aria-label="음향 설정">
+            <div className="panel-heading">
+              <span>
+                <Headphones size={19} />
+              </span>
+              <div>
+                <p className="eyebrow">음향 설정</p>
+                <h2>배경음악</h2>
+              </div>
+            </div>
+
+            <fieldset className="setting-group">
+              <legend>
+                <Music2 size={17} /> 배경음악
+              </legend>
+              <p>곡을 고른 뒤 녹음하면서 재생하거나 잠시 멈출 수 있어요. 선택한 곡은 저장된 말씀에도 연결돼요.</p>
+              <div className="music-list">
+                {bgmOptions.map((option) => (
+                  <div className={`music-option ${bgm === option.id ? 'selected' : ''}`} key={option.id}>
+                    <button
+                      className="music-select"
+                      disabled={recording || requestingMic}
+                      onClick={() => {
+                        if (option.id !== bgm && activePreview) stopPreview();
+                        setBgm(option.id);
+                        void warmBgmTrack(option.audioSrc).catch(() => undefined);
+                        if (!option.audioSrc) stopPreview();
+                      }}
+                      type="button"
+                    >
+                      <span className="music-icon">{option.audioSrc ? option.recommended ? <Sparkles size={15} /> : '♪' : '—'}</span>
+                      <span>
+                        <strong>{option.name}</strong>
+                        <small>{option.description}</small>
+                      </span>
+                      <span className="radio-dot" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="bgm-transport" aria-label="배경음악 재생 조작">
+              <button
+                className={bgmIsPlaying ? 'active' : ''}
+                type="button"
+                onClick={() => {
+                  const option = bgmOptions.find((item) => item.id === bgm);
+                  if (option) void playSelectedBgm(option);
+                }}
+                disabled={bgm === 'none' || bgmIsPlaying || bgmLoadingId === bgm}
+                aria-label={bgmLoadingId === bgm ? '배경음악 준비 중' : bgmIsPlaying ? '배경음악 재생 중' : '배경음악 재생'}
+                aria-pressed={bgmIsPlaying}
+              >
+                {bgmLoadingId === bgm ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}
+                <span>{bgmLoadingId === bgm ? '음악 준비 중' : bgmIsPlaying ? '재생 중' : '재생'}</span>
+              </button>
+              <button className={bgmIsPaused ? 'active' : ''} type="button" onClick={pauseSelectedBgm} disabled={!bgmIsPlaying} aria-label={bgmIsPaused ? '배경음악 일시정지됨' : '배경음악 일시정지'} aria-pressed={bgmIsPaused}>
+                <Pause size={16} />
+                <span>{bgmIsPaused ? '멈춤 상태' : '일시정지'}</span>
+              </button>
+              <button type="button" onClick={stopPreview} disabled={!activePreview} aria-label="배경음악 정지">
+                <CircleStop size={16} />
+                <span>정지</span>
+              </button>
+            </div>
+
+            <label className="volume-control">
+              <span>
+                <Volume2 size={17} /> 배경음악 음량 <strong>{volume}%</strong>
+              </span>
+              <input type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} disabled={bgm === 'none'} />
+            </label>
+
+            <div className="sound-summary">
+              <Sparkles size={18} />
+              <p>
+                <strong>절마다 목소리 크기를 자동으로 맞춰요</strong>
+                <small>녹음 중에는 BGM을 들으며 읽을 수 있고, 저장 후에는 이어듣기 전체에 같은 음악을 적용할 수 있어요.</small>
+              </p>
+            </div>
+          </aside>
+        </section>
+      )}
 
       {recordingManageOpen && (
-        <div className="recording-manage-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRecordingManageOpen(false); }}>
+        <div
+          className="recording-manage-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRecordingManageOpen(false);
+          }}
+        >
           <dialog className="recording-manage-sheet" open aria-labelledby="recording-manage-title">
-            <button className="recording-manage-close" type="button" onClick={() => setRecordingManageOpen(false)} aria-label="녹음 관리 닫기"><X size={21} /></button>
+            <button className="recording-manage-close" type="button" onClick={() => setRecordingManageOpen(false)} aria-label="녹음 관리 닫기">
+              <X size={21} />
+            </button>
             <p className="eyebrow">RECORDING OPTIONS</p>
             <h2 id="recording-manage-title">어떻게 수정할까요?</h2>
             <p>한 절만 바꾸려면 저장된 절을 선택해 주세요. 전체 재녹음은 첫 절부터 새롭게 이어 읽어요.</p>
             <div className="recording-manage-options">
-              <button type="button" onClick={() => setRecordingManageOpen(false)}><span><AudioLines size={20} /></span><div><strong>절별로 수정</strong><small>목록에서 녹음된 절을 누른 뒤 ‘이 절 수정’을 선택해요.</small></div></button>
-              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => setConfirmFullRetakeOpen(true)}><span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span><div><strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong><small>현재 범위에 저장된 녹음을 모두 지우고 {passageStartVerse}절부터 다시 시작해요.</small></div></button>
+              <button type="button" onClick={() => setRecordingManageOpen(false)}>
+                <span>
+                  <AudioLines size={20} />
+                </span>
+                <div>
+                  <strong>절별로 수정</strong>
+                  <small>목록에서 녹음된 절을 누른 뒤 ‘이 절 수정’을 선택해요.</small>
+                </div>
+              </button>
+              <button className="full-retake" type="button" disabled={clearingForRetake} onClick={() => setConfirmFullRetakeOpen(true)}>
+                <span>{clearingForRetake ? <LoaderCircle className="spin" size={20} /> : <RotateCcw size={20} />}</span>
+                <div>
+                  <strong>{clearingForRetake ? '기존 녹음 삭제 중' : '새로 녹음하기'}</strong>
+                  <small>
+                    현재 범위에 저장된 녹음을 모두 지우고 {passageStartVerse}
+                    절부터 다시 시작해요.
+                  </small>
+                </div>
+              </button>
             </div>
           </dialog>
         </div>
@@ -2665,332 +3713,672 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       {confirmFullRetakeOpen && (
         <div className="recording-manage-backdrop confirm-retake-backdrop" role="presentation">
           <dialog className="confirm-retake-dialog" open aria-labelledby="confirm-retake-title">
-            <span><RotateCcw size={24} /></span>
-            <h2 id="confirm-retake-title">기존 {passageBook.name} {passageChapter}장 녹음본을 전부 삭제하시겠습니까?</h2>
+            <span>
+              <RotateCcw size={24} />
+            </span>
+            <h2 id="confirm-retake-title">
+              기존 {passageBook.name} {passageChapter}장 녹음본을 전부 삭제하시겠습니까?
+            </h2>
             <p>삭제한 녹음은 복구할 수 없어요. 삭제 후 {passageStartVerse}절부터 새로 녹음하게 됩니다.</p>
-            <div><button type="button" onClick={() => setConfirmFullRetakeOpen(false)} disabled={clearingForRetake}>돌아가기</button><button className="delete" type="button" onClick={() => void startFullRetake()} disabled={clearingForRetake}>{clearingForRetake ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{clearingForRetake ? '삭제 중' : '삭제하고 새로 녹음'}</button></div>
+            <div>
+              <button type="button" onClick={() => setConfirmFullRetakeOpen(false)} disabled={clearingForRetake}>
+                돌아가기
+              </button>
+              <button className="delete" type="button" onClick={() => void startFullRetake()} disabled={clearingForRetake}>
+                {clearingForRetake ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}
+                {clearingForRetake ? '삭제 중' : '삭제하고 새로 녹음'}
+              </button>
+            </div>
           </dialog>
         </div>
       )}
 
-      {confirmQuitJourneyOpen && activeProject?.kind !== 'free' && (
+      {confirmQuitJourneyOpen && (
         <div className="recording-manage-backdrop confirm-retake-backdrop" role="presentation">
           <dialog className="confirm-retake-dialog" open aria-labelledby="confirm-quit-journey-title">
-            <span><X size={24} /></span>
-            <h2 id="confirm-quit-journey-title">‘{activeProject?.title}’ 말씀 읽기를 그만할까요?</h2>
-            <p>이 여정의 모든 녹음본과 진행 기록이 삭제되고 내 말씀 여정에서도 사라져요.<br />이미 간직한 말씀카드는 그대로 남아요.</p>
-            <div><button type="button" onClick={() => setConfirmQuitJourneyOpen(false)} disabled={deletingJourney}>돌아가기</button><button className="delete" type="button" onClick={() => void quitDailyJourney()} disabled={deletingJourney}>{deletingJourney ? <LoaderCircle className="spin" size={17} /> : <X size={17} />}{deletingJourney ? '삭제 중' : '그만하고 모두 삭제'}</button></div>
+            <span>
+              <X size={24} />
+            </span>
+            <h2 id="confirm-quit-journey-title">‘{confirmQuitJourneyOpen.title}’ 말씀 읽기를 삭제할까요?</h2>
+            <p>
+              이 말씀 읽기의 모든 녹음본과 진행 기록이 삭제되고 목록에서도 사라져요.
+              <br />
+              이미 간직한 말씀카드는 그대로 남아요.
+            </p>
+            <div>
+              <button type="button" onClick={() => setConfirmQuitJourneyOpen(null)} disabled={deletingJourney}>
+                돌아가기
+              </button>
+              <button className="delete" type="button" onClick={() => void quitDailyJourney(confirmQuitJourneyOpen)} disabled={deletingJourney}>
+                {deletingJourney ? <LoaderCircle className="spin" size={17} /> : <X size={17} />}
+                {deletingJourney ? '삭제 중' : '모두 삭제'}
+              </button>
+            </div>
           </dialog>
         </div>
       )}
 
-      {appTab === 'library' && <section className="library-section" id="library" aria-labelledby="library-title">
-        <div className="library-heading">
-          <div>
-            <p className="eyebrow">나중에도 다시 듣기</p>
-            <h2 id="library-title">{activeProject ? `${activeProject.title} 보관함` : '말씀 보관함'}</h2>
-            <p className="muted">현재 선택한 말씀 여정의 녹음만 모아 보여드려요. 말씀 여정을 바꾸면 보관함도 함께 바뀝니다.</p>
+      {appTab === 'library' && (
+        <section className="library-section" id="library" aria-labelledby="library-title">
+          <div className="library-heading">
+            <div>
+              <p className="eyebrow">나중에도 다시 듣기</p>
+              <h2 id="library-title">{activeProject ? `${activeProject.title} 보관함` : '말씀 보관함'}</h2>
+              <p className="muted">현재 선택한 말씀 여정의 녹음만 모아 보여드려요. 말씀 여정을 바꾸면 보관함도 함께 바뀝니다.</p>
+            </div>
+            <div className="library-heading-actions">
+              <span className="library-count">
+                <Archive size={15} /> {activeLibraryRecordings.length}개 보관
+              </span>
+              {activeProject && <button className="quit-journey-button" type="button" onClick={() => setConfirmQuitJourneyOpen(activeProject)}><Trash2 size={14} /> 말씀 읽기 삭제</button>}
+            </div>
           </div>
-          <span className="library-count"><Archive size={15} /> {activeLibraryRecordings.length}개 보관</span>
-        </div>
 
-        {libraryLoading ? (
-          <div className="library-state"><LoaderCircle className="spin" size={28} /><strong>보관함을 불러오고 있어요</strong></div>
-        ) : activeLibraryRecordings.length === 0 ? (
-          <div className="library-state empty">
-            <span><Archive size={28} /></span>
-            <strong>{activeProject ? `‘${activeProject.title}’에 저장된 녹음이 없어요` : '아직 저장된 녹음이 없어요'}</strong>
-            <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요. 다른 말씀 여정의 녹음과 섞이지 않아요.</p>
-            <button className="library-empty-action" type="button" onClick={openRecordingTab}>첫 녹음 시작하기</button>
-          </div>
-        ) : (
-          <div className="library-browser">
-            {selectedLibraryGroup && <div className="library-listen-detail">
-              <div className="chapter-player">
-                <div className="chapter-player-copy">
-                  <span>{chapterPlaying ? <AudioLines size={31} /> : <BookOpen size={31} />}</span>
-                  {chapterPlaying && currentlyPlayingRecording ? (
-                    <div className="chapter-lyrics" key={currentlyPlayingRecording.id}>
-                      <small className="now-playing-label">NOW PLAYING · {currentlyPlayingRecording.verse}절</small>
-                      <strong>{currentlyPlayingRecording.verseText}</strong>
-                      <small>{currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}{currentlyPlayingRecording.book === '시편' ? '편' : '장'} {currentlyPlayingRecording.verse}절</small>
+          {libraryLoading ? (
+            <div className="library-state">
+              <LoaderCircle className="spin" size={28} />
+              <strong>보관함을 불러오고 있어요</strong>
+            </div>
+          ) : activeLibraryRecordings.length === 0 ? (
+            <div className="library-state empty">
+              <span>
+                <Archive size={28} />
+              </span>
+              <strong>{activeProject ? `‘${activeProject.title}’에 저장된 녹음이 없어요` : '아직 저장된 녹음이 없어요'}</strong>
+              <p>위에서 말씀을 녹음한 다음 ‘보관함에 저장’을 눌러 주세요. 다른 말씀 여정의 녹음과 섞이지 않아요.</p>
+              <button className="library-empty-action" type="button" onClick={openRecordingTab}>
+                첫 녹음 시작하기
+              </button>
+            </div>
+          ) : (
+            <div className="library-browser">
+              {selectedLibraryGroup && (
+                <div className="library-listen-detail">
+                  <div className="chapter-player">
+                    <div className="chapter-player-copy">
+                      <span>{chapterPlaying ? <AudioLines size={31} /> : <BookOpen size={31} />}</span>
+                      {chapterPlaying && currentlyPlayingRecording ? (
+                        <div className="chapter-lyrics" key={currentlyPlayingRecording.id}>
+                          <small className="now-playing-label">NOW PLAYING · {currentlyPlayingRecording.verse}절</small>
+                          <strong>{currentlyPlayingRecording.verseText}</strong>
+                          <small>
+                            {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}
+                            {currentlyPlayingRecording.book === '시편' ? '편' : '장'} {currentlyPlayingRecording.verse}절
+                          </small>
+                        </div>
+                      ) : (
+                        <div>
+                          <small className="now-playing-label">READY TO PLAY</small>
+                          <strong>{isGuidedJourneyPlayback ? `${activeProject?.title ?? '말씀 여정'} 전체 이어듣기` : `${selectedLibraryGroup.book} ${selectedLibraryGroup.chapter}${selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기`}</strong>
+                          <small>{isGuidedJourneyPlayback ? `${playbackQueue.length}개 녹음 저장됨 · 여정 전체를 순서대로 이어서 들어요.` : `${selectedChapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.`}</small>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div>
-                      <small className="now-playing-label">READY TO PLAY</small>
-                      <strong>{isGuidedJourneyPlayback
-                        ? `${activeProject?.title ?? '말씀 여정'} 전체 이어듣기`
-                        : `${selectedLibraryGroup.book} ${selectedLibraryGroup.chapter}${selectedLibraryGroup.book === '시편' ? '편' : '장'} 이어듣기`}</strong>
-                      <small>{isGuidedJourneyPlayback
-                        ? `${playbackQueue.length}개 녹음 저장됨 · 여정 전체를 순서대로 이어서 들어요.`
-                        : `${selectedChapterQueue.map((item) => `${item.verse}절`).join(' · ')} 저장됨 · 절이 바뀌어도 배경음악은 끊기지 않아요.`}</small>
+                    <div className="library-bgm-picker" aria-label="이어듣기 배경음악 선택">
+                      <span>
+                        <Music2 size={14} /> 이어듣기 BGM
+                      </span>
+                      <div>
+                        {bgmOptions.map((option) => (
+                          <button className={bgm === option.id ? 'selected' : ''} type="button" disabled={chapterPlaying} onClick={() => selectLibraryBgm(option)} key={option.id}>
+                            {option.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {isGuidedJourneyPlayback ? (
+                      <div className={`gift-scope-status ${giftSelection?.eligible ? 'ready' : ''}`}>
+                        <span>{giftSelection?.eligible ? <Check size={16} /> : <Gift size={16} />}</span>
+                        <div>
+                          <strong>{giftSelection?.eligible ? '여정 전체를 선물할 수 있어요' : '여정을 완료하면 선물할 수 있어요'}</strong>
+                          <small>매일 말씀 읽기는 완료된 여정 전체가 하나의 선물이 돼요.</small>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="gift-scope-picker" aria-label="선물할 장 선택">
+                        <div className="gift-scope-heading">
+                          <span>
+                            <Gift size={15} /> 선물할 장
+                          </span>
+                          <small>완료된 장만 선택할 수 있어요.</small>
+                        </div>
+                        {giftableFreeChapterGroups.length ? (
+                          <>
+                            <div className="gift-chapter-options">
+                              {giftableFreeChapterGroups.map((group) => {
+                                const selected = giftChapterKeys.includes(group.key);
+                                return (
+                                  <button className={selected ? 'selected' : ''} type="button" aria-pressed={selected} onClick={() => setGiftChapterKeys((current) => (selected ? current.filter((key) => key !== group.key) : [...current, group.key]))} key={group.key}>
+                                    {selected && <Check size={13} />}
+                                    {group.chapter}
+                                    {group.book === '시편' ? '편' : '장'}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {giftableFreeChapterGroups.length > 1 && (
+                              <button className="gift-select-all" type="button" onClick={() => setGiftChapterKeys(giftChapterKeys.length === giftableFreeChapterGroups.length ? [] : giftableFreeChapterGroups.map((group) => group.key))}>
+                                {giftChapterKeys.length === giftableFreeChapterGroups.length ? '선택 해제' : '완료한 장 모두 선택'}
+                              </button>
+                            )}
+                            <p>{giftSelection?.eligible ? `‘${giftSelection.title}’을(를) 장·절 순서대로 이어서 보내요.` : '한 장 이상 선택해 주세요.'}</p>
+                          </>
+                        ) : (
+                          <p>아직 선물할 수 있는 완성된 장이 없어요.</p>
+                        )}
+                      </div>
+                    )}
+                    <div className="chapter-player-controls">
+                      <div className="chapter-player-side-actions">
+                        <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}>
+                          <List size={18} />
+                          <span>목록</span>
+                        </button>
+                      </div>
+                      <div className="chapter-player-actions">
+                        <label>
+                          <span>
+                            <Volume2 size={14} /> BGM <strong>{volume}%</strong>
+                          </span>
+                          <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+                        </label>
+                        {!chapterPlaying ? (
+                          <>
+                            <button type="button" onClick={startChapterPlayback}>
+                              <Play size={17} />
+                              전체 이어듣기
+                            </button>
+                            {activeProject && !activeProject.completedAt && (
+                              <button className="save-journey-button" type="button" onClick={requestJourneyCompletion}>
+                                <Check size={17} /> 여정 저장하기
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>
+                              {chapterPaused ? <Play size={17} /> : <Pause size={17} />}
+                              {chapterPaused ? '계속 듣기' : '일시정지'}
+                            </button>
+                            <button type="button" onClick={stopChapterPlayback}>
+                              <CircleStop size={17} />
+                              종료
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="chapter-audio-bank">
+                    {playbackQueue.map((item) => (
+                      // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
+                      <audio
+                        preload="auto"
+                        src={`/api/recordings/${item.id}/audio`}
+                        ref={(element) => {
+                          if (element) libraryAudioRefs.current.set(item.id, element);
+                          else libraryAudioRefs.current.delete(item.id);
+                        }}
+                        onPlay={() => playLibraryBgm(item)}
+                        onPause={(event) => {
+                          if (chapterPausedRef.current) return;
+                          if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
+                            if (chapterPlayingRef.current) {
+                              chapterPausedRef.current = true;
+                              setChapterPaused(true);
+                              void playbackAudioContextRef.current?.suspend();
+                            } else stopLibraryPlayback(item.id);
+                          }
+                        }}
+                        onEnded={() => handleLibraryEnded(item.id)}
+                        key={item.id}
+                      />
+                    ))}
+                  </div>
+                  {selectedLibraryRecording && (
+                    <div className="listen-track-section">
+                      <div className="listen-track-heading">
+                        <div>
+                          <small>SELECTED VERSE</small>
+                          <strong>{selectedLibraryRecording.verse}절 녹음</strong>
+                        </div>
+                        <button type="button" onClick={() => setSelectedLibraryRecordingId(null)}>
+                          닫기
+                        </button>
+                      </div>
+                      <div className="library-grid">
+                        {[selectedLibraryRecording].map((item) => {
+                          const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
+                          const isPlaying = activeLibraryId === item.id;
+                          return (
+                            <article className={`library-card ${isPlaying ? 'playing' : ''}`} id={`library-recording-${item.id}`} key={item.id}>
+                              <div className="library-card-top">
+                                <span className="library-verse-number">{item.verse}</span>
+                                <div>
+                                  <strong>
+                                    {item.book} {item.chapter}
+                                    {item.book === '시편' ? '편' : '장'} · {item.verse}절
+                                  </strong>
+                                  <small>{formatSavedDate(item.createdAt)} 저장</small>
+                                </div>
+                                {isPlaying && (
+                                  <span className="playing-badge">
+                                    <AudioLines size={13} /> 재생 중
+                                  </span>
+                                )}
+                              </div>
+                              <blockquote>{item.verseText}</blockquote>
+                              <div className="library-tags">
+                                <span>
+                                  <Target size={13} /> {item.projectTitle}
+                                </span>
+                                <span>
+                                  <Music2 size={13} /> {savedBgm.name}
+                                </span>
+                                <span>{formatTime(item.durationSeconds)}</span>
+                              </div>
+                              <button className="library-audio-button" type="button" disabled={audioStartingId === item.id} onClick={() => void toggleLibraryVersePlayback(item)}>
+                                {audioStartingId === item.id ? <LoaderCircle className="spin" size={16} /> : isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                                {audioStartingId === item.id ? '재생 준비 중' : isPlaying ? '이 절 멈춤' : '이 절 듣기'}
+                              </button>
+                              <p className="library-playback-note">{isPlaying ? (chapterPlaying && savedBgm.audioSrc ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.') : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}</p>
+                              <button className="library-retake-button" type="button" disabled={Boolean(deletingVerseId) || selectedLibraryUnitLocked} onClick={() => void startRetake(item)}>
+                                {deletingVerseId === item.id ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />} {deletingVerseId === item.id ? '삭제 중' : '이 절 다시 녹음'}
+                              </button>
+                              {selectedLibraryUnitLocked && (
+                                <p className="library-locked-note">
+                                  <Check size={14} /> 완료되어 수정할 수 없는 녹음이에요.
+                                </p>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
-                <div className="library-bgm-picker" aria-label="이어듣기 배경음악 선택">
-                  <span><Music2 size={14} /> 이어듣기 BGM</span>
-                  <div>{bgmOptions.map((option) => <button className={bgm === option.id ? 'selected' : ''} type="button" disabled={chapterPlaying} onClick={() => selectLibraryBgm(option)} key={option.id}>{option.name}</button>)}</div>
-                </div>
-                {isGuidedJourneyPlayback ? <div className={`gift-scope-status ${giftSelection?.eligible ? 'ready' : ''}`}>
-                  <span>{giftSelection?.eligible ? <Check size={16} /> : <Gift size={16} />}</span>
-                  <div><strong>{giftSelection?.eligible ? '여정 전체를 선물할 수 있어요' : '여정을 완료하면 선물할 수 있어요'}</strong><small>매일 말씀 읽기는 완료된 여정 전체가 하나의 선물이 돼요.</small></div>
-                </div> : <div className="gift-scope-picker" aria-label="선물할 장 선택">
-                  <div className="gift-scope-heading"><span><Gift size={15} /> 선물할 장</span><small>완료된 장만 선택할 수 있어요.</small></div>
-                  {giftableFreeChapterGroups.length ? <>
-                    <div className="gift-chapter-options">{giftableFreeChapterGroups.map((group) => {
-                      const selected = giftChapterKeys.includes(group.key);
-                      return <button className={selected ? 'selected' : ''} type="button" aria-pressed={selected} onClick={() => setGiftChapterKeys((current) => selected ? current.filter((key) => key !== group.key) : [...current, group.key])} key={group.key}>{selected && <Check size={13} />}{group.chapter}{group.book === '시편' ? '편' : '장'}</button>;
-                    })}</div>
-                    {giftableFreeChapterGroups.length > 1 && <button className="gift-select-all" type="button" onClick={() => setGiftChapterKeys(giftChapterKeys.length === giftableFreeChapterGroups.length ? [] : giftableFreeChapterGroups.map((group) => group.key))}>{giftChapterKeys.length === giftableFreeChapterGroups.length ? '선택 해제' : '완료한 장 모두 선택'}</button>}
-                    <p>{giftSelection?.eligible ? `‘${giftSelection.title}’을(를) 장·절 순서대로 이어서 보내요.` : '한 장 이상 선택해 주세요.'}</p>
-                  </> : <p>아직 선물할 수 있는 완성된 장이 없어요.</p>}
-                </div>}
-                <div className="chapter-player-controls">
-                  <div className="chapter-player-side-actions">
-                    <button className="chapter-list-trigger" type="button" onClick={() => setLibraryChapterMenuOpen(true)}><List size={18} /><span>목록</span></button>
-                    <button className="chapter-gift-trigger" type="button" disabled={!giftQueue.length || chapterPlaying} onClick={() => setGiftSendOpen(true)}><Send size={18} /><span>{giftQueue.length ? '선물하기' : '완료 후 선물'}</span></button>
-                  </div>
-                  <div className="chapter-player-actions">
-                  <label>
-                    <span><Volume2 size={14} /> BGM <strong>{volume}%</strong></span>
-                    <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
-                  </label>
-                  {!chapterPlaying ? <button type="button" onClick={startChapterPlayback}><Play size={17} />전체 이어듣기</button> : <>
-                    <button type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>{chapterPaused ? <Play size={17} /> : <Pause size={17} />}{chapterPaused ? '계속 듣기' : '일시정지'}</button>
-                    <button type="button" onClick={stopChapterPlayback}><CircleStop size={17} />종료</button>
-                  </>}
-                  </div>
-                </div>
-              </div>
-              <div className="chapter-audio-bank">
-                {playbackQueue.map((item) => (
-                  // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
-                  <audio
-                    preload="auto"
-                    src={`/api/recordings/${item.id}/audio`}
-                    ref={(element) => {
-                      if (element) libraryAudioRefs.current.set(item.id, element);
-                      else libraryAudioRefs.current.delete(item.id);
+              )}
+            </div>
+          )}
+
+          {chapterPlaying && currentlyPlayingRecording && (
+            <div className="continuous-player-backdrop" role="presentation">
+              <dialog className="continuous-player-modal" open aria-labelledby="continuous-player-title">
+                <button className="continuous-player-close" type="button" onClick={stopChapterPlayback} aria-label="이어듣기 닫기">
+                  <X size={22} />
+                </button>
+                <p className="eyebrow">CONTINUOUS PLAYBACK</p>
+                <div className="continuous-player-progress">
+                  <span
+                    style={{
+                      width: `${((currentlyPlayingChapterIndex + 1) / playbackQueue.length) * 100}%`,
                     }}
-                    onPlay={() => playLibraryBgm(item)}
-                    onPause={(event) => {
-                      if (chapterPausedRef.current) return;
-                      if (!event.currentTarget.ended && activeLibraryRef.current === item.id) {
-                        if (chapterPlayingRef.current) {
-                          chapterPausedRef.current = true;
-                          setChapterPaused(true);
-                          void playbackAudioContextRef.current?.suspend();
-                        } else stopLibraryPlayback(item.id);
-                      }
-                    }}
-                    onEnded={() => handleLibraryEnded(item.id)}
-                    key={item.id}
                   />
-                ))}
-              </div>
-              {selectedLibraryRecording && <div className="listen-track-section">
-                <div className="listen-track-heading"><div><small>SELECTED VERSE</small><strong>{selectedLibraryRecording.verse}절 녹음</strong></div><button type="button" onClick={() => setSelectedLibraryRecordingId(null)}>닫기</button></div>
-          <div className="library-grid">
-            {[selectedLibraryRecording].map((item) => {
-              const savedBgm = bgmOptions.find((option) => option.id === item.bgmId) ?? bgmOptions[3];
-              const isPlaying = activeLibraryId === item.id;
-              return (
-                <article className={`library-card ${isPlaying ? 'playing' : ''}`} id={`library-recording-${item.id}`} key={item.id}>
-                  <div className="library-card-top">
-                    <span className="library-verse-number">{item.verse}</span>
-                    <div><strong>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</strong><small>{formatSavedDate(item.createdAt)} 저장</small></div>
-                    {isPlaying && <span className="playing-badge"><AudioLines size={13} /> 재생 중</span>}
-                  </div>
-                  <blockquote>{item.verseText}</blockquote>
-                  <div className="library-tags">
-                    <span><Target size={13} /> {item.projectTitle}</span>
-                    <span><Music2 size={13} /> {savedBgm.name}</span>
-                    <span><Sparkles size={13} /> {item.reverb}</span>
-                    <span>{formatTime(item.durationSeconds)}</span>
-                  </div>
-                  <button className="library-audio-button" type="button" disabled={audioStartingId === item.id} onClick={() => void toggleLibraryVersePlayback(item)}>{audioStartingId === item.id ? <LoaderCircle className="spin" size={16} /> : isPlaying ? <Pause size={16} /> : <Play size={16} />}{audioStartingId === item.id ? '재생 준비 중' : isPlaying ? '이 절 멈춤' : '이 절 듣기'}</button>
-                  <p className="library-playback-note">
-                    {isPlaying
-                      ? chapterPlaying && savedBgm.audioSrc ? `이어듣기 중 · ‘${savedBgm.name}’이 작게 함께 재생돼요.` : '이 절의 목소리만 재생하고 있어요.'
-                      : '한 절 재생은 목소리만 들려요. BGM은 위의 전체 이어듣기에서만 나와요.'}
-                  </p>
-                  <button className="library-retake-button" type="button" disabled={Boolean(deletingVerseId) || selectedLibraryUnitLocked} onClick={() => void startRetake(item)}>
-                    {deletingVerseId === item.id ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />} {deletingVerseId === item.id ? '삭제 중' : '이 절 다시 녹음'}
+                </div>
+                <small>
+                  {currentlyPlayingChapterIndex + 1} / {playbackQueue.length} · {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}
+                  {currentlyPlayingRecording.book === '시편' ? '편' : '장'}
+                </small>
+                <div className="continuous-player-verse">
+                  <span>{currentlyPlayingRecording.verse}</span>
+                  <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
+                </div>
+                <label className="continuous-player-volume">
+                  <span>
+                    <Volume2 size={15} /> BGM 볼륨 <strong>{volume}%</strong>
+                  </span>
+                  <input aria-label="이어듣기 재생 중 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+                </label>
+                <div className="continuous-player-actions">
+                  <button className="continuous-player-list-trigger" type="button" onClick={() => setPlaybackListOpen((current) => !current)} aria-expanded={playbackListOpen}>
+                    <List size={19} />
+                    <span>목록</span>
                   </button>
-                  {selectedLibraryUnitLocked && <p className="library-locked-note"><Check size={14} /> 완료되어 수정할 수 없는 녹음이에요.</p>}
-                </article>
-              );
-            })}
-          </div>
-              </div>}
-            </div>}
-          </div>
-        )}
+                  <button className="continuous-player-stop" type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>
+                    {chapterPaused ? <Play size={18} /> : <Pause size={18} />}
+                    {chapterPaused ? '계속 듣기' : '일시정지'}
+                  </button>
+                  <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}>
+                    <CircleStop size={18} /> 종료
+                  </button>
+                </div>
+                {playbackListOpen && (
+                  <div className="continuous-player-list" aria-label="녹음된 절 목록">
+                    <strong>녹음된 절</strong>
+                    <div>
+                      {playbackQueue.map((item, index) => (
+                        <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => void jumpToChapterRecording(item)} key={item.id}>
+                          <span>
+                            {item.book} {item.chapter}
+                            {item.book === '시편' ? '편' : '장'} · {item.verse}절
+                          </span>
+                          <small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </dialog>
+            </div>
+          )}
 
-        {chapterPlaying && currentlyPlayingRecording && (
-          <div className="continuous-player-backdrop" role="presentation">
-            <dialog className="continuous-player-modal" open aria-labelledby="continuous-player-title">
-              <button className="continuous-player-close" type="button" onClick={stopChapterPlayback} aria-label="이어듣기 닫기"><X size={22} /></button>
-              <p className="eyebrow">CONTINUOUS PLAYBACK</p>
-              <div className="continuous-player-progress"><span style={{ width: `${((currentlyPlayingChapterIndex + 1) / playbackQueue.length) * 100}%` }} /></div>
-              <small>{currentlyPlayingChapterIndex + 1} / {playbackQueue.length} · {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}{currentlyPlayingRecording.book === '시편' ? '편' : '장'}</small>
-              <div className="continuous-player-verse">
-                <span>{currentlyPlayingRecording.verse}</span>
-                <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
-              </div>
-              <label className="continuous-player-volume">
-                <span><Volume2 size={15} /> BGM 볼륨 <strong>{volume}%</strong></span>
-                <input aria-label="이어듣기 재생 중 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
-              </label>
-              <div className="continuous-player-actions">
-                <button className="continuous-player-list-trigger" type="button" onClick={() => setPlaybackListOpen((current) => !current)} aria-expanded={playbackListOpen}><List size={19} /><span>목록</span></button>
-                <button className="continuous-player-stop" type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>{chapterPaused ? <Play size={18} /> : <Pause size={18} />}{chapterPaused ? '계속 듣기' : '일시정지'}</button>
-                <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}><CircleStop size={18} /> 종료</button>
-              </div>
-              {playbackListOpen && <div className="continuous-player-list" aria-label="녹음된 절 목록">
-                <strong>녹음된 절</strong>
-                <div>{playbackQueue.map((item, index) => <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => void jumpToChapterRecording(item)} key={item.id}><span>{item.book} {item.chapter}{item.book === '시편' ? '편' : '장'} · {item.verse}절</span><small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>
-              </div>}
-            </dialog>
-          </div>
-        )}
-
-        {libraryChapterMenuOpen && (
-          <div className="chapter-menu-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setLibraryChapterMenuOpen(false); }}>
-            <dialog className="chapter-menu-sheet" open aria-labelledby="chapter-menu-title">
-              <div className="chapter-menu-heading"><div><h3 id="chapter-menu-title">{activeProject?.title ?? selectedLibraryGroup?.book ?? '저장된 말씀'}</h3><p>{projectChapterOptions.filter((option) => option.hasRecording).length}개 장 녹음됨</p></div><button type="button" onClick={() => setLibraryChapterMenuOpen(false)} aria-label="목록 닫기"><X size={22} /></button></div>
-              <div className="chapter-menu-list">
-                {projectChapterOptions.map((option) => {
-                  const selected = selectedLibraryGroup?.key === option.key;
-                  return <button className={selected ? 'selected' : ''} type="button" disabled={!option.hasRecording} onClick={() => { stopChapterPlayback(); setSelectedLibraryChapter(option.key); setSelectedLibraryRecordingId(null); }} key={option.key}><span>{option.book}</span><strong>{option.chapter}{option.book === '시편' ? '편' : '장'}</strong><small>{option.hasRecording ? selected ? '선택한 장' : '녹음됨' : '아직 녹음하지 않음'}</small></button>;
-                })}
-              </div>
-              {selectedLibraryGroup && <div className="verse-menu-section">
-                <div className="verse-menu-heading"><strong>{selectedLibraryGroup.book} {selectedLibraryGroup.chapter}{selectedLibraryGroup.book === '시편' ? '편' : '장'} · 절별 녹음</strong><span>{selectedChapterQueue.length}/{selectedLibraryVerseCount}절</span></div>
-                <div className="verse-menu-list" ref={verseMenuListRef}>
-                  {Array.from({ length: selectedLibraryVerseCount }, (_, index) => {
-                    const verse = index + 1;
-                    const recording = selectedChapterQueue.find((item) => item.verse === verse);
-                    return <button type="button" data-verse-number={verse} disabled={!recording} onClick={() => recording && openLibraryVerse(recording)} key={verse}><strong>{verse}절</strong><small>{recording ? '녹음 듣기' : '미녹음'}</small></button>;
+          {libraryChapterMenuOpen && (
+            <div
+              className="chapter-menu-backdrop"
+              role="presentation"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setLibraryChapterMenuOpen(false);
+              }}
+            >
+              <dialog className="chapter-menu-sheet" open aria-labelledby="chapter-menu-title">
+                <div className="chapter-menu-heading">
+                  <div>
+                    <h3 id="chapter-menu-title">{activeProject?.title ?? selectedLibraryGroup?.book ?? '저장된 말씀'}</h3>
+                    <p>
+                      {projectChapterOptions.filter((option) => option.hasRecording).length}
+                      개 장 녹음됨
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setLibraryChapterMenuOpen(false)} aria-label="목록 닫기">
+                    <X size={22} />
+                  </button>
+                </div>
+                <div className="chapter-menu-list">
+                  {projectChapterOptions.map((option) => {
+                    const selected = selectedLibraryGroup?.key === option.key;
+                    return (
+                      <button
+                        className={selected ? 'selected' : ''}
+                        type="button"
+                        disabled={!option.hasRecording}
+                        onClick={() => {
+                          stopChapterPlayback();
+                          setSelectedLibraryChapter(option.key);
+                          setSelectedLibraryRecordingId(null);
+                        }}
+                        key={option.key}
+                      >
+                        <span>{option.book}</span>
+                        <strong>
+                          {option.chapter}
+                          {option.book === '시편' ? '편' : '장'}
+                        </strong>
+                        <small>{option.hasRecording ? (selected ? '선택한 장' : '녹음됨') : '아직 녹음하지 않음'}</small>
+                      </button>
+                    );
                   })}
                 </div>
-              </div>}
-            </dialog>
-          </div>
-        )}
+                {selectedLibraryGroup && (
+                  <div className="verse-menu-section">
+                    <div className="verse-menu-heading">
+                      <strong>
+                        {selectedLibraryGroup.book} {selectedLibraryGroup.chapter}
+                        {selectedLibraryGroup.book === '시편' ? '편' : '장'} · 절별 녹음
+                      </strong>
+                      <span>
+                        {selectedChapterQueue.length}/{selectedLibraryVerseCount}절
+                      </span>
+                    </div>
+                    <div className="verse-menu-list" ref={verseMenuListRef}>
+                      {Array.from({ length: selectedLibraryVerseCount }, (_, index) => {
+                        const verse = index + 1;
+                        const recording = selectedChapterQueue.find((item) => item.verse === verse);
+                        return (
+                          <button type="button" data-verse-number={verse} disabled={!recording} onClick={() => recording && openLibraryVerse(recording)} key={verse}>
+                            <strong>{verse}절</strong>
+                            <small>{recording ? '녹음 듣기' : '미녹음'}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </dialog>
+            </div>
+          )}
 
-        <p className="library-privacy"><Cloud size={14} /> 녹음과 말씀 여정은 로그인한 계정에 안전하게 저장돼요. 같은 계정으로 로그인하면 다른 기기에서도 이어갈 수 있어요.</p>
-      </section>}
+          <p className="library-privacy">
+            <Cloud size={14} /> 녹음과 말씀 여정은 로그인한 계정에 안전하게 저장돼요. 같은 계정으로 로그인하면 다른 기기에서도 이어갈 수 있어요.
+          </p>
+        </section>
+      )}
 
-      {appTab === 'gifts' && <GiftsPanel onBack={() => window.history.back()} />}
-      {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} />}
+      {appTab === 'gifts' && (
+        <GiftsPanel
+          onBack={() => window.history.back()}
+          initialSentGiftId={selectedSentGiftId}
+        />
+      )}
+      {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} onNotice={setNotice} onGiftFriend={openGiftStudioWithFriend} />}
 
-      {giftSendOpen && <GiftSendDialog
-        title={playbackGiftTitle}
-        recordingIds={giftQueue.map((item) => item.id)}
-        bgmId={bgm}
-        bgmName={bgmOptions.find((option) => option.id === bgm)?.name ?? '음악 없음'}
-        bgmVolume={volume}
-        onClose={() => setGiftSendOpen(false)}
-        onSent={(nickname) => {
-          setGiftSendOpen(false);
-          setCompletionModal({ title: '말씀 선물을 보냈어요', description: `${nickname}님에게 ‘${playbackGiftTitle}’ 녹음과 BGM을 안전하게 보냈어요.` });
-        }}
-      />}
+      {completedJourneyModal && (
+        <div className="continuous-player-backdrop" role="presentation">
+          <dialog className="continuous-player-modal" open aria-labelledby="completed-recording-title">
+            <button className="continuous-player-close" type="button" onClick={closeCompletedPlayback} aria-label="완료된 말씀 닫기"><X size={22} /></button>
+            <p className="eyebrow">COMPLETED WORD · {completedJourneyModal.completedAt ? formatSavedDate(completedJourneyModal.completedAt) : ''}</p>
+            <div className="continuous-player-progress"><span style={{ width: `${completedModalRecordings.length ? ((completedPlaybackIndex + 1) / completedModalRecordings.length) * 100 : 0}%` }} /></div>
+            <small>{completedPlaybackIndex + 1} / {completedModalRecordings.length} · {completedJourneyModal.scope}</small>
+            <div className="continuous-player-verse"><span>{completedNowPlaying?.verse ?? <Headphones size={18} />}</span><h2 id="completed-recording-title">{completedNowPlaying?.verseText ?? completedJourneyModal.title}</h2></div>
+            <div className="continuous-player-actions">
+              <button className="continuous-player-list-trigger" type="button" onClick={() => setCompletedPlaybackListOpen((current) => !current)}><List size={19} /><span>목록</span></button>
+              <button className="continuous-player-stop" type="button" onClick={() => completedPlaybackPaused ? playCompletedRecording() : (completedPlaybackRef.current?.pause(), setCompletedPlaybackPaused(true))}>{completedPlaybackPaused ? <Play size={18} /> : <Pause size={18} />}{completedPlaybackPaused ? '이어듣기' : '일시정지'}</button>
+              <button className="continuous-player-stop" type="button" onClick={closeCompletedPlayback}><CircleStop size={18} /> 종료</button>
+            </div>
+            {completedPlaybackListOpen && <div className="continuous-player-list"><strong>완료된 말씀 목록</strong><div>{completedModalRecordings.map((recording, index) => <button className={index === completedPlaybackIndex ? 'playing' : ''} type="button" onClick={() => playCompletedRecording(index)} key={recording.id}><span>{recording.book} {recording.chapter}{recording.book === '시편' ? '편' : '장'} {recording.verse}절</span><small>{index === completedPlaybackIndex ? '현재 위치' : '여기부터 듣기'}</small></button>)}</div></div>}
+            {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성입니다. */}
+            <audio ref={completedPlaybackRef} onEnded={() => { const next = completedPlaybackIndex + 1; if (next < completedModalRecordings.length) playCompletedRecording(next); else setCompletedPlaybackPaused(true); }} />
+            <button className="completed-journey-delete" type="button" onClick={() => setConfirmQuitJourneyOpen(completedJourneyModal)}><Trash2 size={16} /> 완료된 말씀 삭제</button>
+          </dialog>
+        </div>
+      )}
+
+      {giftSendOpen && (
+        <GiftSendDialog
+          title={playbackGiftTitle}
+          recordingIds={giftQueue.map((item) => item.id)}
+          bgmId={bgm}
+          bgmName={bgmOptions.find((option) => option.id === bgm)?.name ?? '음악 없음'}
+          bgmVolume={volume}
+          onClose={() => setGiftSendOpen(false)}
+          onSent={(nickname, sentTitle) => {
+            setGiftSendOpen(false);
+            setCompletionModal({
+              title: '말씀 선물을 보냈어요',
+              description: `${nickname}님에게 ‘${sentTitle}’ 녹음과 BGM을 안전하게 보냈어요.`,
+            });
+          }}
+        />
+      )}
 
       <footer className="page-footer">
         <p>말씀유산 · 소중한 목소리를 오래 간직하는 성경 낭독</p>
       </footer>
 
       <nav className="mobile-nav" aria-label="주요 메뉴">
-        <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}><Mic size={19} /><span>녹음</span></button>
-        <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}><Headphones size={19} /><span>듣기</span></button>
-        <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}><Gift size={19} /><span>선물</span></button>
-        <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}><Users size={19} /><span>친구</span></button>
+        <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}>
+          <Mic size={19} />
+          <span>녹음</span>
+        </button>
+        <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}>
+          <Headphones size={19} />
+          <span>듣기</span>
+        </button>
+        <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}>
+          <Gift size={19} />
+          <span>선물</span>
+        </button>
+        <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}>
+          <Users size={19} />
+          <span>친구</span>
+        </button>
       </nav>
 
       <nav className="floating-route-actions" aria-label="빠른 화면 이동">
-        {onboardingStep !== 'app' && <>
-          <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기"><Users size={22} /><span>친구</span></button>
-          <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기"><Gift size={22} /><span>선물</span></button>
-        </>}
-        <button className="floating-home-button" type="button" onClick={() => navigateTo('home')} aria-label="말씀 여정과 성경 읽기를 선택하는 홈으로 이동"><Home size={22} /><span>홈</span></button>
+        {onboardingStep !== 'app' && (
+          <>
+            <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기">
+              <Users size={22} />
+              <span>친구</span>
+            </button>
+            <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기">
+              <Gift size={22} />
+              <span>선물</span>
+            </button>
+          </>
+        )}
+        <button className="floating-home-button" type="button" onClick={() => navigateTo('home')} aria-label="말씀 여정과 성경 읽기를 선택하는 홈으로 이동">
+          <Home size={22} />
+          <span>홈</span>
+        </button>
       </nav>
 
       {completionModal && (
         <div className="completion-modal-backdrop" role="presentation">
           <dialog className="completion-modal" open aria-labelledby="completion-modal-title">
-            <span className="completion-modal-icon"><Check size={30} /></span>
+            <span className="completion-modal-icon">
+              <Check size={30} />
+            </span>
             <p className="eyebrow">COMPLETED</p>
             <h2 id="completion-modal-title">{completionModal.title}</h2>
             <p>{completionModal.description}</p>
             <div className="completion-modal-actions">
-              <button type="button" onClick={() => setCompletionModal(null)}>확인하기</button>
-              {completionModal.showLibraryAction && <button className="primary" type="button" onClick={openLibraryFromCompletion}><Headphones size={17} /> 보관함 가기</button>}
+              <button type="button" onClick={revealQueuedWordCard}>
+                확인하기
+              </button>
+              {completionModal.showLibraryAction && (
+                <button className="primary" type="button" onClick={openLibraryFromCompletion}>
+                  <Headphones size={17} /> 보관함 가기
+                </button>
+              )}
+            </div>
+          </dialog>
+        </div>
+      )}
+      {confirmJourneyCompletion && (
+        <div className="completion-modal-backdrop" role="presentation">
+          <dialog className="completion-modal" open aria-labelledby="journey-complete-confirm-title">
+            <span className="completion-modal-icon"><Check size={30} /></span>
+            <p className="eyebrow">JOURNEY COMPLETE</p>
+            <h2 id="journey-complete-confirm-title">여정을 완료하시겠습니까?</h2>
+            <p>완료하면 녹음 기능은 닫히고, 녹음본은 완료된 말씀에서 언제든 이어 들을 수 있어요.</p>
+            <div className="completion-modal-actions">
+              <button type="button" onClick={() => setConfirmJourneyCompletion(false)}>계속 녹음하기</button>
+              <button className="primary" type="button" onClick={() => {
+                setConfirmJourneyCompletion(false);
+                void saveCompletedJourney(Date.now());
+              }}>완료</button>
             </div>
           </dialog>
         </div>
       )}
 
       {headphoneWarningOpen && (
-        <div className="headphone-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHeadphoneWarningOpen(false); }}>
+        <div
+          className="headphone-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setHeadphoneWarningOpen(false);
+          }}
+        >
           <dialog className="headphone-modal" open aria-labelledby="headphone-modal-title">
-            <span className="headphone-modal-icon"><Headphones size={28} /></span>
+            <span className="headphone-modal-icon">
+              <Headphones size={28} />
+            </span>
             <p className="eyebrow">녹음 품질 확인</p>
             <h2 id="headphone-modal-title">이어폰이 연결되어 있나요?</h2>
             <p>스피커로 BGM을 재생하면 음악이 마이크에 함께 들어가 목소리 품질이 낮아질 수 있어요. 이어폰을 연결한 뒤 녹음하는 것을 권장해요.</p>
             <div className="headphone-modal-actions">
-              <button className="confirm" type="button" onClick={() => void startRecording(true)}><Headphones size={16} /> 이어폰 연결했어요</button>
-              <button type="button" onClick={() => { stopPreview(); setHeadphoneWarningOpen(false); window.setTimeout(() => void startRecording(true), 0); }}><CircleStop size={16} /> BGM 끄고 녹음</button>
-              <button className="cancel" type="button" onClick={() => setHeadphoneWarningOpen(false)}>취소</button>
+              <button className="confirm" type="button" onClick={() => void startRecording(true)}>
+                <Headphones size={16} /> 이어폰 연결했어요
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  stopPreview();
+                  setHeadphoneWarningOpen(false);
+                  window.setTimeout(() => void startRecording(true), 0);
+                }}
+              >
+                <CircleStop size={16} /> BGM 끄고 녹음
+              </button>
+              <button className="cancel" type="button" onClick={() => setHeadphoneWarningOpen(false)}>
+                취소
+              </button>
             </div>
           </dialog>
         </div>
       )}
 
-      {earnedCard && (() => {
-        const column = earnedCard.spriteIndex % 4;
-        const row = Math.floor(earnedCard.spriteIndex / 4);
-        return (
-          <div className="word-card-modal-backdrop" role="presentation">
-            <dialog className="word-card-modal" open aria-labelledby="word-card-modal-title">
-              <button className="word-card-close" type="button" onClick={closeWordCard} aria-label="말씀 카드 닫기"><X size={21} /></button>
-              <p className="eyebrow">{wordCardCollectionMode ? 'MY WORD CARD' : 'TODAY\'S WORD CARD'}</p>
-              <h2 id="word-card-modal-title">{wordCardCollectionMode ? '내 말씀 카드' : '오늘의 말씀 카드를 뽑았어요!'}</h2>
-              <p className="word-card-instruction">카드를 눌러 뒤집어 보세요.</p>
-              <div className={`word-card-scene ${wordCardFlipped ? 'flipped' : ''}`}>
-                <button className="word-card" type="button" aria-label={`${earnedCard.name} 말씀 카드 뒤집기`} onClick={() => setWordCardFlipped((current) => !current)}>
-                  <section className="word-card-face word-card-front">
-                    <div className="word-card-art" style={{ backgroundImage: `url(${earnedCard.spriteSheet ?? '/cards/bible-character-sprite.webp'})`, backgroundPosition: `${column / 3 * 100}% ${row / 3 * 100}%` }} />
-                    <small>성경 속 말씀 인물</small>
-                    <strong>{earnedCard.name}</strong>
-                    <span><Sparkles size={13} /> {wordCardCollectionMode ? '간직한 카드' : '오늘의 카드'}</span>
-                  </section>
-                  <section className="word-card-face word-card-back">
-                    <small>성경 속 말씀 인물</small>
-                    <strong>{earnedCard.name}</strong>
-                    <h3>{earnedCard.heading}</h3>
-                    {wordCardExpanded && <p>{earnedCard.detail}</p>}
-                    <span>카드를 누르면 앞면으로 돌아가요</span>
-                  </section>
+      {earnedCard &&
+        (() => {
+          const column = earnedCard.spriteIndex % 4;
+          const row = Math.floor(earnedCard.spriteIndex / 4);
+          return (
+            <div
+              className="word-card-modal-backdrop"
+              role="presentation"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) closeWordCard();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') closeWordCard();
+              }}
+            >
+              <dialog className="word-card-modal" open aria-labelledby="word-card-modal-title">
+                <button className="word-card-close" type="button" onClick={closeWordCard} aria-label="말씀 카드 닫기">
+                  <X size={21} />
                 </button>
-                {wordCardFlipped && <button className="word-card-detail-toggle" type="button" onClick={() => setWordCardExpanded((current) => !current)}>{wordCardExpanded ? '간단히 보기' : '더 자세히'}</button>}
-              </div>
-              <button className="word-card-keep" type="button" onClick={wordCardCollectionMode ? closeWordCard : collectEarnedWordCard}>{wordCardCollectionMode ? '카드 보관함으로 돌아가기' : '내 카드로 간직하기'}</button>
-            </dialog>
-          </div>
-        );
-      })()}
+                <p className="eyebrow">{wordCardCollectionMode ? 'MY WORD CARD' : "TODAY'S WORD CARD"}</p>
+                <h2 id="word-card-modal-title">{wordCardCollectionMode ? '내 말씀 카드' : '오늘의 말씀 카드를 뽑았어요!'}</h2>
+                <p className="word-card-instruction">카드를 눌러 뒤집어 보세요.</p>
+                <div className={`word-card-scene ${wordCardFlipped ? 'flipped' : ''}`}>
+                  <button className="word-card" type="button" aria-label={`${earnedCard.name} 말씀 카드 뒤집기`} onClick={() => setWordCardFlipped((current) => !current)}>
+                    <section className="word-card-face word-card-front">
+                      <div
+                        className="word-card-art"
+                        style={{
+                          backgroundImage: `url(${earnedCard.spriteSheet ?? '/cards/bible-character-sprite.webp'})`,
+                          backgroundPosition: `${(column / 3) * 100}% ${(row / 3) * 100}%`,
+                        }}
+                      />
+                      <small>성경 속 말씀 인물</small>
+                      <strong>{earnedCard.name}</strong>
+                      <span>
+                        <Sparkles size={13} /> {wordCardCollectionMode ? '간직한 카드' : '오늘의 카드'}
+                      </span>
+                    </section>
+                    <section className="word-card-face word-card-back">
+                      <small>성경 속 말씀 인물</small>
+                      <strong>{earnedCard.name}</strong>
+                      <h3>{earnedCard.heading}</h3>
+                      {wordCardExpanded && <p>{earnedCard.detail}</p>}
+                      <span>카드를 누르면 앞면으로 돌아가요</span>
+                    </section>
+                  </button>
+                  {wordCardFlipped && (
+                    <button className="word-card-detail-toggle" type="button" onClick={() => setWordCardExpanded((current) => !current)}>
+                      {wordCardExpanded ? '간단히 보기' : '더 자세히'}
+                    </button>
+                  )}
+                </div>
+                <button className="word-card-keep" type="button" onClick={wordCardCollectionMode ? closeWordCard : () => void collectEarnedWordCard()}>
+                  {wordCardCollectionMode ? '카드 보관함으로 돌아가기' : '내 카드로 간직하기'}
+                </button>
+              </dialog>
+            </div>
+          );
+        })()}
 
-      {notice && <output className="toast" aria-live="polite"><Check size={17} />{notice}</output>}
+      {notice && (
+        <output className="toast" aria-live="polite">
+          <Check size={17} />
+          {notice}
+        </output>
+      )}
     </main>
   );
 }
 
 export default function HomePage() {
-  return (
-    <AuthGate>
-      {(session, signOut) => <VerseApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />}
-    </AuthGate>
-  );
+  return <AuthGate>{(session, signOut) => <VerseApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />}</AuthGate>;
 }

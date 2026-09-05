@@ -15,6 +15,7 @@ export type GiftPolicyProject = {
   kind?: 'guided' | 'free';
   tasks?: string[];
   dailySchedule?: ReadingPlanPassage[][];
+  completedAt?: number;
 };
 
 type GiftSelectionInput = {
@@ -69,27 +70,14 @@ export function getCompletedFreeChapterKeys(
   }));
 }
 
-function guidedJourneyCompleted(
-  project: GiftPolicyProject,
-  recordings: readonly GiftPolicyRecording[],
-  chapterCounts: Readonly<Record<string, readonly number[]>>,
-) {
-  const required = getProjectRequiredReferences(project, chapterCounts);
-  const recorded = new Set(recordings.filter((recording) => recording.projectId === project.id).map(recordingReference));
-  return required.size > 0 && [...required].every((reference) => recorded.has(reference));
-}
-
 export function isRecordingScopeLocked(
   target: GiftPolicyRecording,
-  recordings: readonly GiftPolicyRecording[],
+  _recordings: readonly GiftPolicyRecording[],
   projects: readonly GiftPolicyProject[],
-  chapterCounts: Readonly<Record<string, readonly number[]>>,
+  _chapterCounts: Readonly<Record<string, readonly number[]>>,
 ) {
-  if (isFreeRecordingProject(target.projectId)) {
-    return isFreeChapterComplete(recordings, target.book, target.chapter, chapterCounts);
-  }
-  const project = projects.find((item) => item.id === target.projectId && item.kind !== 'free');
-  return project ? guidedJourneyCompleted(project, recordings, chapterCounts) : false;
+  const project = projects.find((item) => item.id === target.projectId);
+  return Boolean(project?.completedAt);
 }
 
 export function evaluateGiftSelection(input: GiftSelectionInput): GiftSelectionResult {
@@ -98,6 +86,29 @@ export function evaluateGiftSelection(input: GiftSelectionInput): GiftSelectionR
   if (!selectedIds.size || selected.length !== selectedIds.size) return { eligible: false, reason: '선택한 녹음을 찾을 수 없어요.' };
 
   const first = selected[0];
+  const selectedProjectIds = [...new Set(selected.map((recording) => recording.projectId))];
+  const finalizedProjects = selectedProjectIds.map((projectId) => input.projects.find((project) => project.id === projectId));
+  if (finalizedProjects.every((project): project is GiftPolicyProject => Boolean(project?.completedAt))) {
+    const completeRecordingIds = new Set(input.recordings.filter((recording) => selectedProjectIds.includes(recording.projectId)).map((recording) => recording.id));
+    if (completeRecordingIds.size === selectedIds.size && [...completeRecordingIds].every((id) => selectedIds.has(id))) {
+      const orderedRecordingIds = finalizedProjects.flatMap((project) => {
+        const projectRecordings = input.recordings.filter((recording) => recording.projectId === project.id);
+        const required = getProjectRequiredReferences(project, input.chapterCounts);
+        if (required.size) {
+          const byReference = new Map(projectRecordings.map((recording) => [recordingReference(recording), recording.id]));
+          return [...required].map((reference) => byReference.get(reference)).filter((id): id is string => Boolean(id));
+        }
+        return projectRecordings.slice().sort((a, b) => a.chapter - b.chapter || a.verse - b.verse).map((recording) => recording.id);
+      });
+      return {
+        eligible: true,
+        kind: 'journey',
+        title: finalizedProjects.length === 1 ? finalizedProjects[0].title ?? '완료된 말씀' : `완료된 말씀 ${finalizedProjects.length}개`,
+        orderedRecordingIds,
+      };
+    }
+    return { eligible: false, reason: '완료된 말씀은 묶음 전체를 선택해 주세요.' };
+  }
   if (!isFreeRecordingProject(first.projectId)) {
     if (selected.some((recording) => recording.projectId !== first.projectId)) return { eligible: false, reason: '하나의 말씀 여정만 선물할 수 있어요.' };
     const project = input.projects.find((item) => item.id === first.projectId && item.kind !== 'free');
@@ -109,11 +120,10 @@ export function evaluateGiftSelection(input: GiftSelectionInput): GiftSelectionR
     if (!required.size || [...required].some((reference) => !byReference.has(reference))) {
       return { eligible: false, reason: '말씀 여정을 모두 완료한 뒤 선물할 수 있어요.' };
     }
-    const ordered = [...required].map((reference) => byReference.get(reference)!);
-    if (ordered.length !== selected.length || ordered.some((recording) => !selectedIds.has(recording.id))) {
-      return { eligible: false, reason: '매일 말씀 읽기는 완료된 여정 전체를 선물해 주세요.' };
-    }
-    return { eligible: true, kind: 'journey', title: `${project.title ?? '말씀 여정'} 전체`, orderedRecordingIds: ordered.map((recording) => recording.id) };
+    const ordered = [...required]
+      .map((reference) => byReference.get(reference)!)
+      .filter((recording) => selectedIds.has(recording.id));
+    return { eligible: true, kind: 'journey', title: project.title ?? '말씀 여정', orderedRecordingIds: ordered.map((recording) => recording.id) };
   }
 
   if (selected.some((recording) => !isFreeRecordingProject(recording.projectId) || recording.book !== first.book)) {

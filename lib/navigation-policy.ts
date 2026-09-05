@@ -1,4 +1,4 @@
-export type OnboardingStep = 'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'app';
+export type OnboardingStep = 'welcome' | 'projectHome' | 'projects' | 'bible' | 'schedule' | 'cards' | 'giftStudio' | 'app';
 
 export type NavigationRoute =
   | 'home'
@@ -7,6 +7,7 @@ export type NavigationRoute =
   | 'bible'
   | 'schedule'
   | 'cards'
+  | 'gift-studio'
   | 'recording'
   | 'library'
   | 'gifts'
@@ -19,6 +20,7 @@ const navigationRoutes = new Set<NavigationRoute>([
   'bible',
   'schedule',
   'cards',
+  'gift-studio',
   'recording',
   'library',
   'gifts',

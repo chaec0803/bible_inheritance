@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 const route = readFileSync(new URL('./api/user-state/route.ts', import.meta.url), 'utf8');
 const schema = readFileSync(new URL('../db/schema.ts', import.meta.url), 'utf8');
 
@@ -15,6 +15,20 @@ describe('로그인 사용자 말씀 여정 서버 저장', () => {
   it('진행 여정, 선택 여정, 말씀카드 지급 상태를 저장한다', () => {
     expect(page).toContain('activeProjects, activeProjectId: activeProject?.id ?? null, wordCardAwards');
     expect(page).toContain("fetch('/api/user-state'");
+  });
+
+  it('여정 완료는 화면을 이동하기 전에 로컬과 서버에 즉시 저장한다', () => {
+    const completionHandler = page.slice(page.indexOf('const saveCompletedJourney'), page.indexOf('const pauseChapterPlayback'));
+    expect(completionHandler).toContain("window.localStorage.setItem('verse-legacy-active-projects'");
+    expect(completionHandler).toContain('await saveUserState({');
+    expect(completionHandler.indexOf('await saveUserState({')).toBeLessThan(completionHandler.indexOf("navigateTo('journeys')"));
+  });
+
+  it('말씀카드 보관도 완료 안내 전에 서버에 즉시 저장한다', () => {
+    const collectHandler = page.slice(page.indexOf('const collectStoredWordCard'), page.indexOf('useEffect(() => { if (!displayedProjectDayComplete'));
+    expect(collectHandler).toContain('await saveUserState({');
+    expect(collectHandler.indexOf('await saveUserState({')).toBeLessThan(collectHandler.indexOf("setNotice('내 카드 보관함에 간직했어요.')"));
+    expect(collectHandler).toContain('if (await collectStoredWordCard(');
   });
 
   it('상태 행이 없으면 남아 있는 녹음 메타데이터로 여정을 복구한다', () => {

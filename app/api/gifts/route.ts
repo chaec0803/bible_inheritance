@@ -29,12 +29,11 @@ type GiftRow = {
   total_size_bytes: number;
   created_at: number;
   opened_at: number | null;
-  recipient_deleted_at: number | null;
   thank_you_note: string | null;
   thanked_at: number | null;
 };
 
-type SentGiftRow = Omit<GiftRow, 'sender_nickname'> & {
+type SentGiftRow = Omit<GiftRow, 'sender_nickname' | 'recipient_deleted_at'> & {
   recipient_nickname: string;
 };
 
@@ -60,7 +59,7 @@ export async function GET(request: Request) {
     await ensureUserProfile(user);
     const giftResult = await getD1().prepare(`SELECT
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
-      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at, gifts.recipient_deleted_at,
+      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
       gifts.thank_you_note, gifts.thanked_at,
       user_profiles.nickname AS sender_nickname
     FROM gifts
@@ -73,12 +72,13 @@ export async function GET(request: Request) {
 
     const sentGiftResult = await getD1().prepare(`SELECT
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
-      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at, gifts.recipient_deleted_at,
+      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
       gifts.thank_you_note, gifts.thanked_at,
       user_profiles.nickname AS recipient_nickname
     FROM gifts
     JOIN user_profiles ON user_profiles.owner_key = gifts.recipient_key
     WHERE gifts.sender_key = ?
+      AND gifts.sender_deleted_at IS NULL
     ORDER BY gifts.created_at DESC
     LIMIT 100`)
       .bind(user.id)
@@ -136,7 +136,6 @@ export async function GET(request: Request) {
         totalSizeBytes: gift.total_size_bytes,
         createdAt: gift.created_at,
         openedAt: gift.opened_at,
-        recipientDeletedAt: gift.recipient_deleted_at,
         thankYouNote: gift.thank_you_note,
         thankedAt: gift.thanked_at,
       })),
@@ -162,6 +161,13 @@ export async function POST(request: Request) {
     .bind(userA, userB)
     .first<{ id: string }>();
   if (!friendship) return Response.json({ error: '친구에게만 말씀을 선물할 수 있습니다.' }, { status: 403 });
+
+  const block = await getD1().prepare(`SELECT id FROM friend_blocks
+    WHERE (blocker_key = ? AND blocked_key = ?) OR (blocker_key = ? AND blocked_key = ?)
+    LIMIT 1`)
+    .bind(user.id, giftRequest.recipientUserId, giftRequest.recipientUserId, user.id)
+    .first<{ id: string }>();
+  if (block) return Response.json({ error: '차단한 사용자에게는 말씀 선물을 보낼 수 없습니다.' }, { status: 403 });
 
   const unopenedGift = await getD1().prepare(`SELECT id FROM gifts
     WHERE sender_key = ? AND recipient_key = ? AND opened_at IS NULL
@@ -201,7 +207,7 @@ export async function POST(request: Request) {
         id, sender_key, recipient_key, title, bgm_id, bgm_volume,
         recording_count, total_size_bytes, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(giftId, user.id, giftRequest.recipientUserId, selection.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now),
+        .bind(giftId, user.id, giftRequest.recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now),
       ...giftRecordings.map((recording) => d1.prepare(`INSERT INTO gift_recordings (
         id, gift_id, position, book, chapter, verse, verse_text,
         source_recording_id, object_key, mime_type, size_bytes, duration_seconds
@@ -209,7 +215,7 @@ export async function POST(request: Request) {
         .bind(recording.id, giftId, recording.position, recording.book, recording.chapter, recording.verse, recording.verse_text, sourceById.get(selection.orderedRecordingIds[recording.position])!.id, recording.mime_type, recording.size_bytes, recording.duration_seconds)),
     ];
     for (let offset = 0; offset < statements.length; offset += 500) await d1.batch(statements.slice(offset, offset + 500));
-    return Response.json({ gift: { id: giftId, title: selection.title, recordingCount: recordings.length } }, { status: 201 });
+    return Response.json({ gift: { id: giftId, title: giftRequest.title, recordingCount: recordings.length } }, { status: 201 });
   } catch (error) {
     const d1 = getD1();
     await d1.batch([

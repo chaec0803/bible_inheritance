@@ -12,7 +12,14 @@ export async function DELETE(request: Request, context: RouteContext) {
   const gift = await getD1().prepare('SELECT id FROM gifts WHERE id = ? AND recipient_key = ? AND recipient_deleted_at IS NULL')
     .bind(id, user.id)
     .first<{ id: string }>();
-  if (!gift) return Response.json({ error: '선물을 찾을 수 없습니다.' }, { status: 404 });
+  if (!gift) {
+    const sentGift = await getD1().prepare('SELECT id FROM gifts WHERE id = ? AND sender_key = ? AND sender_deleted_at IS NULL')
+      .bind(id, user.id)
+      .first<{ id: string }>();
+    if (!sentGift) return Response.json({ error: '선물을 찾을 수 없습니다.' }, { status: 404 });
+    await getD1().prepare('UPDATE gifts SET sender_deleted_at = ? WHERE id = ? AND sender_key = ?').bind(Date.now(), id, user.id).run();
+    return Response.json({ deleted: true });
+  }
 
   const recordingResult = await getD1().prepare('SELECT object_key FROM gift_recordings WHERE gift_id = ? AND source_recording_id IS NULL AND object_key IS NOT NULL ORDER BY position')
     .bind(id)

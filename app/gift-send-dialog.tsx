@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Check, Gift, LoaderCircle, Music2, Send, Users, X } from 'lucide-react';
+import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
 
 type FriendPerson = { userId: string; nickname: string; emailHint: string };
 type FriendsPayload = { friends: FriendPerson[]; error?: string };
@@ -13,10 +14,15 @@ type GiftSendDialogProps = {
   bgmName: string;
   bgmVolume: number;
   onClose: () => void;
-  onSent: (nickname: string) => void;
+  onSent: (nickname: string, title: string) => void;
 };
 
-export function GiftSendDialog({ title, recordingIds, bgmId, bgmName, bgmVolume, onClose, onSent }: GiftSendDialogProps) {
+export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose, onSent }: GiftSendDialogProps) {
+  const [giftTitle, setGiftTitle] = useState(title);
+  const [selectedBgmId, setSelectedBgmId] = useState<GiftBgmId>(
+    bgmId in GIFT_BGM_CATALOG ? bgmId as GiftBgmId : 'none',
+  );
+  const [selectedBgmVolume, setSelectedBgmVolume] = useState(bgmVolume);
   const [friends, setFriends] = useState<FriendPerson[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -46,11 +52,11 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmName, bgmVolume,
       const response = await fetch('/api/gifts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientUserId: selectedFriend.userId, recordingIds, title, bgmId, bgmVolume }),
+        body: JSON.stringify({ recipientUserId: selectedFriend.userId, recordingIds, title: giftTitle.trim(), bgmId: selectedBgmId, bgmVolume: selectedBgmVolume }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? '선물을 보내지 못했어요.');
-      onSent(selectedFriend.nickname);
+      onSent(selectedFriend.nickname, giftTitle.trim());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '선물을 보내지 못했어요.');
       setSending(false);
@@ -64,10 +70,27 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmName, bgmVolume,
         <span className="gift-dialog-icon"><Gift size={27} /></span>
         <p className="eyebrow">GIFT A RECORDING</p>
         <h2 id="gift-dialog-title">누구에게 선물할까요?</h2>
+        <label className="gift-title-field">
+          <span>선물 이름</span>
+          <input value={giftTitle} maxLength={80} onChange={(event) => setGiftTitle(event.currentTarget.value)} placeholder="선물 이름을 지어 주세요" disabled={sending} />
+        </label>
         <div className="gift-dialog-summary">
-          <strong>{title}</strong>
           <span>{recordingIds.length}개 녹음</span>
-          <span><Music2 size={13} /> {bgmName} · {bgmVolume}%</span>
+          <span><Music2 size={13} /> {GIFT_BGM_CATALOG[selectedBgmId].name} · {selectedBgmVolume}%</span>
+        </div>
+        <label className="gift-title-field">
+          <span>선물 BGM</span>
+          <select value={selectedBgmId} disabled={sending} onChange={(event) => setSelectedBgmId(event.currentTarget.value as GiftBgmId)}>
+            {Object.entries(GIFT_BGM_CATALOG).map(([id, track]) => <option value={id} key={id}>{track.name}</option>)}
+          </select>
+        </label>
+        <div className="gift-dialog-volume">
+          <span>BGM 음량 <strong>{selectedBgmVolume}%</strong></span>
+          <div>
+            <button type="button" aria-label="BGM 음량 낮추기" disabled={sending || selectedBgmVolume === 0} onClick={() => setSelectedBgmVolume((current) => Math.max(0, current - 5))}>−</button>
+            <input type="range" min="0" max="100" step="1" value={selectedBgmVolume} disabled={sending} aria-label="선물 BGM 음량" onChange={(event) => setSelectedBgmVolume(Number(event.currentTarget.value))} />
+            <button type="button" aria-label="BGM 음량 높이기" disabled={sending || selectedBgmVolume === 100} onClick={() => setSelectedBgmVolume((current) => Math.min(100, current + 5))}>+</button>
+          </div>
         </div>
 
         {loading ? <div className="gift-friend-state"><LoaderCircle className="spin" size={25} /><strong>친구를 불러오고 있어요</strong></div> : friends.length ? (
@@ -80,7 +103,7 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmName, bgmVolume,
         ) : <div className="gift-friend-state"><Users size={27} /><strong>선물할 친구가 아직 없어요</strong><p>친구 탭에서 먼저 친구 요청을 주고받아 주세요.</p></div>}
 
         {message && <output className="gift-message" aria-live="polite">{message}</output>}
-        <button className="gift-send-confirm" type="button" disabled={!selectedFriend || sending} onClick={() => void sendGift()}>{sending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{sending ? '선물 포장 중' : selectedFriend ? `${selectedFriend.nickname}님에게 보내기` : '친구를 선택해 주세요'}</button>
+        <button className="gift-send-confirm" type="button" disabled={!selectedFriend || !giftTitle.trim() || sending} onClick={() => void sendGift()}>{sending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{sending ? '선물 포장 중' : selectedFriend ? `${selectedFriend.nickname}님에게 보내기` : '친구를 선택해 주세요'}</button>
       </dialog>
     </div>
   );

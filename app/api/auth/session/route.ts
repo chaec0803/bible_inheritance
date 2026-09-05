@@ -3,6 +3,13 @@ import { ensureUserProfile } from '@/lib/friend-server';
 
 const COOKIE = 'verse-legacy-session';
 
+export async function GET(request: Request) {
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ user: null }, { status: 401 });
+  await ensureUserProfile(user);
+  return Response.json({ user });
+}
+
 export async function POST(request: Request) {
   const token = readAccessToken(request);
   const user = await authenticateRequest(request);

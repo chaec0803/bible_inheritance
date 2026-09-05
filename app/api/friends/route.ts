@@ -1,5 +1,6 @@
 import { authenticateRequest } from '@/lib/supabase-auth';
 import { canonicalFriendPair, normalizeFriendLookup, validateNickname } from '@/lib/friend-policy';
+import { normalizeBlockTarget } from '@/lib/friend-block';
 import { ensureUserProfile } from '@/lib/friend-server';
 import { getD1 } from '@/db';
 
@@ -65,6 +66,38 @@ async function loadRelationships(currentUserId: string) {
   return result.results.map((row) => relationshipView(row, currentUserId));
 }
 
+async function loadHiddenUserIds(currentUserId: string) {
+  const result = await getD1().prepare(`SELECT blocked_key AS other_user_id FROM friend_blocks WHERE blocker_key = ?
+    UNION
+    SELECT blocker_key AS other_user_id FROM friend_blocks WHERE blocked_key = ?`)
+    .bind(currentUserId, currentUserId)
+    .all<{ other_user_id: string }>();
+  return new Set(result.results.map((row) => row.other_user_id));
+}
+
+async function loadBlockedPeople(currentUserId: string) {
+  const result = await getD1().prepare(`SELECT
+    friend_blocks.blocked_key AS other_user_id,
+    user_profiles.nickname,
+    user_profiles.email
+  FROM friend_blocks
+  JOIN user_profiles ON user_profiles.owner_key = friend_blocks.blocked_key
+  WHERE friend_blocks.blocker_key = ?
+  ORDER BY friend_blocks.created_at DESC`)
+    .bind(currentUserId)
+    .all<{ other_user_id: string; nickname: string; email: string }>();
+  return result.results.map((row) => ({ ...publicPerson(row.other_user_id, row.nickname, row.email), relationship: 'blocked' as const }));
+}
+
+async function isBlockedPair(currentUserId: string, otherUserId: string) {
+  const row = await getD1().prepare(`SELECT id FROM friend_blocks
+    WHERE (blocker_key = ? AND blocked_key = ?) OR (blocker_key = ? AND blocked_key = ?)
+    LIMIT 1`)
+    .bind(currentUserId, otherUserId, otherUserId, currentUserId)
+    .first<{ id: string }>();
+  return Boolean(row);
+}
+
 export async function GET(request: Request) {
   const user = await authenticateRequest(request);
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -74,7 +107,12 @@ export async function GET(request: Request) {
     const profile = await getD1().prepare('SELECT owner_key, nickname, email FROM user_profiles WHERE owner_key = ?')
       .bind(user.id)
       .first<SearchProfileRow>();
-    const relationships = await loadRelationships(user.id);
+    const [allRelationships, hiddenUserIds, blocked] = await Promise.all([
+      loadRelationships(user.id),
+      loadHiddenUserIds(user.id),
+      loadBlockedPeople(user.id),
+    ]);
+    const relationships = allRelationships.filter((item) => !hiddenUserIds.has(item.userId));
     const friends = relationships.filter((item) => item.relationship === 'friend');
     const incoming = relationships.filter((item) => item.relationship === 'incoming');
     const outgoing = relationships.filter((item) => item.relationship === 'outgoing');
@@ -93,10 +131,12 @@ export async function GET(request: Request) {
         .bind(user.id, query, `${escapedNickname}%`, query)
         .all<SearchProfileRow>();
       const relationByUser = new Map(relationships.map((item) => [item.userId, item.relationship]));
-      results = search.results.map((item) => ({
-        ...publicPerson(item.owner_key, item.nickname, item.email),
-        relationship: relationByUser.get(item.owner_key) ?? 'none',
-      }));
+      results = search.results
+        .filter((item) => !hiddenUserIds.has(item.owner_key))
+        .map((item) => ({
+          ...publicPerson(item.owner_key, item.nickname, item.email),
+          relationship: relationByUser.get(item.owner_key) ?? 'none',
+        }));
     }
 
     return Response.json({
@@ -104,6 +144,7 @@ export async function GET(request: Request) {
       friends,
       incoming,
       outgoing,
+      blocked,
       results,
     });
   } catch (error) {
@@ -139,10 +180,15 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { action?: unknown; userId?: unknown } | null;
   const action = body?.action;
   const targetUserId = body?.userId;
-  if (!['request', 'accept', 'reject', 'remove'].includes(String(action)) || typeof targetUserId !== 'string') {
+  if (!['request', 'accept', 'reject', 'remove', 'block', 'unblock'].includes(String(action)) || typeof targetUserId !== 'string') {
     return Response.json({ error: '올바른 친구 요청이 아닙니다.' }, { status: 400 });
   }
-  if (targetUserId === user.id) return Response.json({ error: '나 자신에게는 친구 요청을 보낼 수 없습니다.' }, { status: 400 });
+  if (action === 'block' || action === 'unblock') {
+    const target = normalizeBlockTarget(targetUserId, user.id);
+    if (!target.ok) return Response.json({ error: target.error }, { status: 400 });
+  } else if (targetUserId === user.id) {
+    return Response.json({ error: '나 자신에게는 친구 요청을 보낼 수 없습니다.' }, { status: 400 });
+  }
 
   try {
     await ensureUserProfile(user);
@@ -150,6 +196,29 @@ export async function POST(request: Request) {
     if (!target) return Response.json({ error: '해당 사용자를 찾을 수 없습니다.' }, { status: 404 });
 
     const [userA, userB] = canonicalFriendPair(user.id, targetUserId);
+
+    if (action === 'block') {
+      const now = Date.now();
+      // Blocking clears the relationship in both directions: accepted friendship and either pending request.
+      await getD1().prepare('DELETE FROM friendships WHERE user_a_key = ? AND user_b_key = ?').bind(userA, userB).run();
+      await getD1().prepare('INSERT INTO friend_blocks (id, blocker_key, blocked_key, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(blocker_key, blocked_key) DO NOTHING')
+        .bind(crypto.randomUUID(), user.id, targetUserId, now)
+        .run();
+      return Response.json({ relationship: 'blocked' });
+    }
+
+    if (action === 'unblock') {
+      // Unblocking only lifts the block; the previous friendship is never restored automatically.
+      await getD1().prepare('DELETE FROM friend_blocks WHERE blocker_key = ? AND blocked_key = ?')
+        .bind(user.id, targetUserId)
+        .run();
+      return Response.json({ relationship: 'none' });
+    }
+
+    if ((action === 'request' || action === 'accept') && await isBlockedPair(user.id, targetUserId)) {
+      return Response.json({ error: '차단한 사용자와는 친구가 될 수 없습니다.' }, { status: 403 });
+    }
+
     const existing = await getD1().prepare('SELECT id, requested_by, status FROM friendships WHERE user_a_key = ? AND user_b_key = ?')
       .bind(userA, userB)
       .first<{ id: string; requested_by: string; status: 'pending' | 'accepted' }>();

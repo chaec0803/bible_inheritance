@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   ensureSchema: vi.fn(),
   ensureProfile: vi.fn(),
   friendship: { id: 'friendship-1' } as { id: string } | null,
+  block: null as { id: string } | null,
   unopenedGift: null as { id: string } | null,
   sourceRows: [] as Array<Record<string, unknown>>,
   giftRows: [] as Array<Record<string, unknown>>,
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   r2Put: vi.fn(),
   r2Delete: vi.fn(),
   completionContext: {
-    projects: [{ id: 'daily-1', title: '시편 묵상', kind: 'guided', tasks: ['시편 23편 1–2절'] }],
+    projects: [{ id: 'daily-1', title: '시편 묵상', kind: 'guided', tasks: ['시편 23편 1–2절'], completedAt: 100 }],
     chapterCounts: { 시편: [6] },
   },
 }));
@@ -34,6 +35,7 @@ vi.mock('@/db', () => ({
       bind: (...values: unknown[]) => ({
         first: async () => {
           mocks.statements.push({ sql, values });
+          if (sql.includes('FROM friend_blocks')) return mocks.block;
           if (sql.includes('FROM friendships')) return mocks.friendship;
           if (sql.includes('opened_at IS NULL')) return mocks.unopenedGift;
           return null;
@@ -61,7 +63,7 @@ function sendRequest(overrides: Record<string, unknown> = {}) {
     body: JSON.stringify({
       recipientUserId: 'friend-2',
       recordingIds: ['r-2', 'r-1'],
-      title: '시편 23편',
+      title: '엄마에게 드리는 말씀',
       bgmId: 'still-waters',
       bgmVolume: 17,
       ...overrides,
@@ -75,6 +77,7 @@ describe('말씀 선물 API 통합 회귀', () => {
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
     mocks.ensureProfile.mockReset().mockResolvedValue(undefined);
     mocks.friendship = { id: 'friendship-1' };
+    mocks.block = null;
     mocks.unopenedGift = null;
     mocks.sourceRows = [
       { id: 'r-1', project_id: 'daily-1', book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', mime_type: 'audio/webm', size_bytes: 4, duration_seconds: 3 },
@@ -97,6 +100,7 @@ describe('말씀 선물 API 통합 회귀', () => {
     const statements = mocks.batch.mock.calls[0][0] as Array<{ sql?: string }>;
     expect(statements).toHaveLength(3);
     expect(mocks.r2Put).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ gift: { title: '엄마에게 드리는 말씀' } });
   });
 
   it('친구가 아니거나 소유하지 않은 녹음은 보낼 수 없다', async () => {
@@ -116,7 +120,7 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(mocks.r2Put).not.toHaveBeenCalled();
   });
 
-  it('완료되지 않은 일부 녹음만 골라서는 보낼 수 없다', async () => {
+  it('완료된 말씀 묶음에서 일부 절만 골라서는 보낼 수 없다', async () => {
     const response = await POST(sendRequest({ recordingIds: ['r-1'] }));
     expect(response.status).toBe(409);
     expect(mocks.batch).not.toHaveBeenCalled();
@@ -135,11 +139,29 @@ describe('말씀 선물 API 통합 회귀', () => {
   });
 
   it('내가 보낸 선물 목록에 수신자와 개봉 상태를 반환한다', async () => {
-    mocks.sentGiftRows = [{ id: 'gift-sent', title: '요한복음 1장', recipient_nickname: '받는친구', bgm_id: 'none', bgm_volume: 0, recording_count: 5, total_size_bytes: 40, created_at: 200, opened_at: 210, recipient_deleted_at: null, thank_you_note: '잘 들었어요!', thanked_at: 220 }];
+    mocks.sentGiftRows = [{ id: 'gift-sent', title: '요한복음 1장', recipient_nickname: '받는친구', bgm_id: 'none', bgm_volume: 0, recording_count: 5, total_size_bytes: 40, created_at: 200, opened_at: 210, recipient_deleted_at: 230, thank_you_note: '잘 들었어요!', thanked_at: 220 }];
     const response = await GET(new Request('https://example.test/api/gifts'));
     expect(response.status).toBe(200);
     const payload = await response.json() as { sentGifts: Array<{ recipientNickname: string; openedAt: number | null; thankYouNote: string | null }> };
     expect(payload.sentGifts).toEqual([expect.objectContaining({ recipientNickname: '받는친구', openedAt: 210, thankYouNote: '잘 들었어요!' })]);
+    expect(payload.sentGifts[0]).not.toHaveProperty('recipientDeletedAt');
+  });
+
+  it('차단한 사이에는 말씀 선물을 보낼 수 없다', async () => {
+    mocks.block = { id: 'block-1' };
+    const response = await POST(sendRequest());
+    expect(response.status).toBe(403);
+    expect(mocks.batch).not.toHaveBeenCalled();
+  });
+
+  it('차단한 뒤에도 이미 주고받은 선물은 선물함에서 그대로 조회한다', async () => {
+    mocks.block = { id: 'block-1' };
+    mocks.authenticate.mockResolvedValue({ id: 'friend-2', email: 'friend@example.com' });
+    mocks.giftRows = [{ id: 'gift-1', title: '시편 23편', sender_nickname: '말씀친구', bgm_id: 'still-waters', bgm_volume: 17, recording_count: 1, total_size_bytes: 4, created_at: 100, opened_at: 120, recipient_deleted_at: null, thank_you_note: null, thanked_at: null }];
+    const response = await GET(new Request('https://example.test/api/gifts'));
+    expect(response.status).toBe(200);
+    const payload = await response.json() as { gifts: unknown[] };
+    expect(payload.gifts).toHaveLength(1);
   });
 
   it('로그인하지 않은 사용자는 선물을 보내거나 받을 수 없다', async () => {

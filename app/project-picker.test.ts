@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 
 describe('매일 말씀 읽기 선택 화면', () => {
   it('화면에 처음 들어갈 때 선택된 코스가 없다', () => {
@@ -10,10 +10,12 @@ describe('매일 말씀 읽기 선택 화면', () => {
   });
 
   it('코스를 선택한 뒤에만 일정 서브탭을 연다', () => {
-    expect(page).toContain("setSelectedTemplateId((current) => current === project.id ? '' : project.id)");
-    expect(page).toContain('selectedTemplateId && <aside className="project-schedule-preview selected-schedule-subtab"');
+    expect(page).toContain('setSelectedTemplateId((current) =>');
+    expect(page).toContain("current === project.id ? '' : project.id");
+    expect(page).toContain('selectedTemplateId &&');
+    expect(page).toContain('className="project-schedule-preview selected-schedule-subtab"');
     expect(page).toContain('style={{ gridRow: index * 2 + 1 }}');
-    expect(page).toContain('style={{ gridRow: selectedVisibleTemplateIndex * 2 + 2 }}');
+    expect(page).toContain('gridRow: selectedVisibleTemplateIndex * 2 + 2');
   });
 
   it('기간을 바꾸면 코스 선택을 초기화한다', () => {
@@ -29,8 +31,8 @@ describe('매일 말씀 읽기 선택 화면', () => {
   });
 
   it('사용자 계획에서 다섯 가지 범위와 직접 정한 기간을 지원한다', () => {
-    expect(page).toContain('한 권 읽기');
-    expect(page).toContain('여러 권 읽기');
+    expect(page).toContain('한 장 읽기');
+    expect(page).toContain('범위 지정');
     expect(page).toContain('구약 통독');
     expect(page).toContain('신약 통독');
     expect(page).toContain('성경 통독');
@@ -38,10 +40,15 @@ describe('매일 말씀 읽기 선택 화면', () => {
     expect(page).toContain('buildCustomReadingPlan');
   });
 
-  it('한 권 읽기의 시작과 끝을 장·절로 선택한다', () => {
-    expect(page).toContain('시작 위치');
-    expect(page).toContain('마지막 위치');
-    expect(page).toContain('customStartVerse');
-    expect(page).toContain('customEndVerse');
+  it('공용 선택기로 시작과 끝 권·장·절을 선택한다', () => {
+    expect(page).toContain('BibleRangePicker');
+    expect(page).toContain('customBibleRange');
+    expect(page).toContain("mode={customPlanMode}");
+  });
+
+  it('범위 오류는 탭을 고를 때가 아니라 읽기 시작 버튼을 누른 뒤 토스트로 안내한다', () => {
+    expect(page).toContain("setBibleScopeMode('range'); setNotice('')");
+    expect(page).toContain("setNotice('시작 말씀은 끝 말씀보다 앞서야 해요.')");
+    expect(page).toContain("setNotice('선택한 범위의 말씀을 불러오지 못했어요. 다시 시도해 주세요.')");
   });
 });

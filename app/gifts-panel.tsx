@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, CircleStop, Download, Gift, Headphones, List, LoaderCircle, MessageCircle, Music2, Pause, Play, Send, Trash2, Volume2, X } from 'lucide-react';
 import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
 import { THANK_YOU_TEMPLATES } from '@/lib/gift-thank-you';
+import { toAudibleBgmGain } from '@/lib/audio-volume';
 
 type GiftRecording = {
   id: string;
@@ -42,7 +43,6 @@ type SentGift = {
   totalSizeBytes: number;
   createdAt: number;
   openedAt: number | null;
-  recipientDeletedAt: number | null;
   thankYouNote: string | null;
   thankedAt: number | null;
 };
@@ -61,10 +61,16 @@ function formatGiftDateTime(timestamp: number) {
   return new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp));
 }
 
-export function GiftsPanel({ onBack }: { onBack: () => void }) {
+export function GiftsPanel({
+  onBack,
+  initialSentGiftId,
+}: {
+  onBack: () => void;
+  initialSentGiftId?: string | null;
+}) {
   const [receivedGifts, setReceivedGifts] = useState<ReceivedGift[]>([]);
   const [sentGifts, setSentGifts] = useState<SentGift[]>([]);
-  const [giftBox, setGiftBox] = useState<'received' | 'sent'>('received');
+  const [giftBox, setGiftBox] = useState<'received' | 'sent'>(initialSentGiftId ? 'sent' : 'received');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [activeGiftId, setActiveGiftId] = useState<string | null>(null);
@@ -78,6 +84,9 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
   const [giftVolumes, setGiftVolumes] = useState<Record<string, number>>({});
   const [thankYouGift, setThankYouGift] = useState<ReceivedGift | null>(null);
   const [thankYouNote, setThankYouNote] = useState('');
+  const [detailGiftId, setDetailGiftId] = useState<string | null>(null);
+  const [justOpenedGiftId, setJustOpenedGiftId] = useState<string | null>(null);
+  const [detailSentGiftId, setDetailSentGiftId] = useState<string | null>(initialSentGiftId ?? null);
   const [sendingThankYou, setSendingThankYou] = useState(false);
   const voiceRef = useRef<HTMLAudioElement | null>(null);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
@@ -126,6 +135,12 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
   }, []);
 
   useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(''), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
+  useEffect(() => {
     if (giftBox !== 'sent') return;
     let active = true;
     const pollSentGifts = async () => {
@@ -162,6 +177,11 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
   }, [giftBox]);
 
   const activeGift = receivedGifts.find((gift) => gift.id === activeGiftId) ?? null;
+  const receivedSections = [
+    { title: '방금 열어본 선물', gifts: receivedGifts.filter((gift) => gift.id === justOpenedGiftId) },
+    { title: '안 열어본 선물', gifts: receivedGifts.filter((gift) => gift.openedAt === null && gift.id !== justOpenedGiftId) },
+    { title: '열어본 선물', gifts: receivedGifts.filter((gift) => gift.openedAt !== null && gift.id !== justOpenedGiftId) },
+  ].filter((section) => section.gifts.length);
   const activeRecording = activeGift?.recordings[activeIndex] ?? null;
 
   const stopPlayback = () => {
@@ -187,7 +207,7 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
     const playRequests: Promise<void>[] = [voice.play()];
     const bgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
     const selectedVolume = giftVolumes[gift.id] ?? gift.bgmVolume;
-    if (bgmAudio && bgm.audioSrc) bgmAudio.volume = selectedVolume / 100;
+    if (bgmAudio && bgm.audioSrc) bgmAudio.volume = toAudibleBgmGain(selectedVolume);
     if (bgmAudio && bgm.audioSrc && restartBgm) {
       bgmAudio.src = bgm.audioSrc;
       bgmAudio.loop = true;
@@ -241,6 +261,9 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? '선물을 열지 못했어요.');
       await refresh();
+      setJustOpenedGiftId(gift.id);
+      setDetailGiftId(gift.id);
+      setOpenLists((current) => current.includes(gift.id) ? current : [...current, gift.id]);
       setMessage(`${gift.senderNickname}님의 선물을 열었어요.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '선물을 열지 못했어요.');
@@ -269,14 +292,31 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const deleteSentGift = async (gift: SentGift) => {
+    if (deletingGiftId || !window.confirm(`‘${gift.title}’을(를) 보낸 선물 목록에서 삭제할까요?`)) return;
+    setDeletingGiftId(gift.id);
+    try {
+      const response = await fetch(`/api/gifts/${gift.id}`, { method: 'DELETE' });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? '보낸 선물을 삭제하지 못했어요.');
+      await refresh();
+      setDetailSentGiftId(null);
+      setMessage('보낸 선물 목록에서 삭제했어요. 받는 사람의 선물은 그대로 유지돼요.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '보낸 선물을 삭제하지 못했어요.');
+    } finally {
+      setDeletingGiftId(null);
+    }
+  };
+
   const downloadGift = async (gift: ReceivedGift) => {
     if (downloadingGiftId) return;
     setDownloadingGiftId(gift.id);
-    setMessage('목소리와 BGM을 하나의 MP3로 만들고 있어요. 잠시만 기다려 주세요.');
+    setMessage('목소리와 BGM을 하나의 MP4로 만들고 있어요. 잠시만 기다려 주세요.');
     try {
       const bgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
-      const { createGiftMp3 } = await import('@/lib/gift-mp3');
-      const result = await createGiftMp3({
+      const { createGiftMp4 } = await import('@/lib/gift-mp3');
+      const result = await createGiftMp4({
         title: gift.title,
         voiceUrls: gift.recordings.map((recording) => `/api/gifts/${gift.id}/audio/${recording.position}`),
         bgmUrl: bgm.audioSrc,
@@ -290,9 +330,9 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setMessage('MP3 다운로드를 시작했어요.');
+      setMessage('MP4 다운로드를 시작했어요.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'MP3 파일을 만들지 못했어요.');
+      setMessage(error instanceof Error ? error.message : 'MP4 파일을 만들지 못했어요.');
     } finally {
       setDownloadingGiftId(null);
     }
@@ -332,56 +372,86 @@ export function GiftsPanel({ onBack }: { onBack: () => void }) {
       {message && <output className="gift-message gift-page-message" aria-live="polite">{message}</output>}
       {loading ? <div className="gift-empty"><LoaderCircle className="spin" size={29} /><strong>선물함을 불러오고 있어요</strong></div> : giftBox === 'received' ? receivedGifts.length === 0 ? <div className="gift-empty"><Gift size={32} /><strong>아직 도착한 선물이 없어요</strong><p>친구가 말씀 녹음을 보내면 이곳에 차곡차곡 모여요.</p></div> : (
         <div className="gift-cards">
-          {receivedGifts.map((gift) => {
+          {receivedSections.map((section) => <section className="gift-compact-section" key={section.title}><h3>{section.title}</h3>{section.gifts.map((gift) => {
             const isActive = gift.id === activeGiftId;
             const giftBgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
             const giftVolume = giftVolumes[gift.id] ?? gift.bgmVolume;
             const listOpen = openLists.includes(gift.id);
             const unopened = gift.openedAt === null;
-            return <article className={`gift-card ${isActive ? 'playing' : ''} ${unopened ? 'unopened' : ''}`} key={gift.id}>
-              <div className="gift-card-header"><span><Gift size={21} /></span><div><small>{gift.senderNickname}님이 보낸 말씀 · {formatGiftDate(gift.createdAt)}</small><h3>{unopened ? '새로운 말씀 선물이 도착했어요' : gift.title}</h3></div></div>
+            const detailOpen = detailGiftId === gift.id;
+            return <article className={`gift-card gift-compact-card ${isActive ? 'playing' : ''} ${unopened ? 'unopened' : ''}`} key={gift.id}>
+              <button className="gift-card-header" type="button" onClick={() => unopened ? void openGift(gift) : setDetailGiftId(detailOpen ? null : gift.id)}><span><Gift size={18} /></span><div><small>{gift.senderNickname}님으로부터 · {formatGiftDate(gift.createdAt)}</small><h3>{unopened ? '새로운 말씀 선물' : gift.title}</h3></div></button>
               {unopened ? <div className="gift-unopened">
                 <span><Gift size={31} /></span>
                 <p>열어보기 전까지 선물 내용은 비밀이에요.</p>
                 <button type="button" disabled={Boolean(openingGiftId)} onClick={() => void openGift(gift)}>{openingGiftId === gift.id ? <LoaderCircle className="spin" size={18} /> : <Gift size={18} />}{openingGiftId === gift.id ? '선물 여는 중' : '선물 열기'}</button>
-              </div> : <>
+              </div> : detailOpen ? <>
                 <div className="gift-card-tags"><span><Headphones size={13} /> {gift.recordingCount}개 녹음</span><span><Music2 size={13} /> {giftBgm.name}</span></div>
-                {giftBgm.audioSrc && <label className="gift-volume-control">
+                {giftBgm.audioSrc && <div className="gift-volume-control">
                   <span><Volume2 size={16} /> 선물 BGM 음량 <strong>{giftVolume}%</strong></span>
+                  <div className="gift-volume-input-row">
+                  <button type="button" aria-label="받은 선물 BGM 음량 낮추기" disabled={giftVolume === 0} onClick={() => {
+                    const nextVolume = Math.max(0, giftVolume - 5);
+                    setGiftVolumes((current) => ({ ...current, [gift.id]: nextVolume }));
+                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = toAudibleBgmGain(nextVolume);
+                  }}>−</button>
                   <input type="range" min="0" max="100" step="1" value={giftVolume} aria-label={`${gift.title} BGM 음량`} onChange={(event) => {
                     const nextVolume = Number(event.currentTarget.value);
                     setGiftVolumes((current) => ({ ...current, [gift.id]: nextVolume }));
-                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = nextVolume / 100;
+                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = toAudibleBgmGain(nextVolume);
                   }} />
-                </label>}
+                  <button type="button" aria-label="받은 선물 BGM 음량 높이기" disabled={giftVolume === 100} onClick={() => {
+                    const nextVolume = Math.min(100, giftVolume + 5);
+                    setGiftVolumes((current) => ({ ...current, [gift.id]: nextVolume }));
+                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = toAudibleBgmGain(nextVolume);
+                  }}>+</button>
+                  </div>
+                </div>}
                 {isActive && activeRecording && <div className="gift-now-playing"><small>NOW PLAYING · {activeIndex + 1}/{gift.recordings.length}</small><strong>{activeRecording.verseText}</strong><span>{activeRecording.book} {activeRecording.chapter}{activeRecording.book === '시편' ? '편' : '장'} {activeRecording.verse}절</span></div>}
                 <div className="gift-primary-actions">
                   {!isActive ? <button type="button" onClick={() => startPlayback(gift)}><Play size={17} /> 이어듣기</button> : <><button type="button" onClick={paused ? resumePlayback : pausePlayback}>{paused ? <Play size={17} /> : <Pause size={17} />}{paused ? '계속 듣기' : '일시정지'}</button><button className="secondary" type="button" onClick={stopPlayback}><CircleStop size={17} /> 종료</button></>}
                 </div>
                 <button className="gift-list-toggle" type="button" onClick={() => setOpenLists((current) => current.includes(gift.id) ? current.filter((id) => id !== gift.id) : [...current, gift.id])} aria-expanded={listOpen}><List size={16} /> 녹음 목록 {listOpen ? '접기' : '보기'}</button>
                 {listOpen && <div className="gift-recording-list">{gift.recordings.map((recording, index) => <button className={isActive && index === activeIndex ? 'playing' : ''} type="button" onClick={() => playPosition(gift, index, !isActive)} key={recording.id}><span>{recording.book} {recording.chapter}{recording.book === '시편' ? '편' : '장'} · {recording.verse}절</span><small>{isActive && index === activeIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div>}
-                <div className="gift-secondary-actions"><button className="download" type="button" disabled={Boolean(downloadingGiftId)} onClick={() => void downloadGift(gift)}>{downloadingGiftId === gift.id ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}{downloadingGiftId === gift.id ? 'MP3 만드는 중' : 'MP3 다운로드'}</button><button type="button" disabled={Boolean(downloadingGiftId)} onClick={() => setConfirmDeleteGift(gift)}><Trash2 size={15} /> 삭제</button></div>
+                <div className="gift-secondary-actions"><button className="download" type="button" disabled={Boolean(downloadingGiftId)} onClick={() => void downloadGift(gift)}>{downloadingGiftId === gift.id ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}{downloadingGiftId === gift.id ? 'MP4 만드는 중' : 'MP4 다운로드'}</button><button type="button" disabled={Boolean(downloadingGiftId)} onClick={() => setConfirmDeleteGift(gift)}><Trash2 size={15} /> 삭제</button></div>
                 {gift.thankYouNote ? <div className="gift-thank-you-sent"><MessageCircle size={17} /><div><strong>감사 인사를 보냈어요</strong><p>{gift.thankYouNote}</p></div></div> : <button className="gift-thank-you-action" type="button" onClick={() => { setThankYouGift(gift); setThankYouNote(''); }}><MessageCircle size={17} /> 감사 인사 보내기</button>}
-              </>}
+              </> : null}
             </article>;
-          })}
+          })}</section>)}
         </div>
       ) : sentGifts.length === 0 ? <div className="gift-empty"><Gift size={32} /><strong>아직 보낸 선물이 없어요</strong><p>듣기 화면의 ‘선물하기’에서 친구에게 말씀을 전할 수 있어요.</p></div> : (
         <div className="gift-cards sent-gift-cards">
           {sentGifts.map((gift) => {
             const giftBgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
-            const deleted = gift.recipientDeletedAt !== null;
             const opened = gift.openedAt !== null;
-            const status = deleted ? '선물함에서 삭제됨' : opened ? '열어봄' : '열어보기 전';
-            return <article className="gift-card sent-gift-card" key={gift.id}>
-              <div className="gift-card-header"><span><Gift size={21} /></span><div><small>{gift.recipientNickname}님에게 보낸 말씀 · {formatGiftDate(gift.createdAt)}</small><h3>{gift.title}</h3></div></div>
+            const status = opened ? '열어봄' : '열어보기 전';
+            const detailOpen = detailSentGiftId === gift.id;
+            return <article className="gift-card gift-compact-card sent-gift-card" key={gift.id}>
+              <button className="gift-card-header" type="button" onClick={() => setDetailSentGiftId(detailOpen ? null : gift.id)}><span><Gift size={18} /></span><div><small>{gift.recipientNickname}님에게 · {formatGiftDate(gift.createdAt)}</small><h3>{gift.title}</h3></div></button>
+              {detailOpen && <>
               <div className="gift-card-tags"><span><Headphones size={13} /> {gift.recordingCount}개 녹음</span><span><Music2 size={13} /> {giftBgm.name} · {gift.bgmVolume}%</span></div>
-              <div className={`sent-gift-status ${opened ? 'opened' : ''} ${deleted ? 'deleted' : ''}`}><span>{status}</span><p>{deleted ? `${gift.recipientNickname}님의 선물함에서는 정리됐어요.` : opened && gift.openedAt ? `열어본 시간 · ${formatGiftDateTime(gift.openedAt)}` : `${gift.recipientNickname}님이 열어보기를 기다리고 있어요.`}</p></div>
+              <div className={`sent-gift-status ${opened ? 'opened' : ''}`}><span>{status}</span><p>{opened && gift.openedAt ? `열어본 시간 · ${formatGiftDateTime(gift.openedAt)}` : `${gift.recipientNickname}님이 열어보기를 기다리고 있어요.`}</p></div>
               {gift.thankYouNote && <div className="sent-thank-you-note"><MessageCircle size={18} /><div><strong>감사 인사가 도착했어요</strong><blockquote>{gift.thankYouNote}</blockquote>{gift.thankedAt && <small>{formatGiftDateTime(gift.thankedAt)}</small>}</div></div>}
+              <button className="completed-journey-delete" type="button" disabled={deletingGiftId === gift.id} onClick={() => void deleteSentGift(gift)}><Trash2 size={15} /> {deletingGiftId === gift.id ? '삭제 중' : '보낸 선물 삭제'}</button>
+              </>}
             </article>;
           })}
         </div>
       )}
+
+      {activeGift && activeRecording && <div className="continuous-player-backdrop" role="presentation"><dialog className="continuous-player-modal" open aria-labelledby="gift-player-title">
+        <button className="continuous-player-close" type="button" onClick={stopPlayback} aria-label="선물 이어듣기 닫기"><X size={22} /></button>
+        <p className="eyebrow">GIFT PLAYBACK · {activeGift.senderNickname}님으로부터</p>
+        <div className="continuous-player-progress"><span style={{ width: `${((activeIndex + 1) / activeGift.recordings.length) * 100}%` }} /></div>
+        <small>{activeIndex + 1} / {activeGift.recordings.length} · {formatGiftDate(activeGift.createdAt)}</small>
+        <div className="continuous-player-verse"><span>{activeRecording.verse}</span><h2 id="gift-player-title">{activeRecording.verseText}</h2></div>
+        <div className="continuous-player-actions">
+          <button className="continuous-player-list-trigger" type="button" onClick={() => setOpenLists((current) => current.includes(activeGift.id) ? current.filter((id) => id !== activeGift.id) : [...current, activeGift.id])}><List size={19} /><span>목록</span></button>
+          <button className="continuous-player-stop" type="button" onClick={paused ? resumePlayback : pausePlayback}>{paused ? <Play size={18} /> : <Pause size={18} />}{paused ? '계속 듣기' : '일시정지'}</button>
+          <button className="continuous-player-stop" type="button" onClick={stopPlayback}><CircleStop size={18} /> 종료</button>
+        </div>
+        {openLists.includes(activeGift.id) && <div className="continuous-player-list"><strong>선물 말씀 목록</strong><div>{activeGift.recordings.map((recording, index) => <button className={index === activeIndex ? 'playing' : ''} type="button" onClick={() => playPosition(activeGift, index, false)} key={recording.id}><span>{recording.book} {recording.chapter}{recording.book === '시편' ? '편' : '장'} {recording.verse}절</span><small>{index === activeIndex ? '재생 중' : '여기부터 듣기'}</small></button>)}</div></div>}
+      </dialog></div>}
 
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다. */}
       <audio ref={voiceRef} onEnded={handleEnded} />

@@ -57,7 +57,8 @@ describe('친구 관계 API 통합 회귀', () => {
 
   it('새 친구 요청을 pending 관계로 저장한다', async () => {
     mocks.authenticateRequest.mockResolvedValue({ id: 'user-a', email: 'a@example.com' });
-    mocks.firstResults = [{ owner_key: 'user-b' }, null];
+    // [target profile, block pair, existing friendship]
+    mocks.firstResults = [{ owner_key: 'user-b' }, null, null];
 
     const response = await POST(actionRequest('request', 'user-b'));
 
@@ -71,7 +72,8 @@ describe('친구 관계 API 통합 회귀', () => {
 
   it('내가 보낸 요청을 내가 수락하지 못하게 막는다', async () => {
     mocks.authenticateRequest.mockResolvedValue({ id: 'user-a', email: 'a@example.com' });
-    mocks.firstResults = [{ owner_key: 'user-b' }, { id: 'relation-1', requested_by: 'user-a', status: 'pending' }];
+    // [target profile, block pair, existing friendship]
+    mocks.firstResults = [{ owner_key: 'user-b' }, null, { id: 'relation-1', requested_by: 'user-a', status: 'pending' }];
 
     const response = await POST(actionRequest('accept', 'user-b'));
 
@@ -81,7 +83,8 @@ describe('친구 관계 API 통합 회귀', () => {
 
   it('상대가 보낸 요청은 수락해 친구로 만든다', async () => {
     mocks.authenticateRequest.mockResolvedValue({ id: 'user-a', email: 'a@example.com' });
-    mocks.firstResults = [{ owner_key: 'user-b' }, { id: 'relation-1', requested_by: 'user-b', status: 'pending' }];
+    // [target profile, block pair, existing friendship]
+    mocks.firstResults = [{ owner_key: 'user-b' }, null, { id: 'relation-1', requested_by: 'user-b', status: 'pending' }];
 
     const response = await POST(actionRequest('accept', 'user-b'));
 
@@ -92,8 +95,11 @@ describe('친구 관계 API 통합 회귀', () => {
   it('친구 목록과 검색 결과의 이메일을 가려서 반환한다', async () => {
     mocks.authenticateRequest.mockResolvedValue({ id: 'user-a', email: 'a@example.com' });
     mocks.firstResults = [{ owner_key: 'user-a', nickname: '애니', email: 'a@example.com' }];
+    // [relationships, hidden (blocked either way), blocked list, search results]
     mocks.allResults = [
       [{ id: 'relation-1', user_a_key: 'user-a', user_b_key: 'user-b', requested_by: 'user-b', status: 'pending', updated_at: 1, other_user_id: 'user-b', nickname: '말씀친구', email: 'friend@example.com' }],
+      [],
+      [],
       [{ owner_key: 'user-b', nickname: '말씀친구', email: 'friend@example.com' }],
     ];
 

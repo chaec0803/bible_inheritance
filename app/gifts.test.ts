@@ -18,21 +18,37 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(dialog).toContain("fetch('/api/friends'");
   });
 
-  it('완료된 여정 전체 또는 완료된 자유 읽기 장만 선물 범위로 고른다', () => {
+  it('완료된 말씀 선물 전송창에서 BGM과 음량을 다시 선택한다', () => {
+    expect(dialog).toContain('selectedBgmId');
+    expect(dialog).toContain('selectedBgmVolume');
+    expect(dialog).toContain('선물 BGM');
+    expect(dialog).toContain('BGM 음량 낮추기');
+    expect(dialog).toContain('BGM 음량 높이기');
+  });
+
+  it('전송 완료 안내에는 사용자가 입력한 선물 이름을 표시한다', () => {
+    expect(dialog).toContain('onSent(selectedFriend.nickname, giftTitle.trim())');
+    expect(page).toContain('onSent={(nickname, sentTitle) =>');
+    expect(page).toContain('‘${sentTitle}’ 녹음과 BGM');
+  });
+
+  it('진행 중 듣기 화면에는 선물 버튼을 두지 않고 완료를 먼저 확인한다', () => {
     expect(page).toContain('여정을 완료하면 선물할 수 있어요');
     expect(page).toContain('완료된 장만 선택할 수 있어요');
     expect(page).toContain('giftableFreeChapterGroups');
     expect(page).toContain('evaluateGiftSelection');
-    expect(page).toContain('disabled={!giftQueue.length || chapterPlaying}');
+    expect(page).not.toContain('className="chapter-gift-trigger"');
+    expect(page).toContain('여정을 완료하시겠습니까?');
   });
 
-  it('선물 탭에서 받은 선물을 이어듣고 MP3로 다운로드하고 삭제한다', () => {
+  it('선물 탭에서 받은 선물을 이어듣고 MP4로 다운로드하고 삭제한다', () => {
     expect(page).toContain("navigateTo('gifts')");
-    expect(page).toContain("appTab === 'gifts' && <GiftsPanel");
+    expect(page).toContain("appTab === 'gifts' && (");
+    expect(page).toContain('<GiftsPanel');
     expect(panel).toContain('이어듣기');
     expect(panel).toContain('다운로드');
-    expect(panel).toContain('createGiftMp3');
-    expect(panel).toContain('MP3 만드는 중');
+    expect(panel).toContain('createGiftMp4');
+    expect(panel).toContain('MP4 만드는 중');
     expect(panel).not.toContain('/download`} download');
     expect(panel).toContain("method: 'DELETE'");
   });
@@ -45,12 +61,22 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('열어봄');
     expect(panel).toContain('열어보기 전');
     expect(panel).toContain('window.setInterval');
+    expect(panel).toContain('보낸 선물 삭제');
+    expect(panel).toContain('받는 사람의 선물은 그대로 유지돼요');
+  });
+
+  it('방금 보낸 선물로 진입하면 보낸 선물 탭과 해당 상세를 바로 연다', () => {
+    expect(panel).toContain('initialSentGiftId?: string | null');
+    expect(panel).toContain("useState<'received' | 'sent'>(initialSentGiftId ? 'sent' : 'received')");
+    expect(panel).toContain('useState<string | null>(initialSentGiftId ?? null)');
   });
 
   it('받은 사람이 BGM 음량을 조절하고 감사 인사를 보낼 수 있다', () => {
     expect(panel).toContain('선물 BGM 음량');
+    expect(panel).toContain('받은 선물 BGM 음량 낮추기');
+    expect(panel).toContain('받은 선물 BGM 음량 높이기');
     expect(panel).toContain('giftVolumes');
-    expect(panel).toContain('bgmAudio.volume = selectedVolume / 100');
+    expect(panel).toContain('bgmAudio.volume = toAudibleBgmGain(selectedVolume)');
     expect(panel).toContain('bgmVolume: giftVolumes[gift.id] ?? gift.bgmVolume');
     expect(panel).toContain('감사 인사 보내기');
     expect(panel).toContain('THANK_YOU_TEMPLATES');
@@ -72,6 +98,13 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('openingGiftId');
   });
 
+  it('선물을 열면 읽은 목록으로 갑자기 보내지 않고 그 자리에서 상세와 녹음 목록을 연다', () => {
+    expect(panel).toContain('justOpenedGiftId');
+    expect(panel).toContain("title: '방금 열어본 선물'");
+    expect(panel).toContain('setDetailGiftId(gift.id)');
+    expect(panel).toContain("current.includes(gift.id) ? current : [...current, gift.id]");
+  });
+
   it('선물과 선물 속 녹음은 발신자·수신자·순서를 영구 저장한다', () => {
     expect(schema).toContain("sqliteTable(\n  'gifts'");
     expect(schema).toContain("sqliteTable(\n  'gift_recordings'");
@@ -88,5 +121,7 @@ describe('말씀 선물 UI·데이터 회귀', () => {
   it('받은 사람이 선물을 삭제해도 보낸 선물 기록은 남긴다', () => {
     expect(deleteRoute).toContain('UPDATE gifts SET recipient_deleted_at');
     expect(deleteRoute).not.toContain("prepare('DELETE FROM gifts");
+    expect(panel).not.toContain('recipientDeletedAt');
+    expect(panel).not.toContain('선물함에서 삭제됨');
   });
 });

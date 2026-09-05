@@ -111,11 +111,11 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
     expect(mocks.r2Delete).not.toHaveBeenCalled();
   });
 
-  it('완료되어 잠긴 말씀은 교체하거나 삭제하지 않는다', async () => {
+  it('완료되어 잠긴 말씀은 교체할 수 없지만 언제든 삭제할 수 있다', async () => {
     mocks.mutationLocked.mockResolvedValue(true);
     expect((await PUT(replacementRequest(), context)).status).toBe(409);
-    expect((await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context)).status).toBe(409);
+    expect((await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context)).status).toBe(200);
     expect(mocks.r2Put).not.toHaveBeenCalled();
-    expect(mocks.r2Delete).not.toHaveBeenCalled();
+    expect(mocks.r2Delete).toHaveBeenCalledWith('user-1/recording-1');
   });
 });

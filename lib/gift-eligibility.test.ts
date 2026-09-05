@@ -21,19 +21,37 @@ function chapterRecordings(book: string, chapter: number, verseCount: number, pr
 }
 
 describe('완료된 말씀 선물 정책', () => {
-  it('매일 말씀 읽기는 여정 전체가 끝났을 때만 전체를 선물한다', () => {
-    const projects: GiftPolicyProject[] = [{ id: 'daily-1', kind: 'guided', tasks: ['시편 23편 1–2절'] }];
+  it('완료된 말씀 여정은 절이 아니라 완성된 말씀 묶음 전체로 선물한다', () => {
+    const projects: GiftPolicyProject[] = [{ id: 'daily-1', kind: 'guided', tasks: ['시편 23편 1–2절'], completedAt: 100 }];
     const recordings: GiftPolicyRecording[] = [
       { id: 'r1', projectId: 'daily-1', book: '시편', chapter: 23, verse: 1 },
       { id: 'r2', projectId: 'daily-1', book: '시편', chapter: 23, verse: 2 },
     ];
 
-    expect(evaluateGiftSelection({ recordings, projects, selectedRecordingIds: ['r1'], chapterCounts }).eligible).toBe(false);
+    expect(evaluateGiftSelection({ recordings, projects, selectedRecordingIds: ['r1'], chapterCounts })).toMatchObject({ eligible: false });
     expect(evaluateGiftSelection({ recordings, projects, selectedRecordingIds: ['r2', 'r1'], chapterCounts })).toMatchObject({
       eligible: true,
       kind: 'journey',
       orderedRecordingIds: ['r1', 'r2'],
     });
+  });
+
+  it('완료된 말씀 묶음을 둘 이상 골라 하나의 선물로 보낸다', () => {
+    const recordings: GiftPolicyRecording[] = [
+      { id: 'r1', projectId: 'daily-1', book: '시편', chapter: 23, verse: 1 },
+      { id: 'r2', projectId: 'daily-2', book: '요한복음', chapter: 3, verse: 16 },
+    ];
+    const projects: GiftPolicyProject[] = [
+      { id: 'daily-1', kind: 'guided', tasks: ['시편 23편 1절'], completedAt: 100 },
+      { id: 'daily-2', kind: 'guided', tasks: ['요한복음 3장 16절'], completedAt: 200 },
+    ];
+    expect(evaluateGiftSelection({ recordings, projects, selectedRecordingIds: ['r1', 'r2'], chapterCounts })).toMatchObject({ eligible: true, orderedRecordingIds: ['r1', 'r2'] });
+  });
+
+  it('여정 자체가 완료되지 않았다면 녹음 일부를 선물할 수 없다', () => {
+    const projects: GiftPolicyProject[] = [{ id: 'daily-1', kind: 'guided', tasks: ['시편 23편 1–2절'] }];
+    const recordings: GiftPolicyRecording[] = [{ id: 'r1', projectId: 'daily-1', book: '시편', chapter: 23, verse: 1 }];
+    expect(evaluateGiftSelection({ recordings, projects, selectedRecordingIds: ['r1'], chapterCounts })).toMatchObject({ eligible: false });
   });
 
   it('성경 읽기는 완성된 장만 기본 단위로 선물한다', () => {
@@ -65,16 +83,18 @@ describe('완료된 말씀 선물 정책', () => {
     expect(evaluateGiftSelection({ recordings, projects: [], selectedRecordingIds: recordings.map((item) => item.id), chapterCounts }).eligible).toBe(false);
   });
 
-  it('완료된 여정과 자유 읽기 장의 녹음은 수정할 수 없게 잠근다', () => {
+  it('녹음을 모두 마쳐도 완료 확정 전에는 수정할 수 있고 확정 후에만 잠근다', () => {
     const guided: GiftPolicyRecording[] = [
       { id: 'r1', projectId: 'daily-1', book: '시편', chapter: 23, verse: 1 },
       { id: 'r2', projectId: 'daily-1', book: '시편', chapter: 23, verse: 2 },
     ];
     const projects: GiftPolicyProject[] = [{ id: 'daily-1', kind: 'guided', tasks: ['시편 23편 1–2절'] }];
-    expect(isRecordingScopeLocked(guided[0], guided, projects, chapterCounts)).toBe(true);
+    expect(isRecordingScopeLocked(guided[0], guided, projects, chapterCounts)).toBe(false);
+    expect(isRecordingScopeLocked(guided[0], guided, [{ ...projects[0], completedAt: 100 }], chapterCounts)).toBe(true);
 
     const free = chapterRecordings('오바댜', 1, 21, 'free-옵');
-    expect(isRecordingScopeLocked(free[0], free, [], chapterCounts)).toBe(true);
+    expect(isRecordingScopeLocked(free[0], free, [], chapterCounts)).toBe(false);
+    expect(isRecordingScopeLocked(free[0], free, [{ id: 'free-옵', kind: 'free', completedAt: 100 }], chapterCounts)).toBe(true);
     expect(isRecordingScopeLocked(free[0], free.slice(0, 20), [], chapterCounts)).toBe(false);
   });
 });

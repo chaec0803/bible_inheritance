@@ -24,12 +24,17 @@ export function readAccessToken(request: Request) {
 export async function authenticateRequest(request: Request): Promise<AuthenticatedUser | null> {
   const token = readAccessToken(request);
   const { SUPABASE_URL: url, SUPABASE_PUBLISHABLE_KEY: key } = env as SupabaseEnv;
-  if (!token || !url || !key) return null;
+  if (token && url && key) {
+    const response = await fetch(`${url}/auth/v1/user`, {
+      headers: { apikey: key, Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return null;
+    const user = (await response.json()) as { id?: string; email?: string; user_metadata?: Record<string, unknown> };
+    return typeof user.id === 'string' ? { id: user.id, email: user.email, metadata: user.user_metadata } : null;
+  }
+  if (token) return null;
 
-  const response = await fetch(`${url}/auth/v1/user`, {
-    headers: { apikey: key, Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) return null;
-  const user = (await response.json()) as { id?: string; email?: string; user_metadata?: Record<string, unknown> };
-  return typeof user.id === 'string' ? { id: user.id, email: user.email, metadata: user.user_metadata } : null;
+  const sitesUserId = request.headers.get('oai-authenticated-user-id');
+  const sitesEmail = request.headers.get('oai-authenticated-user-email');
+  return sitesUserId ? { id: sitesUserId, email: sitesEmail ?? undefined } : null;
 }

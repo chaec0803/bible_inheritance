@@ -16,7 +16,7 @@ async function syncServerSession(session: Session | null) {
   });
 }
 
-export function AuthGate({ children }: AuthGateProps) {
+function SupabaseAuthGate({ children }: AuthGateProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -26,6 +26,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    if (!supabase) return;
     let active = true;
     void supabase.auth.getSession().then(async ({ data }) => {
       if (!active) return;
@@ -48,6 +49,7 @@ export function AuthGate({ children }: AuthGateProps) {
     event.preventDefault();
     setSubmitting(true);
     setMessage('');
+    if (!supabase) return;
     const result = mode === 'login'
       ? await supabase.auth.signInWithPassword({ email, password })
       : await supabase.auth.signUp({ email, password });
@@ -57,6 +59,7 @@ export function AuthGate({ children }: AuthGateProps) {
   };
 
   const signInWithGoogle = async () => {
+    if (!supabase) return;
     setSubmitting(true);
     setMessage('');
     const { error } = await supabase.auth.signInWithOAuth({
@@ -67,6 +70,7 @@ export function AuthGate({ children }: AuthGateProps) {
   };
 
   const signOut = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
     await syncServerSession(null);
   };
@@ -93,4 +97,24 @@ export function AuthGate({ children }: AuthGateProps) {
       </section>
     </main>
   );
+}
+
+function SitesAuthGate({ children }: AuthGateProps) {
+  const [session, setSession] = useState<Session | null>(null);
+  useEffect(() => {
+    void fetch('/api/auth/session').then(async (response) => {
+      if (!response.ok) {
+        window.location.assign('/signin-with-chatgpt?return_to=/');
+        return;
+      }
+      const payload = await response.json() as { user: { id: string; email?: string } };
+      setSession({ user: { id: payload.user.id, email: payload.user.email }, access_token: '', token_type: 'bearer', expires_in: 0, expires_at: 0, refresh_token: '' } as Session);
+    });
+  }, []);
+  if (!session) return <main className="auth-shell"><LoaderCircle className="spin" /><p>로컬 로그인 정보를 확인하고 있어요.</p></main>;
+  return <>{children(session, async () => { window.location.assign('/signout-with-chatgpt?return_to=/'); })}</>;
+}
+
+export function AuthGate(props: AuthGateProps) {
+  return supabase ? <SupabaseAuthGate {...props} /> : <SitesAuthGate {...props} />;
 }

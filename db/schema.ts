@@ -71,6 +71,20 @@ export const friendships = sqliteTable(
   ],
 );
 
+export const friendBlocks = sqliteTable(
+  'friend_blocks',
+  {
+    id: text('id').primaryKey(),
+    blockerKey: text('blocker_key').notNull(),
+    blockedKey: text('blocked_key').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_friend_blocks_pair').on(table.blockerKey, table.blockedKey),
+    index('idx_friend_blocks_blocked').on(table.blockedKey),
+  ],
+);
+
 export const gifts = sqliteTable(
   'gifts',
   {
@@ -85,6 +99,7 @@ export const gifts = sqliteTable(
     createdAt: integer('created_at').notNull(),
     openedAt: integer('opened_at'),
     recipientDeletedAt: integer('recipient_deleted_at'),
+    senderDeletedAt: integer('sender_deleted_at'),
     thankYouNote: text('thank_you_note'),
     thankedAt: integer('thanked_at'),
   },
@@ -116,4 +131,25 @@ export const giftRecordings = sqliteTable(
     index('idx_gift_recordings_gift').on(table.giftId),
     index('idx_gift_recordings_source').on(table.sourceRecordingId),
   ],
+);
+
+export const giftDrafts = sqliteTable(
+  'gift_drafts',
+  {
+    id: text('id').primaryKey(), ownerKey: text('owner_key').notNull(), recipientKey: text('recipient_key').notNull(),
+    title: text('title').notNull(), bgmId: text('bgm_id').notNull().default('none'), bgmVolume: integer('bgm_volume').notNull().default(12),
+    createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(), sentGiftId: text('sent_gift_id'),
+  },
+  (table) => [index('idx_gift_drafts_owner_updated').on(table.ownerKey, table.updatedAt)],
+);
+
+export const giftDraftItems = sqliteTable(
+  'gift_draft_items',
+  {
+    id: text('id').primaryKey(), draftId: text('draft_id').notNull(), position: integer('position').notNull(),
+    book: text('book').notNull(), chapter: integer('chapter').notNull(), verse: integer('verse').notNull(), verseText: text('verse_text').notNull(),
+    sourceRecordingId: text('source_recording_id'), objectKey: text('object_key').unique(), mimeType: text('mime_type').notNull().default(''),
+    sizeBytes: integer('size_bytes').notNull().default(0), durationSeconds: integer('duration_seconds').notNull().default(0),
+  },
+  (table) => [uniqueIndex('idx_gift_draft_items_position').on(table.draftId, table.position), index('idx_gift_draft_items_draft').on(table.draftId)],
 );

@@ -50,6 +50,12 @@ export function ensureDbSchema() {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS friend_blocks (
+      id TEXT PRIMARY KEY NOT NULL,
+      blocker_key TEXT NOT NULL,
+      blocked_key TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gifts (
       id TEXT PRIMARY KEY NOT NULL,
       sender_key TEXT NOT NULL,
@@ -62,6 +68,7 @@ export function ensureDbSchema() {
       created_at INTEGER NOT NULL,
       opened_at INTEGER,
       recipient_deleted_at INTEGER,
+      sender_deleted_at INTEGER,
       thank_you_note TEXT,
       thanked_at INTEGER
     )`),
@@ -79,6 +86,17 @@ export function ensureDbSchema() {
       size_bytes INTEGER NOT NULL,
       duration_seconds INTEGER NOT NULL
     )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_drafts (
+      id TEXT PRIMARY KEY NOT NULL, owner_key TEXT NOT NULL, recipient_key TEXT NOT NULL,
+      title TEXT NOT NULL, bgm_id TEXT NOT NULL DEFAULT 'none', bgm_volume INTEGER NOT NULL DEFAULT 12,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, sent_gift_id TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_draft_items (
+      id TEXT PRIMARY KEY NOT NULL, draft_id TEXT NOT NULL, position INTEGER NOT NULL,
+      book TEXT NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, verse_text TEXT NOT NULL,
+      source_recording_id TEXT, object_key TEXT UNIQUE, mime_type TEXT NOT NULL DEFAULT '',
+      size_bytes INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 0
+    )`),
   ]).then(async () => {
     const columns = await env.DB.prepare('PRAGMA table_info(recordings)').all<{ name: string }>();
     const names = new Set(columns.results.map((column) => column.name));
@@ -95,6 +113,9 @@ export function ensureDbSchema() {
     }
     if (!giftColumns.results.some((column) => column.name === 'recipient_deleted_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN recipient_deleted_at INTEGER').run();
+    }
+    if (!giftColumns.results.some((column) => column.name === 'sender_deleted_at')) {
+      await env.DB.prepare('ALTER TABLE gifts ADD COLUMN sender_deleted_at INTEGER').run();
     }
     if (!giftColumns.results.some((column) => column.name === 'thank_you_note')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN thank_you_note TEXT').run();
@@ -120,12 +141,17 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_pair ON friendships(user_a_key, user_b_key)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_a_status ON friendships(user_a_key, status)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friendships_user_b_status ON friendships(user_b_key, status)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_friend_blocks_pair ON friend_blocks(blocker_key, blocked_key)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friend_blocks_blocked ON friend_blocks(blocked_key)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_recipient_created ON gifts(recipient_key, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_sender_created ON gifts(sender_key, created_at)'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gifts_one_unopened_per_pair ON gifts(sender_key, recipient_key) WHERE opened_at IS NULL'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_recordings_position ON gift_recordings(gift_id, position)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_gift ON gift_recordings(gift_id)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_source ON gift_recordings(source_recording_id)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_drafts_owner_updated ON gift_drafts(owner_key, updated_at)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_draft_items_position ON gift_draft_items(draft_id, position)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_draft_items_draft ON gift_draft_items(draft_id)'),
     ]);
     await env.DB.prepare('PRAGMA optimize').run();
   }).catch((error) => {
