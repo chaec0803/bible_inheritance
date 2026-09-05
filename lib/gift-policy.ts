@@ -1,3 +1,5 @@
+import { normalizeGiftLetter } from './gift-letter';
+
 export const GIFT_BGM_CATALOG = {
   'still-waters': { name: 'Aeternum', audioSrc: '/api/bgm/aeternum?v=3', objectKey: 'bgm/aeternum.mp3' },
   'peaceful-morning': { name: 'Unto Thee', audioSrc: '/api/bgm/unto-thee?v=3', objectKey: 'bgm/unto-thee.mp3' },
@@ -13,6 +15,7 @@ export type GiftRequest = {
   title: string;
   bgmId: GiftBgmId;
   bgmVolume: number;
+  letter: import('./gift-letter').GiftLetterInput;
 };
 
 export function normalizeGiftRequest(input: unknown): GiftRequest | null {
@@ -26,7 +29,8 @@ export function normalizeGiftRequest(input: unknown): GiftRequest | null {
   const recordingIds = [...new Set((rawIds as string[]).map((value) => value.trim()))];
   const rawVolume = typeof body.bgmVolume === 'number' && Number.isFinite(body.bgmVolume) ? body.bgmVolume : 12;
   const bgmVolume = Math.max(0, Math.min(100, Math.round(rawVolume)));
+  const letter = normalizeGiftLetter(body.letter);
 
-  if (!recipientUserId || !title || !bgmId || recordingIds.length === 0 || recordingIds.length > 40_000) return null;
-  return { recipientUserId, recordingIds, title, bgmId, bgmVolume };
+  if (!recipientUserId || !title || !bgmId || !letter || recordingIds.length === 0 || recordingIds.length > 40_000) return null;
+  return { recipientUserId, recordingIds, title, bgmId, bgmVolume, letter };
 }

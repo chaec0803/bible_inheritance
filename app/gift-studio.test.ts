@@ -168,6 +168,12 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('BGM을 재생할 수 없어요');
   });
 
+  it('음악 선택 뒤 선택적인 편지를 덧붙여 함께 전송한다', () => {
+    expect(studio).toContain('<GiftLetterComposer');
+    expect(studio).toContain('body: JSON.stringify({ letter:');
+    expect(studio).toContain("setLetter({ type: 'none' })");
+  });
+
   it('전체 미리 듣기는 모든 녹음과 선택한 BGM을 설정 음량으로 함께 재생한다', () => {
     expect(studio).toContain('playFullGiftPreview');
     expect(studio).toContain('fullPreviewVoiceRef');
@@ -181,7 +187,10 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('선물 이름');
     expect(studio).toContain('maxLength={100}');
     expect(studio).toContain('saveTitle');
-    expect(studio).toContain('value={giftTitle || defaultGiftTitle()}');
+    expect(studio).toContain('value={giftTitleEdited ? giftTitle : defaultGiftTitle()}');
+    expect(studio).toContain('setGiftTitleEdited(true)');
+    expect(studio).toContain("const resolvedGiftTitle = giftTitleEdited ? giftTitle.trim() : defaultGiftTitle()");
+    expect(studio).not.toContain('value={giftTitle || defaultGiftTitle()}');
     expect(studio).toContain('title: resolvedGiftTitle');
     expect(studio).toContain("return `${name} ${scope.chapter}${name === '시편' ? '편' : '장'}`");
     expect(draftsRoute).toContain("typeof body?.title === 'string'");

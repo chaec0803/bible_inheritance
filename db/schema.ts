@@ -103,6 +103,13 @@ export const gifts = sqliteTable(
     senderDeletedAt: integer('sender_deleted_at'),
     thankYouNote: text('thank_you_note'),
     thankedAt: integer('thanked_at'),
+    letterType: text('letter_type'),
+    letterText: text('letter_text'),
+    letterObjectKey: text('letter_object_key').unique(),
+    letterMimeType: text('letter_mime_type'),
+    letterSizeBytes: integer('letter_size_bytes'),
+    letterDurationSeconds: integer('letter_duration_seconds'),
+    letterOpenedAt: integer('letter_opened_at'),
   },
   (table) => [
     index('idx_gifts_recipient_created').on(table.recipientKey, table.createdAt),

@@ -30,6 +30,12 @@ type ReceivedGift = {
   openedAt: number | null;
   thankYouNote: string | null;
   thankedAt: number | null;
+  hasLetter: boolean;
+  letterType: 'text' | 'voice' | null;
+  letterOpenedAt: number | null;
+  letterText: string | null;
+  letterMimeType: string | null;
+  letterDurationSeconds: number | null;
   recordings: GiftRecording[];
 };
 
@@ -45,6 +51,8 @@ type SentGift = {
   openedAt: number | null;
   thankYouNote: string | null;
   thankedAt: number | null;
+  hasLetter: boolean;
+  letterType: 'text' | 'voice' | null;
 };
 
 type GiftInboxPayload = {
@@ -92,6 +100,7 @@ export function GiftsPanel({
   const [justOpenedGiftId, setJustOpenedGiftId] = useState<string | null>(null);
   const [detailSentGiftId, setDetailSentGiftId] = useState<string | null>(initialSentGiftId ?? null);
   const [sendingThankYou, setSendingThankYou] = useState(false);
+  const [openingLetterId, setOpeningLetterId] = useState<string | null>(null);
   const voiceRef = useRef<HTMLAudioElement | null>(null);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   const sentGiftsRef = useRef<SentGift[]>([]);
@@ -371,6 +380,28 @@ export function GiftsPanel({
     }
   };
 
+  const openLetter = async (gift: ReceivedGift) => {
+    if (!gift.hasLetter || openingLetterId) return;
+    setOpeningLetterId(gift.id);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/gifts/${gift.id}/letter/open`, { method: 'PATCH' });
+      const payload = await response.json() as { letter?: { type: 'text' | 'voice'; text: string | null; mimeType: string | null; durationSeconds: number | null; openedAt: number }; error?: string };
+      if (!response.ok || !payload.letter) throw new Error(payload.error ?? '쪽지를 열지 못했어요.');
+      setReceivedGifts((current) => current.map((candidate) => candidate.id === gift.id ? {
+        ...candidate,
+        letterOpenedAt: payload.letter!.openedAt,
+        letterText: payload.letter!.text,
+        letterMimeType: payload.letter!.mimeType,
+        letterDurationSeconds: payload.letter!.durationSeconds,
+      } : candidate));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '쪽지를 열지 못했어요.');
+    } finally {
+      setOpeningLetterId(null);
+    }
+  };
+
   return (
     <section className="gifts-section" aria-labelledby="gifts-title">
       <button className="section-route-back" type="button" onClick={onBack}><ChevronLeft size={17} /> 뒤로가기</button>
@@ -397,6 +428,10 @@ export function GiftsPanel({
                 <button type="button" disabled={Boolean(openingGiftId)} onClick={() => void openGift(gift)}>{openingGiftId === gift.id ? <LoaderCircle className="spin" size={18} /> : <Gift size={18} />}{openingGiftId === gift.id ? '선물 여는 중' : '선물 열기'}</button>
               </div> : detailOpen ? <>
                 <div className="gift-card-tags"><span><Headphones size={13} /> {gift.recordingCount}개 녹음</span><span><Music2 size={13} /> {giftBgm.name}</span></div>
+                {gift.hasLetter && <section className={`gift-letter-envelope ${gift.letterOpenedAt ? 'opened' : ''}`}>
+                  <div><MessageCircle size={20} /><span><strong>함께 온 쪽지가 있어요</strong><small>{gift.letterOpenedAt ? (gift.letterType === 'voice' ? '목소리로 전한 마음' : '글로 전한 마음') : '직접 열어보기 전까지 내용은 비밀이에요.'}</small></span></div>
+                  {!gift.letterOpenedAt ? <button type="button" disabled={openingLetterId === gift.id} onClick={() => void openLetter(gift)}>{openingLetterId === gift.id ? <LoaderCircle className="spin" size={16} /> : <Gift size={16} />}{openingLetterId === gift.id ? '쪽지 여는 중' : '쪽지 열어보기'}</button> : gift.letterType === 'text' ? <blockquote>{gift.letterText}</blockquote> : <div className="gift-voice-letter">{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls src={`/api/gifts/${gift.id}/letter/audio`} /><small>{gift.letterDurationSeconds ? `${gift.letterDurationSeconds}초 음성 편지` : '음성 편지'}</small></div>}
+                </section>}
                 {giftBgm.audioSrc && <div className="gift-volume-control">
                   <span><Volume2 size={16} /> 선물 BGM 음량 <strong>{giftVolume}%</strong></span>
                   <div className="gift-volume-input-row">
@@ -440,6 +475,7 @@ export function GiftsPanel({
               <button className="gift-card-header" type="button" onClick={() => setDetailSentGiftId(detailOpen ? null : gift.id)}><span><Gift size={18} /></span><div><small>{gift.recipientNickname}님에게 · {formatGiftDate(gift.createdAt)}</small><h3>{gift.title}</h3></div></button>
               {detailOpen && <>
               <div className="gift-card-tags"><span><Headphones size={13} /> {gift.recordingCount}개 녹음</span><span><Music2 size={13} /> {giftBgm.name} · {gift.bgmVolume}%</span></div>
+              {gift.hasLetter && <div className="sent-gift-letter-tag"><MessageCircle size={15} /> {gift.letterType === 'voice' ? '음성 편지' : '텍스트 편지'}를 함께 보냈어요</div>}
               <div className={`sent-gift-status ${opened ? 'opened' : ''}`}><span>{status}</span><p>{opened && gift.openedAt ? `열어본 시간 · ${formatGiftDateTime(gift.openedAt)}` : `${gift.recipientNickname}님이 열어보기를 기다리고 있어요.`}</p></div>
               {gift.thankYouNote && <div className="sent-thank-you-note"><MessageCircle size={18} /><div><strong>감사 인사가 도착했어요</strong><blockquote>{gift.thankYouNote}</blockquote>{gift.thankedAt && <small>{formatGiftDateTime(gift.thankedAt)}</small>}</div></div>}
               <button className="completed-journey-delete" type="button" disabled={deletingGiftId === gift.id} onClick={() => void deleteSentGift(gift)}><Trash2 size={15} /> {deletingGiftId === gift.id ? '삭제 중' : '보낸 선물 삭제'}</button>

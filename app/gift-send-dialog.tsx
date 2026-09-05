@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Check, Gift, LoaderCircle, Music2, Send, Users, X } from 'lucide-react';
 import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
+import type { GiftLetterInput } from '@/lib/gift-letter';
+import { GiftLetterComposer } from './gift-letter-composer';
 
 type FriendPerson = { userId: string; nickname: string; emailHint: string };
 type FriendsPayload = { friends: FriendPerson[]; error?: string };
@@ -28,6 +30,7 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose,
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState('');
+  const [letter, setLetter] = useState<GiftLetterInput>({ type: 'none' });
 
   useEffect(() => {
     let active = true;
@@ -52,7 +55,7 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose,
       const response = await fetch('/api/gifts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientUserId: selectedFriend.userId, recordingIds, title: giftTitle.trim(), bgmId: selectedBgmId, bgmVolume: selectedBgmVolume }),
+        body: JSON.stringify({ recipientUserId: selectedFriend.userId, recordingIds, title: giftTitle.trim(), bgmId: selectedBgmId, bgmVolume: selectedBgmVolume, letter: letter.type === 'text' && !letter.text.trim() ? { type: 'none' } : letter }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? '선물을 보내지 못했어요.');
@@ -92,6 +95,8 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose,
             <button type="button" aria-label="BGM 음량 높이기" disabled={sending || selectedBgmVolume === 100} onClick={() => setSelectedBgmVolume((current) => Math.min(100, current + 5))}>+</button>
           </div>
         </div>
+
+        <GiftLetterComposer value={letter} disabled={sending} onChange={setLetter} />
 
         {loading ? <div className="gift-friend-state"><LoaderCircle className="spin" size={25} /><strong>친구를 불러오고 있어요</strong></div> : friends.length ? (
           <div className="gift-friend-list" aria-label="선물을 받을 친구">

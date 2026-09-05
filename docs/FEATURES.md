@@ -164,6 +164,15 @@
 - 여러 선물의 CTA는 도착 확인을 한 번에 저장한 뒤 받은 선물함으로 이동해 각각 열도록 한다.
 - 닫기 또한 도착 안내 확인으로 저장해 다음 앱 실행에서 같은 모달을 반복하지 않는다.
 
+## 13. 말씀 선물 편지
+
+- 두 선물 전송 경로 모두 편지 없이 보내기, 최대 500자의 텍스트 편지, 최대 90초·5MB의 음성 편지 중 하나를 선택한다.
+- 음성 편지는 녹음 후 재생, 재녹음, 확정을 거쳐 선물과 함께 R2에 저장한다.
+- 수신 목록은 쪽지의 존재와 종류만 알리고, `쪽지 열어보기` 전에는 텍스트 내용과 음성 스트리밍을 모두 숨긴다.
+- 쪽지를 직접 열면 별도의 `letter_opened_at`을 기록하고 텍스트 또는 수신자 전용 음성 플레이어를 표시한다.
+- 음성 쪽지는 로그인한 수신자가 쪽지를 연 뒤에만 구간 스트리밍할 수 있으며 private/no-store로 제공한다.
+- 쪽지를 확인한 뒤 같은 선물 카드에서 기존 말씀 이어듣기, BGM, 다운로드 흐름을 계속 사용한다.
+
 ## 자동 회귀 테스트 범위
 
 - `app/bible-metadata.test.ts`: 66권 데이터 파일, 장 수, 절 수, 빈 본문 검증.
@@ -174,6 +183,7 @@
 - `lib/gift-policy.test.ts`, `lib/zip.test.ts`, `app/gifts.test.ts`, `app/api/gifts/*.integration.test.ts`: 선물 묶음 순서, BGM, 친구·소유권, 수신자 접근, 이어듣기 UI, ZIP 다운로드, 삭제 검증.
 - `lib/gift-draft.test.ts`, `app/gift-studio.test.ts`, `app/api/gift-drafts/*.integration.test.ts`: 선물 말씀 범위 정규화, 절 순서와 상한, 초안 진행 상태, 초안 격리, 절별 재녹음, 전송 시 친구·미개봉 검증.
 - `lib/gift-arrival.test.ts`, `app/gift-arrival.test.ts`, `app/api/gifts/arrivals/route.test.ts`: 전역 감지, 녹음 중 보류, 중복 합치기, 다중 선물 요약, 도착 확인 상태와 권한 검증.
+- `lib/gift-letter.test.ts`, `app/api/gifts/[id]/letter/**/*.test.ts`, 선물 API 통합 테스트: 편지 유형·크기 제한, 텍스트 사전 노출 방지, 음성 저장·개봉·수신자 전용 구간 스트리밍 검증.
 - 빌드·정적 검사: TypeScript, oxlint, 프로덕션 번들, diff whitespace.
 - 브라우저 스모크: 홈 시작, 테마, 주요 진입점, 성경/장 선택, 여정 목록, 녹음/듣기 기본 UI.
 

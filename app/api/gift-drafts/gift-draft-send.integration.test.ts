@@ -52,8 +52,8 @@ import { POST } from './[id]/send/route';
 
 const context = { params: Promise.resolve({ id: 'draft-1' }) };
 
-function sendRequest() {
-  return new Request('https://example.test/api/gift-drafts/draft-1/send', { method: 'POST' });
+function sendRequest(letter?: unknown) {
+  return new Request('https://example.test/api/gift-drafts/draft-1/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ letter }) });
 }
 
 function batchedStatements() {
@@ -106,6 +106,19 @@ describe('선물 초안 바로 보내기 API 통합 회귀', () => {
     const link = statements.find((statement) => statement.sql.includes('UPDATE gift_drafts SET sent_gift_id'));
     expect(link).toBeDefined();
     expect(link?.values).toContain('draft-1');
+  });
+
+  it('선물 스튜디오에서도 텍스트 또는 음성 편지를 함께 보낸다', async () => {
+    await POST(sendRequest({ type: 'text', text: '기도하는 마음으로 보내요.' }), context);
+    let gift = batchedStatements().find((statement) => statement.sql.includes('INSERT INTO gifts'))!;
+    expect(gift.values).toContain('text');
+    expect(gift.values).toContain('기도하는 마음으로 보내요.');
+
+    mocks.batch.mockClear(); mocks.statements = [];
+    await POST(sendRequest({ type: 'voice', dataUrl: 'data:audio/webm;base64,AQID', mimeType: 'audio/webm', sizeBytes: 3, durationSeconds: 3 }), context);
+    expect(mocks.r2Put).toHaveBeenCalledOnce();
+    gift = batchedStatements().find((statement) => statement.sql.includes('INSERT INTO gifts'))!;
+    expect(gift.values).toContain('voice');
   });
 
   it('모든 절을 녹음하기 전에는 보낼 수 없다', async () => {

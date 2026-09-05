@@ -4,6 +4,7 @@ import { ensureUserProfile } from '@/lib/friend-server';
 import { canonicalFriendPair } from '@/lib/friend-policy';
 import { evaluateGiftSelection } from '@/lib/gift-eligibility';
 import { normalizeGiftRequest } from '@/lib/gift-policy';
+import { decodeGiftLetterAudio } from '@/lib/gift-letter';
 import { loadRecordingCompletionContext } from '@/lib/recording-lock-server';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
@@ -31,6 +32,12 @@ type GiftRow = {
   opened_at: number | null;
   thank_you_note: string | null;
   thanked_at: number | null;
+  letter_type: 'text' | 'voice' | null;
+  letter_text: string | null;
+  letter_mime_type: string | null;
+  letter_size_bytes: number | null;
+  letter_duration_seconds: number | null;
+  letter_opened_at: number | null;
 };
 
 type SentGiftRow = Omit<GiftRow, 'sender_nickname' | 'recipient_deleted_at'> & {
@@ -61,6 +68,8 @@ export async function GET(request: Request) {
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
       gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
       gifts.thank_you_note, gifts.thanked_at,
+      gifts.letter_type, gifts.letter_text, gifts.letter_mime_type,
+      gifts.letter_size_bytes, gifts.letter_duration_seconds, gifts.letter_opened_at,
       user_profiles.nickname AS sender_nickname
     FROM gifts
     JOIN user_profiles ON user_profiles.owner_key = gifts.sender_key
@@ -74,6 +83,8 @@ export async function GET(request: Request) {
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
       gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
       gifts.thank_you_note, gifts.thanked_at,
+      gifts.letter_type, NULL AS letter_text, gifts.letter_mime_type,
+      gifts.letter_size_bytes, gifts.letter_duration_seconds, gifts.letter_opened_at,
       user_profiles.nickname AS recipient_nickname
     FROM gifts
     JOIN user_profiles ON user_profiles.owner_key = gifts.recipient_key
@@ -112,6 +123,12 @@ export async function GET(request: Request) {
         openedAt: gift.opened_at,
         thankYouNote: gift.thank_you_note,
         thankedAt: gift.thanked_at,
+        hasLetter: Boolean(gift.letter_type),
+        letterType: gift.letter_type,
+        letterOpenedAt: gift.letter_opened_at,
+        letterText: gift.letter_opened_at !== null && gift.letter_type === 'text' ? gift.letter_text : null,
+        letterMimeType: gift.letter_opened_at !== null && gift.letter_type === 'voice' ? gift.letter_mime_type : null,
+        letterDurationSeconds: gift.letter_opened_at !== null && gift.letter_type === 'voice' ? gift.letter_duration_seconds : null,
         recordings: recordingRows
           .filter((recording) => recording.gift_id === gift.id)
           .map((recording) => ({
@@ -138,6 +155,8 @@ export async function GET(request: Request) {
         openedAt: gift.opened_at,
         thankYouNote: gift.thank_you_note,
         thankedAt: gift.thanked_at,
+        hasLetter: Boolean(gift.letter_type),
+        letterType: gift.letter_type,
       })),
     });
   } catch (error) {
@@ -198,6 +217,12 @@ export async function POST(request: Request) {
 
   const giftId = crypto.randomUUID();
   const now = Date.now();
+  const letterObjectKey = giftRequest.letter.type === 'voice' ? `${user.id}/gift-letters/${giftId}` : null;
+  if (giftRequest.letter.type === 'voice') {
+    const bytes = decodeGiftLetterAudio(giftRequest.letter);
+    if (!bytes) return Response.json({ error: '음성 편지 파일을 다시 확인해 주세요.' }, { status: 400 });
+    await env.FILES.put(letterObjectKey!, bytes, { httpMetadata: { contentType: giftRequest.letter.mimeType } });
+  }
   const giftRecordings: Array<SourceRecordingRow & { id: string; position: number }> = recordings.map((recording, position) => ({ ...recording, id: crypto.randomUUID(), position }));
 
   try {
@@ -205,9 +230,16 @@ export async function POST(request: Request) {
     const statements = [
       d1.prepare(`INSERT INTO gifts (
         id, sender_key, recipient_key, title, bgm_id, bgm_volume,
-        recording_count, total_size_bytes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(giftId, user.id, giftRequest.recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now),
+        recording_count, total_size_bytes, created_at, letter_type, letter_text,
+        letter_object_key, letter_mime_type, letter_size_bytes, letter_duration_seconds
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(giftId, user.id, giftRequest.recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now,
+          giftRequest.letter.type === 'none' ? null : giftRequest.letter.type,
+          giftRequest.letter.type === 'text' ? giftRequest.letter.text : null,
+          letterObjectKey,
+          giftRequest.letter.type === 'voice' ? giftRequest.letter.mimeType : null,
+          giftRequest.letter.type === 'voice' ? giftRequest.letter.sizeBytes : null,
+          giftRequest.letter.type === 'voice' ? giftRequest.letter.durationSeconds : null),
       ...giftRecordings.map((recording) => d1.prepare(`INSERT INTO gift_recordings (
         id, gift_id, position, book, chapter, verse, verse_text,
         source_recording_id, object_key, mime_type, size_bytes, duration_seconds
@@ -218,6 +250,7 @@ export async function POST(request: Request) {
     return Response.json({ gift: { id: giftId, title: giftRequest.title, recordingCount: recordings.length } }, { status: 201 });
   } catch (error) {
     const d1 = getD1();
+    if (letterObjectKey) await env.FILES.delete(letterObjectKey).catch(() => undefined);
     await d1.batch([
       d1.prepare('DELETE FROM gift_recordings WHERE gift_id = ?').bind(giftId),
       d1.prepare('DELETE FROM gifts WHERE id = ?').bind(giftId),
@@ -230,3 +263,4 @@ export async function POST(request: Request) {
     return Response.json({ error: '말씀 선물을 보내지 못했습니다.' }, { status: 500 });
   }
 }
+import { env } from 'cloudflare:workers';

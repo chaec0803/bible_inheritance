@@ -24,7 +24,9 @@ import { bibleBooks } from './bible-metadata';
 import { BibleRangePicker } from './bible-range-picker';
 import { InProgressGifts, type InProgressGift } from './in-progress-gifts';
 import { FriendPickerModal, type FriendPickerPerson } from './friend-picker-modal';
+import { GiftLetterComposer } from './gift-letter-composer';
 import type { BibleRange } from '@/lib/bible-scope';
+import type { GiftLetterInput } from '@/lib/gift-letter';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
 import {
   GIFT_BGM_CATALOG,
@@ -127,10 +129,12 @@ export function GiftStudio({
   );
   const [giftBookSearch, setGiftBookSearch] = useState('');
   const [giftTitle, setGiftTitle] = useState('');
+  const [giftTitleEdited, setGiftTitleEdited] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [message, setMessage] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
+  const [letter, setLetter] = useState<GiftLetterInput>({ type: 'none' });
   const [sendSuccessGiftId, setSendSuccessGiftId] = useState<string | null>(
     null,
   );
@@ -260,7 +264,7 @@ export function GiftStudio({
     }
     return '말씀 선물';
   };
-  const resolvedGiftTitle = giftTitle.trim() || defaultGiftTitle();
+  const resolvedGiftTitle = giftTitleEdited ? giftTitle.trim() : defaultGiftTitle();
 
   const createDraft = async () => {
     setLoading(true);
@@ -508,6 +512,8 @@ export function GiftStudio({
     setSendError(null);
     const response = await fetch(`/api/gift-drafts/${draft.id}/send`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ letter: letter.type === 'text' && !letter.text.trim() ? { type: 'none' } : letter }),
     });
     const payload = await readPayload(response);
     if (!response.ok) {
@@ -519,6 +525,7 @@ export function GiftStudio({
       return;
     }
     setSendSuccessGiftId(payload.gift.id);
+    setLetter({ type: 'none' });
     setDraft(null);
     setStep('friend');
     await refresh();
@@ -841,9 +848,12 @@ export function GiftStudio({
               <input
                 type="text"
                 maxLength={100}
-                value={giftTitle || defaultGiftTitle()}
-                placeholder="예: 엄마에게 드리는 평안의 말씀"
-                onChange={(event) => setGiftTitle(event.currentTarget.value)}
+                value={giftTitleEdited ? giftTitle : defaultGiftTitle()}
+                placeholder="선물 이름을 입력해 주세요"
+                onChange={(event) => {
+                  setGiftTitleEdited(true);
+                  setGiftTitle(event.currentTarget.value);
+                }}
               />
               <small>이름을 정한 다음 녹음을 시작해요.</small>
             </label>
@@ -1219,6 +1229,7 @@ export function GiftStudio({
                     }
                   />
                 </label>
+                <GiftLetterComposer value={letter} disabled={loading} onChange={setLetter} />
                 <button
                   className="gift-send-button"
                   type="button"

@@ -8,6 +8,7 @@ const dialogUrl = new URL('./gift-send-dialog.tsx', import.meta.url);
 const panel = existsSync(panelUrl) ? readFileSync(panelUrl, 'utf8') : '';
 const dialog = existsSync(dialogUrl) ? readFileSync(dialogUrl, 'utf8') : '';
 const deleteRoute = readFileSync(new URL('./api/gifts/[id]/route.ts', import.meta.url), 'utf8');
+const letterComposer = readFileSync(new URL('./gift-letter-composer.tsx', import.meta.url), 'utf8');
 
 describe('말씀 선물 UI·데이터 회귀', () => {
   it('듣기 탭에서 현재 이어듣기 묶음과 선택한 BGM을 친구에게 보낸다', () => {
@@ -24,6 +25,18 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(dialog).toContain('선물 BGM');
     expect(dialog).toContain('BGM 음량 낮추기');
     expect(dialog).toContain('BGM 음량 높이기');
+  });
+
+  it('편지 없이 보내거나 텍스트·음성 편지 중 하나를 선택해 덧붙인다', () => {
+    expect(dialog).toContain('<GiftLetterComposer');
+    expect(letterComposer).toContain('편지 없이');
+    expect(letterComposer).toContain('텍스트 편지');
+    expect(letterComposer).toContain('음성 편지');
+    expect(letterComposer).toContain('녹음 시작');
+    expect(letterComposer).toContain("onClick={() => selectType('voice')}");
+    expect(letterComposer).toContain('음성 편지 확정');
+    expect(letterComposer).toContain('재녹음');
+    expect(letterComposer).toContain('<audio controls');
   });
 
   it('전송 완료 안내에는 사용자가 입력한 선물 이름을 표시한다', () => {
@@ -98,6 +111,14 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('openingGiftId');
   });
 
+  it('수신자는 쪽지가 있다는 사실만 본 뒤 직접 열어 텍스트나 음성을 확인한다', () => {
+    expect(panel).toContain('함께 온 쪽지가 있어요');
+    expect(panel).toContain('쪽지 열어보기');
+    expect(panel).toContain('/letter/open`');
+    expect(panel).toContain('/letter/audio`');
+    expect(panel).toContain('letterOpenedAt');
+  });
+
   it('선물을 열면 읽은 목록으로 갑자기 보내지 않고 그 자리에서 상세와 녹음 목록을 연다', () => {
     expect(panel).toContain('justOpenedGiftId');
     expect(panel).toContain("title: '방금 열어본 선물'");
@@ -114,6 +135,8 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(schema).toContain("recipientDeletedAt: integer('recipient_deleted_at')");
     expect(schema).toContain("thankYouNote: text('thank_you_note')");
     expect(schema).toContain("thankedAt: integer('thanked_at')");
+    expect(schema).toContain("letterType: text('letter_type')");
+    expect(schema).toContain("letterOpenedAt: integer('letter_opened_at')");
     expect(schema).toContain("uniqueIndex('idx_gift_recordings_position')");
     expect(schema).toContain("sourceRecordingId: text('source_recording_id')");
   });

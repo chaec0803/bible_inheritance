@@ -2,12 +2,25 @@ export function getSupportedMimeType() {
   return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
+export function createAudioContextCloser(context: Pick<AudioContext, 'state' | 'close'>) {
+  let closed = false;
+  return () => {
+    if (closed || context.state === 'closed') return;
+    closed = true;
+    try {
+      void context.close().catch(() => undefined);
+    } catch {
+      // 일부 브라우저는 이미 닫힌 컨텍스트에서 동기 예외를 던집니다.
+    }
+  };
+}
+
 export function createRecordingAudioGraph(stream: MediaStream) {
   const context = new AudioContext();
   const source = context.createMediaStreamSource(stream);
   const destination = context.createMediaStreamDestination();
   source.connect(destination);
-  return { context, source, destination, stream: destination.stream, close: () => void context.close() };
+  return { context, source, destination, stream: destination.stream, close: createAudioContextCloser(context) };
 }
 
 export function encodeAudioBufferAsWav(buffer: AudioBuffer) {

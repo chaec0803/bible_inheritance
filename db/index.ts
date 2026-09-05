@@ -71,7 +71,14 @@ export function ensureDbSchema() {
       recipient_deleted_at INTEGER,
       sender_deleted_at INTEGER,
       thank_you_note TEXT,
-      thanked_at INTEGER
+      thanked_at INTEGER,
+      letter_type TEXT,
+      letter_text TEXT,
+      letter_object_key TEXT UNIQUE,
+      letter_mime_type TEXT,
+      letter_size_bytes INTEGER,
+      letter_duration_seconds INTEGER,
+      letter_opened_at INTEGER
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_recordings (
       id TEXT PRIMARY KEY NOT NULL,
@@ -127,6 +134,15 @@ export function ensureDbSchema() {
     if (!giftColumns.results.some((column) => column.name === 'thanked_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN thanked_at INTEGER').run();
     }
+    for (const [name, definition] of [
+      ['letter_type', 'TEXT'], ['letter_text', 'TEXT'], ['letter_object_key', 'TEXT'],
+      ['letter_mime_type', 'TEXT'], ['letter_size_bytes', 'INTEGER'],
+      ['letter_duration_seconds', 'INTEGER'], ['letter_opened_at', 'INTEGER'],
+    ] as const) {
+      if (!giftColumns.results.some((column) => column.name === name)) {
+        await env.DB.prepare(`ALTER TABLE gifts ADD COLUMN ${name} ${definition}`).run();
+      }
+    }
     await env.DB.prepare(`UPDATE gifts
       SET opened_at = created_at
       WHERE opened_at IS NULL
@@ -150,6 +166,7 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_recipient_created ON gifts(recipient_key, created_at)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gifts_sender_created ON gifts(sender_key, created_at)'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gifts_one_unopened_per_pair ON gifts(sender_key, recipient_key) WHERE opened_at IS NULL'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS gifts_letter_object_key_unique ON gifts(letter_object_key)'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_recordings_position ON gift_recordings(gift_id, position)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_gift ON gift_recordings(gift_id)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_recordings_source ON gift_recordings(source_recording_id)'),

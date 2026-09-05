@@ -9,12 +9,14 @@ describe('말씀 선물 정책', () => {
       title: ' 시편 23편 ',
       bgmId: 'still-waters',
       bgmVolume: 18,
+      letter: { type: 'none' },
     })).toEqual({
       recipientUserId: 'friend-1',
       recordingIds: ['verse-2', 'verse-1'],
       title: '시편 23편',
       bgmId: 'still-waters',
       bgmVolume: 18,
+      letter: { type: 'none' },
     });
   });
 

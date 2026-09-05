@@ -33,6 +33,8 @@ vi.mock('@/db', () => ({
   getD1: () => ({
     prepare: (sql: string) => ({
       bind: (...values: unknown[]) => ({
+        sql,
+        values,
         first: async () => {
           mocks.statements.push({ sql, values });
           if (sql.includes('FROM friend_blocks')) return mocks.block;
@@ -101,6 +103,33 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(statements).toHaveLength(3);
     expect(mocks.r2Put).not.toHaveBeenCalled();
     expect(await response.json()).toMatchObject({ gift: { title: '엄마에게 드리는 말씀' } });
+  });
+
+  it('텍스트 편지는 선물과 함께 저장하고 음성 편지는 R2에 원본 바이트로 저장한다', async () => {
+    await POST(sendRequest({ letter: { type: 'text', text: ' 늘 힘내요. ' } }));
+    let gift = (mocks.batch.mock.calls[0][0] as Array<{ sql: string; values: unknown[] }>).find((statement) => statement.sql.includes('INSERT INTO gifts'))!;
+    expect(gift.values).toContain('text');
+    expect(gift.values).toContain('늘 힘내요.');
+    expect(mocks.r2Put).not.toHaveBeenCalled();
+
+    mocks.batch.mockClear();
+    const response = await POST(sendRequest({ letter: { type: 'voice', dataUrl: 'data:audio/webm;base64,AQID', mimeType: 'audio/webm', sizeBytes: 3, durationSeconds: 4 } }));
+    expect(response.status).toBe(201);
+    expect(mocks.r2Put).toHaveBeenCalledOnce();
+    expect([...mocks.r2Put.mock.calls[0][1] as Uint8Array]).toEqual([1, 2, 3]);
+    gift = (mocks.batch.mock.calls[0][0] as Array<{ sql: string; values: unknown[] }>).find((statement) => statement.sql.includes('INSERT INTO gifts'))!;
+    expect(gift.values).toContain('voice');
+    expect(gift.values).toContain('audio/webm');
+  });
+
+  it('수신자가 쪽지를 열기 전에는 편지 내용을 목록 응답에 노출하지 않는다', async () => {
+    mocks.authenticate.mockResolvedValue({ id: 'friend-2', email: 'friend@example.com' });
+    mocks.giftRows = [{ id: 'gift-letter', title: '힘이 되는 말씀', sender_nickname: '말씀친구', bgm_id: 'none', bgm_volume: 0, recording_count: 1, total_size_bytes: 4, created_at: 100, opened_at: 110, thank_you_note: null, thanked_at: null, letter_type: 'text', letter_text: '사랑해요', letter_mime_type: null, letter_size_bytes: null, letter_duration_seconds: null, letter_opened_at: null }];
+    let payload = await (await GET(new Request('https://example.test/api/gifts'))).json() as { gifts: Array<{ hasLetter: boolean; letterText: string | null }> };
+    expect(payload.gifts[0]).toMatchObject({ hasLetter: true, letterText: null });
+    mocks.giftRows[0].letter_opened_at = 120;
+    payload = await (await GET(new Request('https://example.test/api/gifts'))).json() as typeof payload;
+    expect(payload.gifts[0].letterText).toBe('사랑해요');
   });
 
   it('친구가 아니거나 소유하지 않은 녹음은 보낼 수 없다', async () => {

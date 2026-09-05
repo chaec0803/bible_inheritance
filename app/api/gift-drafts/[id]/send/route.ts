@@ -1,12 +1,17 @@
+import { env } from 'cloudflare:workers';
 import { ensureDbSchema, getD1 } from '@/db';
 import { ensureUserProfile } from '@/lib/friend-server';
 import { canonicalFriendPair } from '@/lib/friend-policy';
 import { isGiftDraftSendable } from '@/lib/gift-draft';
 import { authenticateRequest } from '@/lib/supabase-auth';
 import type { DraftItemRow } from '../../shared';
+import { decodeGiftLetterAudio, normalizeGiftLetter } from '@/lib/gift-letter';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await authenticateRequest(request); if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const body = await request.json().catch(() => ({})) as { letter?: unknown };
+  const letter = normalizeGiftLetter(body.letter);
+  if (!letter) return Response.json({ error: '편지 내용을 다시 확인해 주세요.' }, { status: 400 });
   const { id } = await params; await ensureDbSchema(); await ensureUserProfile(user); const db = getD1();
   const draft = await db.prepare('SELECT * FROM gift_drafts WHERE id = ? AND owner_key = ? AND sent_gift_id IS NULL').bind(id, user.id).first<Record<string, unknown>>();
   if (!draft) return Response.json({ error: '초안을 찾을 수 없습니다.' }, { status: 404 });
@@ -23,6 +28,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const unopened = await db.prepare('SELECT id FROM gifts WHERE sender_key = ? AND recipient_key = ? AND opened_at IS NULL LIMIT 1').bind(user.id, recipient).first();
   if (unopened) return Response.json({ error: '친구가 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });
   const giftId = crypto.randomUUID(); const total = items.reduce((sum, item) => sum + item.size_bytes, 0); const now = Date.now();
-  const statements = [db.prepare(`INSERT INTO gifts (id, sender_key, recipient_key, title, bgm_id, bgm_volume, recording_count, total_size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(giftId, user.id, recipient, draft.title, draft.bgm_id, draft.bgm_volume, items.length, total, now), ...items.map((item) => db.prepare(`INSERT INTO gift_recordings (id, gift_id, position, book, chapter, verse, verse_text, source_recording_id, object_key, mime_type, size_bytes, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), giftId, item.position, item.book, item.chapter, item.verse, item.verse_text, item.source_recording_id, item.object_key, item.mime_type, item.size_bytes, item.duration_seconds)), db.prepare('DELETE FROM gift_draft_items WHERE draft_id = ?').bind(id), db.prepare('UPDATE gift_drafts SET sent_gift_id = ?, updated_at = ? WHERE id = ? AND owner_key = ?').bind(giftId, now, id, user.id)];
-  await db.batch(statements); return Response.json({ gift: { id: giftId, title: draft.title, recordingCount: items.length } }, { status: 201 });
+  const letterObjectKey = letter.type === 'voice' ? `${user.id}/gift-letters/${giftId}` : null;
+  if (letter.type === 'voice') {
+    const bytes = decodeGiftLetterAudio(letter);
+    if (!bytes) return Response.json({ error: '음성 편지 파일을 다시 확인해 주세요.' }, { status: 400 });
+    await env.FILES.put(letterObjectKey!, bytes, { httpMetadata: { contentType: letter.mimeType } });
+  }
+  const statements = [db.prepare(`INSERT INTO gifts (id, sender_key, recipient_key, title, bgm_id, bgm_volume, recording_count, total_size_bytes, created_at, letter_type, letter_text, letter_object_key, letter_mime_type, letter_size_bytes, letter_duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(giftId, user.id, recipient, draft.title, draft.bgm_id, draft.bgm_volume, items.length, total, now, letter.type === 'none' ? null : letter.type, letter.type === 'text' ? letter.text : null, letterObjectKey, letter.type === 'voice' ? letter.mimeType : null, letter.type === 'voice' ? letter.sizeBytes : null, letter.type === 'voice' ? letter.durationSeconds : null), ...items.map((item) => db.prepare(`INSERT INTO gift_recordings (id, gift_id, position, book, chapter, verse, verse_text, source_recording_id, object_key, mime_type, size_bytes, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), giftId, item.position, item.book, item.chapter, item.verse, item.verse_text, item.source_recording_id, item.object_key, item.mime_type, item.size_bytes, item.duration_seconds)), db.prepare('DELETE FROM gift_draft_items WHERE draft_id = ?').bind(id), db.prepare('UPDATE gift_drafts SET sent_gift_id = ?, updated_at = ? WHERE id = ? AND owner_key = ?').bind(giftId, now, id, user.id)];
+  try {
+    await db.batch(statements); return Response.json({ gift: { id: giftId, title: draft.title, recordingCount: items.length } }, { status: 201 });
+  } catch (error) {
+    if (letterObjectKey) await env.FILES.delete(letterObjectKey).catch(() => undefined);
+    throw error;
+  }
 }
