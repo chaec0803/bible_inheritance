@@ -9,6 +9,7 @@ const panel = existsSync(panelUrl) ? readFileSync(panelUrl, 'utf8') : '';
 const dialog = existsSync(dialogUrl) ? readFileSync(dialogUrl, 'utf8') : '';
 const deleteRoute = readFileSync(new URL('./api/gifts/[id]/route.ts', import.meta.url), 'utf8');
 const letterComposer = readFileSync(new URL('./gift-letter-composer.tsx', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('./globals.css', import.meta.url), 'utf8');
 
 describe('말씀 선물 UI·데이터 회귀', () => {
   it('듣기 탭에서 현재 이어듣기 묶음과 선택한 BGM을 친구에게 보낸다', () => {
@@ -110,6 +111,10 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('감사 인사 보내기');
     expect(panel).toContain('THANK_YOU_TEMPLATES');
     expect(panel).toContain('/thank-you`');
+  });
+
+  it('모바일에서 감사편지 입력 시 브라우저가 화면을 자동 확대하지 않는다', () => {
+    expect(styles).toMatch(/\.gift-thank-you-custom textarea\s*\{[^}]*font-size:\s*16px/);
   });
 
   it('보낸 사람은 개봉 시각과 감사 인사를 확인할 수 있다', () => {

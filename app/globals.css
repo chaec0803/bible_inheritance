@@ -1154,7 +1154,7 @@ html[data-theme='dark'] .library-audio { color-scheme: dark; }
 .gift-thank-you-templates button.selected { color: var(--sage); background: var(--sage-soft); border-color: var(--sage); }
 .gift-thank-you-custom { margin-top: 14px; display: grid; gap: 6px; }
 .gift-thank-you-custom > span { color: var(--muted); font-size: 8px; font-weight: 900; }
-.gift-thank-you-custom textarea { width: 100%; min-height: 96px; padding: 12px; resize: vertical; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 11px; font: inherit; font-size: 10px; line-height: 1.55; }
+.gift-thank-you-custom textarea { width: 100%; min-height: 96px; padding: 12px; resize: vertical; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 11px; font: inherit; font-size: 16px; line-height: 1.55; }
 .gift-thank-you-custom small { color: var(--muted); font-size: 7px; text-align: right; }
 .gift-thank-you-dialog-actions { margin-top: 16px; display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; }
 .gift-thank-you-dialog-actions button { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 12px; font-size: 10px; font-weight: 900; cursor: pointer; }
