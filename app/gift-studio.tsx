@@ -299,16 +299,25 @@ export function GiftStudio({
     }
     setStep('record');
   };
-  async function startRecording(targetDraft = draft) {
+  async function startRecording(
+    targetDraft = draft,
+    existingSession?: {
+      sourceStream: MediaStream;
+      graph: ReturnType<typeof createRecordingAudioGraph>;
+    },
+  ) {
     if (!targetDraft || targetDraft.nextPosition == null) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const graph = createRecordingAudioGraph(stream);
+    const sourceStream = existingSession?.sourceStream ?? await navigator.mediaDevices.getUserMedia({ audio: true });
+    const graph = existingSession?.graph ?? createRecordingAudioGraph(sourceStream);
     const recorder = new MediaRecorder(graph.stream, {
       mimeType: getSupportedMimeType() || undefined,
     });
     chunksRef.current = [];
     recorder.ondataavailable = (event) => chunksRef.current.push(event.data);
     recorder.onstop = async () => {
+      const shouldContinue = autoContinueRef.current && recordingMode === 'continuous';
+      let continuing = false;
+      autoContinueRef.current = false;
       const position = targetDraft.nextPosition!;
       const item = targetDraft.items[position];
       const form = new FormData();
@@ -327,28 +336,36 @@ export function GiftStudio({
           Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)),
         ),
       );
-      await fetch(
-        `/api/gift-drafts/${targetDraft.id}/items/${position}/audio`,
-        { method: 'PUT', body: form },
-      );
-      graph.close();
-      stream.getTracks().forEach((track) => track.stop());
-      const current = await fetch(`/api/gift-drafts/${targetDraft.id}`).then(
-        readPayload,
-      );
-      if (current.draft) {
+      try {
+        const uploadResponse = await fetch(
+          `/api/gift-drafts/${targetDraft.id}/items/${position}/audio`,
+          { method: 'PUT', body: form },
+        );
+        if (!uploadResponse.ok) {
+          const payload = await readPayload(uploadResponse);
+          throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
+        }
+        const currentResponse = await fetch(`/api/gift-drafts/${targetDraft.id}`);
+        if (!currentResponse.ok) throw new Error('다음 말씀을 불러오지 못했어요.');
+        const current = await readPayload(currentResponse);
+        if (!current.draft) throw new Error('다음 말씀을 불러오지 못했어요.');
         const hydratedDraft = await hydrateVerseTexts(current.draft);
         setDraft(hydratedDraft);
-        setDrafts((currentDrafts) =>
-          currentDrafts.map((candidate) =>
-            candidate.id === hydratedDraft.id ? hydratedDraft : candidate,
-          ),
-        );
-        if (hydratedDraft.nextPosition == null) setStep('preview');
-        else if (autoContinueRef.current && recordingMode === 'continuous') {
-          autoContinueRef.current = false;
-          void startRecording(hydratedDraft);
+        setDrafts((currentDrafts) => currentDrafts.map((candidate) => candidate.id === hydratedDraft.id ? hydratedDraft : candidate));
+        setRecording(false);
+        if (hydratedDraft.nextPosition == null) {
+          setStep('preview');
+        } else if (shouldContinue) {
+          continuing = true;
+          window.setTimeout(() => void startRecording(hydratedDraft, { sourceStream, graph }), 0);
           return;
+        }
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : '녹음을 저장하지 못했어요.');
+      } finally {
+        if (!continuing) {
+          graph.close();
+          sourceStream.getTracks().forEach((track) => track.stop());
         }
       }
       setRecording(false);

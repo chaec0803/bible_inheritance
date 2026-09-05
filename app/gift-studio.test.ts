@@ -142,6 +142,14 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).not.toContain('<dialog open className="recording-manage-backdrop">');
   });
 
+  it('다음 절로 넘어갈 때 마이크 세션을 닫고 다시 요청하지 않는다', () => {
+    expect(studio).toContain('existingSession');
+    expect(studio).toContain('startRecording(hydratedDraft, { sourceStream, graph })');
+    expect(studio).toContain('if (!continuing)');
+    expect(studio).toContain('if (!uploadResponse.ok)');
+    expect(studio).toContain('녹음을 저장하지 못했어요');
+  });
+
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {
     expect(studio).toContain('전체 미리 듣기');
     expect(studio).toContain('이 절 다시 녹음');
