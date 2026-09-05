@@ -160,6 +160,15 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(handler.indexOf('setDraft(optimisticDraft)')).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
   });
 
+  it('마지막 절 완료도 종료 이벤트를 기다리지 않고 즉시 미리보기로 이동한다', () => {
+    const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
+    const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
+    const handler = studio.slice(handlerStart, handlerEnd);
+    expect(handler).toContain('nextPosition: hasNext ? position + 1 : null');
+    expect(handler).toContain("if (!hasNext) setStep('preview')");
+    expect(handler.indexOf("if (!hasNext) setStep('preview')")).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
+  });
+
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {
     expect(studio).toContain('전체 미리 듣기');
     expect(studio).toContain('이 절 다시 녹음');

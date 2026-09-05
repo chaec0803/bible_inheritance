@@ -95,6 +95,7 @@ export function GiftsPanel({
   const [deletingGiftId, setDeletingGiftId] = useState<string | null>(null);
   const [openingGiftId, setOpeningGiftId] = useState<string | null>(null);
   const [downloadingGiftId, setDownloadingGiftId] = useState<string | null>(null);
+  const [downloadReady, setDownloadReady] = useState<{ url: string; filename: string } | null>(null);
   const [giftVolumes, setGiftVolumes] = useState<Record<string, number>>({});
   const [thankYouGift, setThankYouGift] = useState<ReceivedGift | null>(null);
   const [thankYouNote, setThankYouNote] = useState('');
@@ -349,6 +350,8 @@ export function GiftsPanel({
   const downloadGift = async (gift: ReceivedGift) => {
     if (downloadingGiftId) return;
     setDownloadingGiftId(gift.id);
+    if (downloadReady) URL.revokeObjectURL(downloadReady.url);
+    setDownloadReady(null);
     setMessage('목소리와 BGM을 하나의 MP4로 만들고 있어요. 잠시만 기다려 주세요.');
     try {
       const bgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
@@ -366,13 +369,18 @@ export function GiftsPanel({
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setMessage('MP4 다운로드를 시작했어요.');
+      setDownloadReady({ url, filename: result.filename });
+      setMessage('MP4가 준비됐어요. 다운로드 창에서 파일 저장을 눌러 주세요.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'MP4 파일을 만들지 못했어요.');
     } finally {
       setDownloadingGiftId(null);
     }
+  };
+
+  const closeDownloadReady = () => {
+    if (downloadReady) URL.revokeObjectURL(downloadReady.url);
+    setDownloadReady(null);
   };
 
   const sendThankYou = async () => {
@@ -543,6 +551,15 @@ export function GiftsPanel({
           {letterPopupGift.letterType === 'text' ? <blockquote>{letterPopupGift.letterText}</blockquote> : <div className="gift-voice-letter">{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls src={`/api/gifts/${letterPopupGift.id}/letter/audio`} /><small>{letterPopupGift.letterDurationSeconds ? `${letterPopupGift.letterDurationSeconds}초 음성 편지` : '음성 편지'}</small></div>}
           <button className="gift-letter-popup-primary" type="button" onClick={closeLetterPopup}>확인</button>
         </>}
+      </dialog></div>}
+
+      {downloadReady && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-send-error-dialog" open aria-labelledby="gift-download-title">
+        <button className="gift-dialog-close" type="button" onClick={closeDownloadReady} aria-label="MP4 다운로드 닫기"><X size={21} /></button>
+        <span className="gift-send-error-icon"><Download size={27} /></span>
+        <p className="eyebrow">DOWNLOAD READY</p>
+        <h2 id="gift-download-title">말씀 선물 MP4가 준비됐어요</h2>
+        <p>자동 다운로드가 보이지 않으면 아래 버튼을 직접 눌러 저장해 주세요.</p>
+        <div className="gift-send-error-actions gift-download-actions"><a className="primary" href={downloadReady.url} download={downloadReady.filename} target="_blank" rel="noreferrer">MP4 파일 저장</a></div>
       </dialog></div>}
 
       {confirmDeleteGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-delete-dialog" open aria-labelledby="gift-delete-title"><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)} aria-label="삭제 확인 닫기"><X size={20} /></button><span><Trash2 size={25} /></span><h2 id="gift-delete-title">‘{confirmDeleteGift.title}’ 선물을 삭제할까요?</h2><p>삭제하면 선물함과 다운로드 파일에서 모두 사라지고 복구할 수 없어요.</p><div><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)}>돌아가기</button><button className="delete" type="button" onClick={() => void deleteGift()} disabled={Boolean(deletingGiftId)}>{deletingGiftId ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{deletingGiftId ? '삭제 중' : '선물 삭제'}</button></div></dialog></div>}

@@ -392,15 +392,14 @@ export function GiftStudio({
     const hasNext = position < draft.items.length - 1;
     continuousBoundariesRef.current.push(Date.now());
     autoContinueRef.current = hasNext;
-    if (hasNext) {
-      advancingRef.current = true;
-      const optimisticDraft: Draft = {
-        ...draft,
-        nextPosition: position + 1,
-        items: draft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
-      };
-      flushSync(() => setDraft(optimisticDraft));
-    }
+    advancingRef.current = true;
+    const optimisticDraft: Draft = {
+      ...draft,
+      nextPosition: hasNext ? position + 1 : null,
+      items: draft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
+    };
+    flushSync(() => setDraft(optimisticDraft));
+    if (!hasNext) setStep('preview');
     recorderRef.current?.stop();
   };
   const bgmSrc = (id: string) =>
