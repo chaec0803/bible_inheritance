@@ -66,6 +66,7 @@ export function ensureDbSchema() {
       recording_count INTEGER NOT NULL,
       total_size_bytes INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
+      arrival_seen_at INTEGER,
       opened_at INTEGER,
       recipient_deleted_at INTEGER,
       sender_deleted_at INTEGER,
@@ -110,6 +111,9 @@ export function ensureDbSchema() {
     const giftColumns = await env.DB.prepare('PRAGMA table_info(gifts)').all<{ name: string }>();
     if (!giftColumns.results.some((column) => column.name === 'opened_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN opened_at INTEGER').run();
+    }
+    if (!giftColumns.results.some((column) => column.name === 'arrival_seen_at')) {
+      await env.DB.prepare('ALTER TABLE gifts ADD COLUMN arrival_seen_at INTEGER').run();
     }
     if (!giftColumns.results.some((column) => column.name === 'recipient_deleted_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN recipient_deleted_at INTEGER').run();

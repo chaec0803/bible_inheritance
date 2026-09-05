@@ -358,11 +358,11 @@ export function GiftStudio({
   };
   const bgmSrc = (id: string) =>
     id === 'still-waters'
-      ? '/api/bgm/aeternum?v=2'
+      ? '/api/bgm/aeternum?v=3'
       : id === 'peaceful-morning'
-        ? '/api/bgm/unto-thee?v=2'
+        ? '/api/bgm/unto-thee?v=3'
         : id === 'word-breath'
-          ? '/api/bgm/the-kings-return?v=2'
+          ? '/api/bgm/the-kings-return?v=3'
           : '';
   const toggleBgmPreview = async () => {
     if (!draft || draft.bgmId === 'none') return;

@@ -64,9 +64,13 @@ function formatGiftDateTime(timestamp: number) {
 export function GiftsPanel({
   onBack,
   initialSentGiftId,
+  initialReceivedGiftId,
+  onInitialReceivedHandled,
 }: {
   onBack: () => void;
   initialSentGiftId?: string | null;
+  initialReceivedGiftId?: string | null;
+  onInitialReceivedHandled?: () => void;
 }) {
   const [receivedGifts, setReceivedGifts] = useState<ReceivedGift[]>([]);
   const [sentGifts, setSentGifts] = useState<SentGift[]>([]);
@@ -123,6 +127,12 @@ export function GiftsPanel({
           setSentGifts(nextSent);
           sentGiftsRef.current = nextSent;
           setGiftVolumes(Object.fromEntries(nextReceived.map((gift) => [gift.id, gift.bgmVolume])));
+          if (initialReceivedGiftId && nextReceived.some((gift) => gift.id === initialReceivedGiftId)) {
+            setJustOpenedGiftId(initialReceivedGiftId);
+            setDetailGiftId(initialReceivedGiftId);
+            setOpenLists([initialReceivedGiftId]);
+          }
+          if (initialReceivedGiftId) onInitialReceivedHandled?.();
         }
       })
       .catch((error: Error) => active && setMessage(error.message))
@@ -132,7 +142,7 @@ export function GiftsPanel({
       voice?.pause();
       bgmAudio?.pause();
     };
-  }, []);
+  }, [initialReceivedGiftId, onInitialReceivedHandled]);
 
   useEffect(() => {
     if (!message) return;

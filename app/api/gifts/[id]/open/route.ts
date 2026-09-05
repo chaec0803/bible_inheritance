@@ -19,8 +19,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const openedAt = gift.opened_at ?? Date.now();
   if (gift.opened_at === null) {
-    await getD1().prepare('UPDATE gifts SET opened_at = ? WHERE id = ? AND recipient_key = ? AND opened_at IS NULL')
-      .bind(openedAt, id, user.id)
+    await getD1().prepare('UPDATE gifts SET opened_at = ?, arrival_seen_at = COALESCE(arrival_seen_at, ?) WHERE id = ? AND recipient_key = ? AND opened_at IS NULL')
+      .bind(openedAt, openedAt, id, user.id)
       .run();
   }
 

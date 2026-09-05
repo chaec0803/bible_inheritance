@@ -18,7 +18,10 @@ vi.mock('@/db', () => ({
           mocks.statements.push({ sql, values });
           return mocks.gift;
         },
-        run: mocks.update,
+        run: async () => {
+          mocks.statements.push({ sql, values });
+          return mocks.update();
+        },
       }),
     }),
   }),
@@ -37,10 +40,11 @@ describe('받은 선물 열기 회귀', () => {
     mocks.statements = [];
   });
 
-  it('수신자가 선물을 열면 개봉 시간을 저장한다', async () => {
+  it('수신자가 선물을 열면 개봉 시간과 도착 안내 확인 시간을 함께 저장한다', async () => {
     const response = await PATCH(new Request('https://example.test/api/gifts/gift-1/open', { method: 'PATCH' }), context);
     expect(response.status).toBe(200);
     expect(mocks.statements.some(({ sql }) => sql.includes('recipient_key = ?'))).toBe(true);
+    expect(mocks.statements.some(({ sql }) => sql.includes('arrival_seen_at = COALESCE'))).toBe(true);
     expect(mocks.update).toHaveBeenCalledOnce();
   });
 

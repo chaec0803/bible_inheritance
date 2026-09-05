@@ -1,0 +1,1 @@
+ALTER TABLE `gifts` ADD `arrival_seen_at` integer;

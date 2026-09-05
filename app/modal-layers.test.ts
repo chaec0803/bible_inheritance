@@ -21,6 +21,14 @@ describe('삭제 확인창 레이어', () => {
   });
 });
 
+describe('말씀 선물 도착 모달 레이어', () => {
+  it('어느 화면에서도 클릭을 받고 기존 주요 모달보다 위에 표시한다', () => {
+    const blockingRule = css.match(/\.app-shell\.onboarding-open\s*>\s*([^{]+){\s*pointer-events:\s*none;/)?.[1] ?? '';
+    expect(blockingRule).toContain(':not(.gift-arrival-backdrop)');
+    expect(zIndex('.gift-arrival-backdrop')).toBeGreaterThan(zIndex('.continuous-player-backdrop'));
+  });
+});
+
 describe('완료된 말씀 이어듣기 레이어', () => {
   it('완료 목록 오버레이의 뒤쪽 클릭 차단에서 이어듣기 모달을 제외한다', () => {
     const blockingRule = css.match(/\.app-shell\.onboarding-open\s*>\s*([^{]+){\s*pointer-events:\s*none;/)?.[1] ?? '';

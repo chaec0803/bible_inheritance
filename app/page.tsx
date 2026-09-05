@@ -22,12 +22,14 @@ import { FriendsPanel } from './friends-panel';
 import { GiftSendDialog } from './gift-send-dialog';
 import { GiftsPanel } from './gifts-panel';
 import { GiftStudio } from './gift-studio';
+import { GiftArrivalModal } from './gift-arrival-modal';
 import { BibleRangePicker } from './bible-range-picker';
 import type { GiftDraftScope } from '@/lib/gift-draft';
 import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
 import { createRecordingAudioGraph as createRawRecordingAudioGraph } from '@/lib/recording-audio';
 import { encodeAudioBufferSegmentAsMp4 } from '@/lib/audio-mp4';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
+import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
 export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
 
 const defaultVerses = [
@@ -139,19 +141,19 @@ const bgmOptions: readonly BgmOption[] = [
     id: 'still-waters',
     name: 'Aeternum',
     description: 'Christoffer Moe Ditlevsen',
-    audioSrc: '/api/bgm/aeternum?v=2',
+    audioSrc: '/api/bgm/aeternum?v=3',
   },
   {
     id: 'peaceful-morning',
     name: 'Unto Thee',
     description: 'JOYSPRING',
-    audioSrc: '/api/bgm/unto-thee?v=2',
+    audioSrc: '/api/bgm/unto-thee?v=3',
   },
   {
     id: 'word-breath',
     name: "The King's Return",
     description: 'Adriel Fair',
-    audioSrc: '/api/bgm/the-kings-return?v=2',
+    audioSrc: '/api/bgm/the-kings-return?v=3',
     recommended: true,
   },
   {
@@ -689,6 +691,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [giftStudioScope, setGiftStudioScope] = useState<GiftDraftScope | null>(null);
   const [giftStudioFriend, setGiftStudioFriend] = useState<{ userId: string; nickname: string; emailHint: string } | null>(null);
   const [selectedSentGiftId, setSelectedSentGiftId] = useState<string | null>(null);
+  const [selectedReceivedGiftId, setSelectedReceivedGiftId] = useState<string | null>(null);
+  const [giftArrivals, setGiftArrivals] = useState<GiftArrival[]>([]);
+  const [acknowledgingGiftArrivals, setAcknowledgingGiftArrivals] = useState(false);
   const [bibleBackTarget, setBibleBackTarget] = useState<'welcome' | 'projectHome' | 'app'>('welcome');
   const [returningHome, setReturningHome] = useState(false);
   const [projectDuration, setProjectDuration] = useState<7 | 14>(7);
@@ -1066,6 +1071,34 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   useEffect(() => {
     if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.volume = toAudibleBgmGain(volume);
   }, [volume]);
+
+  useEffect(() => {
+    let active = true;
+    const pollGiftArrivals = async () => {
+      try {
+        const response = await fetch('/api/gifts/arrivals');
+        const payload = await response.json() as { arrivals?: GiftArrival[] };
+        if (!response.ok || !active) return;
+        setGiftArrivals((current) => mergeGiftArrivals(current, payload.arrivals ?? []));
+      } catch {
+        // 앱 시작, 포커스 복귀, 다음 주기에서 다시 확인합니다.
+      }
+    };
+    const handleFocus = () => void pollGiftArrivals();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void pollGiftArrivals();
+    };
+    void pollGiftArrivals();
+    const interval = window.setInterval(() => void pollGiftArrivals(), 15_000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [userId]);
 
   useEffect(() => {
     void warmBgmTrack(bgmOptions[0].audioSrc).catch(() => undefined);
@@ -1609,6 +1642,54 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const openGiftsTab = () => {
     navigateTo('gifts');
+  };
+
+  const clearInitialReceivedGift = useCallback(() => {
+    setSelectedReceivedGiftId(null);
+  }, []);
+
+  const giftArrivalBlocked =
+    onboardingStep === 'giftStudio' ||
+    (onboardingStep === 'app' && appTab === 'recording') ||
+    recording ||
+    requestingMic ||
+    headphoneWarningOpen ||
+    recordingManageOpen ||
+    confirmFullRetakeOpen ||
+    replacingRecording !== null ||
+    completionModal !== null ||
+    confirmJourneyCompletion ||
+    completedJourneyModal !== null ||
+    confirmQuitJourneyOpen !== null ||
+    earnedCard !== null ||
+    giftSendOpen;
+
+  const acknowledgeGiftArrivals = async (openGiftBox: boolean) => {
+    if (!giftArrivals.length || acknowledgingGiftArrivals) return;
+    const arrivals = [...giftArrivals];
+    setAcknowledgingGiftArrivals(true);
+    try {
+      if (openGiftBox && arrivals.length === 1) {
+        const openResponse = await fetch(`/api/gifts/${arrivals[0].id}/open`, { method: 'PATCH' });
+        if (!openResponse.ok) throw new Error('도착한 선물을 열지 못했어요.');
+      }
+      const response = await fetch('/api/gifts/arrivals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ giftIds: arrivals.map((gift) => gift.id) }),
+      });
+      if (!response.ok) throw new Error('선물 도착 확인을 저장하지 못했어요.');
+      setGiftArrivals((current) => current.filter((gift) => !arrivals.some((arrival) => arrival.id === gift.id)));
+      if (openGiftBox) {
+        setSelectedReceivedGiftId(arrivals.length === 1 ? arrivals[0].id : null);
+        setSelectedSentGiftId(null);
+        navigateTo('gifts');
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '선물함을 열지 못했어요.');
+    } finally {
+      setAcknowledgingGiftArrivals(false);
+    }
   };
 
   const openLibraryFromCompletion = () => {
@@ -4147,6 +4228,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <GiftsPanel
           onBack={() => window.history.back()}
           initialSentGiftId={selectedSentGiftId}
+          initialReceivedGiftId={selectedReceivedGiftId}
+          onInitialReceivedHandled={clearInitialReceivedGift}
         />
       )}
       {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} onNotice={setNotice} onGiftFriend={openGiftStudioWithFriend} />}
@@ -4187,6 +4270,15 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               description: `${nickname}님에게 ‘${sentTitle}’ 녹음과 BGM을 안전하게 보냈어요.`,
             });
           }}
+        />
+      )}
+
+      {canShowGiftArrival(giftArrivals, giftArrivalBlocked) && (
+        <GiftArrivalModal
+          arrivals={giftArrivals}
+          acknowledging={acknowledgingGiftArrivals}
+          onDismiss={() => void acknowledgeGiftArrivals(false)}
+          onOpen={() => void acknowledgeGiftArrivals(true)}
         />
       )}
 

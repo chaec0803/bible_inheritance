@@ -97,6 +97,7 @@ export const gifts = sqliteTable(
     recordingCount: integer('recording_count').notNull(),
     totalSizeBytes: integer('total_size_bytes').notNull(),
     createdAt: integer('created_at').notNull(),
+    arrivalSeenAt: integer('arrival_seen_at'),
     openedAt: integer('opened_at'),
     recipientDeletedAt: integer('recipient_deleted_at'),
     senderDeletedAt: integer('sender_deleted_at'),

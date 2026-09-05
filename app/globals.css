@@ -200,7 +200,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
 
 .onboarding-overlay { position: fixed; inset: 0; z-index: 100; min-height: 100dvh; padding: 28px clamp(18px, 4vw, 56px) 44px; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; background: radial-gradient(circle at 15% 10%, var(--sage-soft), transparent 34%), var(--canvas); }
-.app-shell.onboarding-open > :not(.onboarding-overlay):not(.floating-route-actions):not(.continuous-player-backdrop):not(.word-card-modal-backdrop):not(.completion-modal-backdrop):not(.gift-dialog-backdrop):not(.confirm-retake-backdrop) { pointer-events: none; }
+.app-shell.onboarding-open > :not(.onboarding-overlay):not(.floating-route-actions):not(.continuous-player-backdrop):not(.word-card-modal-backdrop):not(.completion-modal-backdrop):not(.gift-dialog-backdrop):not(.confirm-retake-backdrop):not(.gift-arrival-backdrop) { pointer-events: none; }
+
+.gift-arrival-backdrop { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 20px; overflow-y: auto; background: rgba(31, 43, 38, .62); backdrop-filter: blur(10px); }
+.gift-arrival-modal { position: relative; width: min(440px, 100%); margin: 0; padding: 34px 30px 30px; overflow: hidden; color: var(--ink); background: linear-gradient(155deg, #fffdf7 0%, #fff7df 55%, #f1f6ec 100%); border: 1px solid rgba(203, 155, 64, .32); border-radius: 28px; box-shadow: 0 30px 90px rgba(20, 34, 28, .34); text-align: center; }
+.gift-arrival-modal::before { content: ''; position: absolute; width: 180px; height: 180px; top: -105px; left: -70px; border-radius: 50%; background: rgba(222, 177, 87, .15); }
+.gift-arrival-close { position: absolute; top: 15px; right: 15px; width: 38px; height: 38px; display: grid; place-items: center; color: var(--muted); background: rgba(255,255,255,.7); border: 1px solid rgba(130, 112, 73, .12); border-radius: 50%; cursor: pointer; }
+.gift-arrival-illustration { position: relative; width: 96px; height: 92px; margin: 0 auto 8px; display: grid; place-items: center; }
+.gift-arrival-illustration > span { width: 72px; height: 72px; display: grid; place-items: center; color: #fffaf0; background: linear-gradient(145deg, #d6a544, #b77a2f); border-radius: 24px; box-shadow: 0 14px 35px rgba(183,122,47,.3); animation: gift-arrival-rise .55s cubic-bezier(.2,.8,.2,1) both; }
+.gift-arrival-sparkle { position: absolute; color: #d9a640; animation: gift-arrival-twinkle 1.8s ease-in-out infinite alternate; }
+.gift-arrival-sparkle.one { top: 2px; right: 1px; }
+.gift-arrival-sparkle.two { bottom: 4px; left: 2px; animation-delay: .35s; }
+.gift-arrival-modal .eyebrow { color: #a06d2e; }
+.gift-arrival-modal h2 { margin: 7px 0 11px; font-size: clamp(24px, 5vw, 31px); line-height: 1.25; letter-spacing: -.045em; }
+.gift-arrival-modal > p:not(.eyebrow) { margin: 0 auto; max-width: 330px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.gift-arrival-modal > small { display: block; margin-top: 8px; color: color-mix(in srgb, var(--muted) 78%, transparent); font-size: 10px; }
+.gift-arrival-open { width: 100%; min-height: 52px; margin-top: 24px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #fff; background: linear-gradient(135deg, #b47a30, #cc9a3f); border: 0; border-radius: 15px; box-shadow: 0 12px 26px rgba(180,122,48,.25); font-size: 12px; font-weight: 900; cursor: pointer; }
+.gift-arrival-open:disabled, .gift-arrival-close:disabled { opacity: .58; cursor: wait; }
+@keyframes gift-arrival-rise { from { opacity: 0; transform: translateY(12px) scale(.9) rotate(-4deg); } to { opacity: 1; transform: translateY(0) scale(1) rotate(0); } }
+@keyframes gift-arrival-twinkle { from { opacity: .45; transform: scale(.82) rotate(-8deg); } to { opacity: 1; transform: scale(1.08) rotate(6deg); } }
+@media (prefers-reduced-motion: reduce) { .gift-arrival-illustration > span, .gift-arrival-sparkle { animation: none; } }
 .onboarding-brand { width: min(1120px, 100%); margin: 0 auto 22px; display: flex; align-items: center; gap: 10px; }
 .onboarding-theme-button { margin-left: auto; color: var(--ink); }
 .onboarding-card { width: min(1120px, 100%); margin: 0 auto; padding: clamp(28px, 5vw, 58px); background: var(--paper); border: 1px solid var(--line); border-radius: 28px; box-shadow: var(--shadow); }

@@ -6,7 +6,7 @@ const bgmTracks = ['aeternum', 'unto-thee', 'the-kings-return'];
 
 describe('아이폰 이어듣기 BGM', () => {
   it('앱 내부 BGM을 iOS에서도 안정적인 전용 audio 요소로 재생한다', () => {
-    expect(page).toContain("audioSrc: '/api/bgm/aeternum?v=2'");
+    expect(page).toContain("audioSrc: '/api/bgm/aeternum?v=3'");
     expect(page).toContain('createMediaElementSource(audio)');
     expect(page).toContain('playbackBgmAudioRef');
     expect(page).toContain('bgmAudio.volume = toAudibleBgmGain(volume)');
@@ -17,6 +17,6 @@ describe('아이폰 이어듣기 BGM', () => {
   });
 
   it.each(bgmTracks)('%s 음원을 Git 정적 파일이 아닌 R2 스트리밍 API로 요청한다', (track) => {
-    expect(page).toContain(`audioSrc: '/api/bgm/${track}?v=2'`);
+    expect(page).toContain(`audioSrc: '/api/bgm/${track}?v=3'`);
   });
 });
