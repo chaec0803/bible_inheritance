@@ -151,6 +151,12 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('녹음을 저장하지 못했어요');
   });
 
+  it('빠르게 넘긴 여러 절의 저장 요청은 순서대로 처리한다', () => {
+    expect(studio).toContain('uploadQueueRef');
+    expect(studio).toContain('uploadQueueRef.current.then');
+    expect(studio).toContain('uploadQueueRef.current = uploadTask.catch');
+  });
+
   it('다음 절 버튼을 누르는 즉시 본문을 먼저 바꾸고 중복 탭을 막는다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
@@ -160,13 +166,13 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(handler.indexOf('setDraft(optimisticDraft)')).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
   });
 
-  it('마지막 절 완료도 종료 이벤트를 기다리지 않고 즉시 미리보기로 이동한다', () => {
+  it('마지막 절 완료는 녹음 화면에서 저장 로딩을 보여준 뒤 성공해야 미리보기로 이동한다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
-    expect(handler).toContain('nextPosition: hasNext ? position + 1 : null');
-    expect(handler).toContain("if (!hasNext) setStep('preview')");
-    expect(handler.indexOf("if (!hasNext) setStep('preview')")).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
+    expect(handler).toContain('if (!hasNext) setSavingRecording(true)');
+    expect(handler).not.toContain("setStep('preview')");
+    expect(studio).toContain('녹음 저장 중');
   });
 
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {

@@ -146,6 +146,7 @@ export function GiftStudio({
   );
   const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(false);
+  const [savingRecording, setSavingRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [recordingManageOpen, setRecordingManageOpen] = useState(false);
   const [confirmResetRecordings, setConfirmResetRecordings] = useState(false);
@@ -166,6 +167,7 @@ export function GiftStudio({
   const fullPreviewBgmRef = useRef<HTMLAudioElement | null>(null);
   const autoContinueRef = useRef(false);
   const advancingRef = useRef(false);
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const continuousBoundariesRef = useRef<number[]>([]);
 
   const refresh = () =>
@@ -349,14 +351,18 @@ export function GiftStudio({
         window.setTimeout(() => void startRecording(optimisticDraft, { sourceStream, graph }), 0);
       }
       try {
-        const uploadResponse = await fetch(
-          `/api/gift-drafts/${targetDraft.id}/items/${position}/audio`,
-          { method: 'PUT', body: form },
-        );
-        if (!uploadResponse.ok) {
-          const payload = await readPayload(uploadResponse);
-          throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
-        }
+        const uploadTask = uploadQueueRef.current.then(async () => {
+          const uploadResponse = await fetch(
+            `/api/gift-drafts/${targetDraft.id}/items/${position}/audio`,
+            { method: 'PUT', body: form },
+          );
+          if (!uploadResponse.ok) {
+            const payload = await readPayload(uploadResponse);
+            throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
+          }
+        });
+        uploadQueueRef.current = uploadTask.catch(() => undefined);
+        await uploadTask;
         if (continuing) return;
         const currentResponse = await fetch(`/api/gift-drafts/${targetDraft.id}`);
         if (!currentResponse.ok) throw new Error('다음 말씀을 불러오지 못했어요.');
@@ -371,8 +377,10 @@ export function GiftStudio({
         }
       } catch (error) {
         setMessage(error instanceof Error ? error.message : '녹음을 저장하지 못했어요.');
+        advancingRef.current = false;
       } finally {
         if (!continuing) {
+          setSavingRecording(false);
           graph.close();
           sourceStream.getTracks().forEach((track) => track.stop());
         }
@@ -393,13 +401,15 @@ export function GiftStudio({
     continuousBoundariesRef.current.push(Date.now());
     autoContinueRef.current = hasNext;
     advancingRef.current = true;
-    const optimisticDraft: Draft = {
-      ...draft,
-      nextPosition: hasNext ? position + 1 : null,
-      items: draft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
-    };
-    flushSync(() => setDraft(optimisticDraft));
-    if (!hasNext) setStep('preview');
+    if (hasNext) {
+      const optimisticDraft: Draft = {
+        ...draft,
+        nextPosition: position + 1,
+        items: draft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
+      };
+      flushSync(() => setDraft(optimisticDraft));
+    }
+    if (!hasNext) setSavingRecording(true);
     recorderRef.current?.stop();
   };
   const bgmSrc = (id: string) =>
@@ -1035,7 +1045,9 @@ export function GiftStudio({
                       : '버튼을 누르면 마이크 권한을 요청해요'}
                   </small>
                 </div>
-                {recording && recordingMode === 'continuous' && (
+                {savingRecording ? (
+                  <button className="gift-record-button" type="button" disabled><LoaderCircle className="spin" size={20} /> 녹음 저장 중</button>
+                ) : recording && recordingMode === 'continuous' && (
                   <div className="continuous-record-actions">
                     <button
                       className="next"
@@ -1059,7 +1071,7 @@ export function GiftStudio({
                     </button>
                   </div>
                 )}
-                {recording && recordingMode === 'verse' && (
+                {!savingRecording && recording && recordingMode === 'verse' && (
                   <button
                     className="gift-record-button"
                     type="button"
@@ -1068,7 +1080,7 @@ export function GiftStudio({
                     <Pause size={18} /> 이 절 저장
                   </button>
                 )}
-                {!recording && (
+                {!savingRecording && !recording && (
                   <button
                     className="gift-record-button"
                     type="button"
