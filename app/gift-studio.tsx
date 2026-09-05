@@ -7,6 +7,7 @@ import {
   BookHeart,
   Check,
   ChevronLeft,
+  CircleStop,
   Gift,
   LoaderCircle,
   Mic,
@@ -16,9 +17,11 @@ import {
   RotateCcw,
   Search,
   Send,
+  Sparkles,
   Trash2,
   UserRound,
   Users,
+  Volume2,
   X,
 } from 'lucide-react';
 import { bibleBooks } from './bible-metadata';
@@ -155,6 +158,8 @@ export function GiftStudio({
     'continuous',
   );
   const [bgmPlaying, setBgmPlaying] = useState(false);
+  const [bgmPaused, setBgmPaused] = useState(false);
+  const [bgmLoading, setBgmLoading] = useState(false);
   const [fullPreviewPlaying, setFullPreviewPlaying] = useState(false);
   const [fullPreviewIndex, setFullPreviewIndex] = useState(0);
   const [bgmPreviewError, setBgmPreviewError] = useState(false);
@@ -196,6 +201,7 @@ export function GiftStudio({
     return () => window.clearTimeout(timeout);
   }, [message]);
   useEffect(() => () => {
+    bgmPreviewRef.current?.pause();
     fullPreviewVoiceRef.current?.pause();
     fullPreviewBgmRef.current?.pause();
   }, []);
@@ -420,29 +426,55 @@ export function GiftStudio({
         : id === 'word-breath'
           ? '/api/bgm/the-kings-return?v=3'
           : '';
-  const toggleBgmPreview = async () => {
+  const stopBgmPreview = () => {
+    const audio = bgmPreviewRef.current;
+    audio?.pause();
+    if (audio) audio.currentTime = 0;
+    bgmPreviewRef.current = null;
+    setBgmPlaying(false);
+    setBgmPaused(false);
+    setBgmLoading(false);
+  };
+  const playBgmPreview = async () => {
     if (!draft || draft.bgmId === 'none') return;
     const audio = bgmPreviewRef.current ?? new Audio(bgmSrc(draft.bgmId));
     bgmPreviewRef.current = audio;
     audio.volume = toAudibleBgmGain(draft.bgmVolume);
-    audio.onended = () => setBgmPlaying(false);
+    audio.onended = () => {
+      setBgmPlaying(false);
+      setBgmPaused(false);
+    };
     audio.onerror = () => {
       setBgmPlaying(false);
+      setBgmPaused(false);
+      setBgmLoading(false);
       setBgmPreviewError(true);
     };
-    if (bgmPlaying) {
-      audio.pause();
+    try {
+      setBgmPreviewError(false);
+      setBgmLoading(true);
+      await audio.play();
+      setBgmPlaying(true);
+      setBgmPaused(false);
+    } catch {
       setBgmPlaying(false);
-    } else {
-      try {
-        setBgmPreviewError(false);
-        await audio.play();
-        setBgmPlaying(true);
-      } catch {
-        setBgmPlaying(false);
-        setBgmPreviewError(true);
-      }
+      setBgmPaused(false);
+      setBgmPreviewError(true);
+    } finally {
+      setBgmLoading(false);
     }
+  };
+  const pauseBgmPreview = () => {
+    bgmPreviewRef.current?.pause();
+    setBgmPlaying(false);
+    setBgmPaused(true);
+  };
+  const toggleBgmPreview = () =>
+    bgmPlaying ? pauseBgmPreview() : playBgmPreview();
+  const selectGiftBgm = (bgmId: string) => {
+    stopBgmPreview();
+    setBgmPreviewError(false);
+    if (draft) void saveMusic(bgmId, draft.bgmVolume);
   };
   const stopFullGiftPreview = () => {
     fullPreviewVoiceRef.current?.pause();
@@ -454,6 +486,7 @@ export function GiftStudio({
   };
   const playFullGiftPreview = async (index = 0, restartBgm = true) => {
     if (!draft) return;
+    if (restartBgm) stopBgmPreview();
     const recordedItems = draft.items.filter((item) => item.recorded);
     const item = recordedItems[index];
     const voice = fullPreviewVoiceRef.current;
@@ -563,6 +596,7 @@ export function GiftStudio({
     if (!(await saveTitle(draft.title))) return;
     setSendError(null);
     setSending(true);
+    stopBgmPreview();
     const response = await fetch(`/api/gift-drafts/${draft.id}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1106,11 +1140,7 @@ export function GiftStudio({
                 value={draft.bgmId}
                 onChange={(event) => {
                   stopFullGiftPreview();
-                  bgmPreviewRef.current?.pause();
-                  bgmPreviewRef.current = null;
-                  setBgmPlaying(false);
-                  setBgmPreviewError(false);
-                  void saveMusic(event.target.value, draft.bgmVolume);
+                  selectGiftBgm(event.target.value);
                 }}
               >
                 {GIFT_BGM_CATALOG.map((track) => (
@@ -1244,32 +1274,48 @@ export function GiftStudio({
             {step === 'music' && (
               <div className="gift-music-panel">
                 <h3>선물에 넣을 음악</h3>
-                <div className="gift-music-options">
+                <p>곡을 고른 뒤 직접 들어보고, 선물에 담을 음량을 조절해 보세요.</p>
+                <div className="music-list">
                   {GIFT_BGM_CATALOG.map((track) => (
-                    <button
-                      className={draft.bgmId === track.id ? 'selected' : ''}
-                      type="button"
-                      key={track.id}
-                      onClick={() => void saveMusic(track.id, draft.bgmVolume)}
-                    >
-                      <Music2 size={16} />
-                      <strong>{track.name}</strong>
-                      {draft.bgmId === track.id && <Check size={15} />}
-                    </button>
+                    <div className={`music-option ${draft.bgmId === track.id ? 'selected' : ''}`} key={track.id}>
+                      <button className="music-select" type="button" onClick={() => selectGiftBgm(track.id)}>
+                        <span className="music-icon">{track.id === 'none' ? '—' : 'recommended' in track && track.recommended ? <Sparkles size={15} /> : '♪'}</span>
+                        <span>
+                          <strong>{track.name}</strong>
+                          <small>{track.description}</small>
+                        </span>
+                        <span className="radio-dot" />
+                      </button>
+                    </div>
                   ))}
                 </div>
-                <label>
-                  <span>배경음악 음량</span>
-                  <strong>{draft.bgmVolume}%</strong>
+                <div className="bgm-transport" aria-label="배경음악 재생 조작">
+                  <button className={bgmPlaying ? 'active' : ''} type="button" onClick={() => void playBgmPreview()} disabled={draft.bgmId === 'none' || bgmPlaying || bgmLoading} aria-label="배경음악 재생">
+                    {bgmLoading ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}
+                    <span>{bgmLoading ? '음악 준비 중' : bgmPlaying ? '재생 중' : '재생'}</span>
+                  </button>
+                  <button className={bgmPaused ? 'active' : ''} type="button" onClick={pauseBgmPreview} disabled={!bgmPlaying} aria-label="배경음악 일시정지">
+                    <Pause size={16} /><span>{bgmPaused ? '멈춤 상태' : '일시정지'}</span>
+                  </button>
+                  <button type="button" onClick={stopBgmPreview} disabled={!bgmPlaying && !bgmPaused} aria-label="배경음악 정지">
+                    <CircleStop size={16} /><span>정지</span>
+                  </button>
+                </div>
+                {bgmPreviewError && <small role="alert">BGM을 재생할 수 없어요. 잠시 후 다시 시도해 주세요.</small>}
+                <label className="volume-control">
+                  <span><Volume2 size={17} /> 배경음악 음량 <strong>{draft.bgmVolume}%</strong></span>
                   <input
-                    aria-label="bgmVolume"
+                    aria-label="선물 배경음악 음량"
                     type="range"
                     min="0"
                     max="100"
                     value={draft.bgmVolume}
-                    onChange={(event) =>
-                      void saveMusic(draft.bgmId, Number(event.target.value))
-                    }
+                    disabled={draft.bgmId === 'none'}
+                    onChange={(event) => {
+                      const nextVolume = Number(event.target.value);
+                      if (bgmPreviewRef.current) bgmPreviewRef.current.volume = toAudibleBgmGain(nextVolume);
+                      void saveMusic(draft.bgmId, nextVolume);
+                    }}
                   />
                 </label>
                 <GiftLetterComposer value={letter} disabled={loading} onChange={setLetter} />

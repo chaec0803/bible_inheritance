@@ -123,6 +123,22 @@ describe('선물 초안 절별 녹음 API 통합 회귀', () => {
     expect((await GET_AUDIO(new Request('https://example.test/api/gift-drafts/draft-1/items/1/audio'), context)).status).toBe(401);
   });
 
+  it('초안 음원 미리 듣기는 재생 길이를 계산할 수 있게 byte range를 지원한다', async () => {
+    const response = await GET_AUDIO(new Request('https://example.test/api/gift-drafts/draft-1/items/1/audio', {
+      headers: { Range: 'bytes=1-2' },
+    }), context);
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(response.headers.get('Content-Length')).toBe('2');
+    expect(response.headers.get('Content-Range')).toBe('bytes 1-2/4');
+    expect(response.headers.get('Content-Disposition')).toBe('inline');
+    expect(mocks.r2Get).toHaveBeenCalledWith(
+      'sender-1/gift-drafts/draft-1/item-1',
+      { range: { offset: 1, length: 2 } },
+    );
+  });
+
   it('BGM과 음량은 전송 전까지 초안에 저장한다', async () => {
     const response = await PATCH(new Request('https://example.test/api/gift-drafts/draft-1', {
       method: 'PATCH',

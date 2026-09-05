@@ -210,6 +210,20 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('BGM을 재생할 수 없어요');
   });
 
+  it('선물 배경음악 단계는 일반 녹음과 같은 곡 카드·재생·일시정지·정지 UX를 제공한다', () => {
+    const musicStepStart = studio.indexOf("step === 'music'");
+    const musicStepEnd = studio.indexOf('<GiftLetterComposer', musicStepStart);
+    const musicStep = studio.slice(musicStepStart, musicStepEnd);
+    expect(musicStep).toContain('className="music-list"');
+    expect(musicStep).toContain('className={`music-option');
+    expect(musicStep).toContain('className="music-select"');
+    expect(musicStep).toContain('className="bgm-transport"');
+    expect(musicStep).toContain('배경음악 재생');
+    expect(musicStep).toContain('배경음악 일시정지');
+    expect(musicStep).toContain('배경음악 정지');
+    expect(musicStep).toContain('track.description');
+  });
+
   it('음악 선택 뒤 선택적인 편지를 덧붙여 함께 전송한다', () => {
     expect(studio).toContain('<GiftLetterComposer');
     expect(studio).toContain('body: JSON.stringify({ letter:');

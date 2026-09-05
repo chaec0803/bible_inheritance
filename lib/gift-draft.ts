@@ -1,8 +1,8 @@
 export const GIFT_BGM_CATALOG = [
-  { id: 'still-waters', name: 'Aeternum' },
-  { id: 'peaceful-morning', name: 'Unto Thee' },
-  { id: 'word-breath', name: "The King's Return" },
-  { id: 'none', name: '음악 없음' },
+  { id: 'still-waters', name: 'Aeternum', description: 'Christoffer Moe Ditlevsen' },
+  { id: 'peaceful-morning', name: 'Unto Thee', description: 'JOYSPRING' },
+  { id: 'word-breath', name: "The King's Return", description: 'Adriel Fair', recommended: true },
+  { id: 'none', name: '음악 없음', description: '목소리만 녹음' },
 ] as const;
 
 export const MAX_GIFT_DRAFT_VERSES = 500;
