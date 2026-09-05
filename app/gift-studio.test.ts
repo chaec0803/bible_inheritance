@@ -142,9 +142,10 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).not.toContain('<dialog open className="recording-manage-backdrop">');
   });
 
-  it('다음 절로 넘어갈 때 마이크 세션을 닫고 다시 요청하지 않는다', () => {
+  it('다음 절로 넘어갈 때 업로드를 기다리지 않고 같은 마이크 세션으로 즉시 녹음한다', () => {
     expect(studio).toContain('existingSession');
-    expect(studio).toContain('startRecording(hydratedDraft, { sourceStream, graph })');
+    expect(studio).toContain('startRecording(optimisticDraft, { sourceStream, graph })');
+    expect(studio.indexOf('startRecording(optimisticDraft, { sourceStream, graph })')).toBeLessThan(studio.indexOf('const uploadResponse = await fetch'));
     expect(studio).toContain('if (!continuing)');
     expect(studio).toContain('if (!uploadResponse.ok)');
     expect(studio).toContain('녹음을 저장하지 못했어요');

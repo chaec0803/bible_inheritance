@@ -336,6 +336,16 @@ export function GiftStudio({
           Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)),
         ),
       );
+      if (shouldContinue && position < targetDraft.items.length - 1) {
+        const optimisticDraft: Draft = {
+          ...targetDraft,
+          nextPosition: position + 1,
+          items: targetDraft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
+        };
+        continuing = true;
+        setDraft(optimisticDraft);
+        window.setTimeout(() => void startRecording(optimisticDraft, { sourceStream, graph }), 0);
+      }
       try {
         const uploadResponse = await fetch(
           `/api/gift-drafts/${targetDraft.id}/items/${position}/audio`,
@@ -345,6 +355,7 @@ export function GiftStudio({
           const payload = await readPayload(uploadResponse);
           throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
         }
+        if (continuing) return;
         const currentResponse = await fetch(`/api/gift-drafts/${targetDraft.id}`);
         if (!currentResponse.ok) throw new Error('다음 말씀을 불러오지 못했어요.');
         const current = await readPayload(currentResponse);
@@ -355,10 +366,6 @@ export function GiftStudio({
         setRecording(false);
         if (hydratedDraft.nextPosition == null) {
           setStep('preview');
-        } else if (shouldContinue) {
-          continuing = true;
-          window.setTimeout(() => void startRecording(hydratedDraft, { sourceStream, graph }), 0);
-          return;
         }
       } catch (error) {
         setMessage(error instanceof Error ? error.message : '녹음을 저장하지 못했어요.');
