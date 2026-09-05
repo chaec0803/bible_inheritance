@@ -185,6 +185,13 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('녹음은 그대로 유지돼요');
   });
 
+  it('방금 녹음한 선물은 서버 메타데이터를 기다리지 않고 즉시 들을 수 있다', () => {
+    expect(studio).toContain('URL.createObjectURL(recordingBlob)');
+    expect(studio).toContain('localPreviewUrls[item.position]');
+    expect(studio).toContain('toggleDraftItemPlayback(item)');
+    expect(studio).not.toContain('controls\n                        src={`/api/gift-drafts/');
+  });
+
   it('절별 재녹음 중에는 새 음성을 저장하며 녹음을 끝낼 수 있다', () => {
     expect(studio).toContain("recording && recordingMode === 'verse'");
     expect(studio).toContain('이 절 저장');
@@ -204,8 +211,8 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain("method: 'PATCH'");
     expect(studio).toContain('GIFT_BGM_CATALOG');
     expect(studio).toContain('bgmPreviewRef');
-    expect(studio).toContain('BGM 미리 듣기');
-    expect(studio).toContain('BGM 일시정지');
+    expect(studio).toContain('배경음악 재생');
+    expect(studio).toContain('배경음악 일시정지');
     expect(studio).toContain('bgmPreviewError');
     expect(studio).toContain('BGM을 재생할 수 없어요');
   });

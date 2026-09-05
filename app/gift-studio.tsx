@@ -60,6 +60,7 @@ type DraftItem = {
   recorded: boolean;
   objectKey?: string | null;
   sourceRecordingId?: string | null;
+  durationSeconds?: number;
 };
 type Draft = {
   id: string;
@@ -163,6 +164,8 @@ export function GiftStudio({
   const [fullPreviewPlaying, setFullPreviewPlaying] = useState(false);
   const [fullPreviewIndex, setFullPreviewIndex] = useState(0);
   const [bgmPreviewError, setBgmPreviewError] = useState(false);
+  const [localPreviewUrls, setLocalPreviewUrls] = useState<Record<number, string>>({});
+  const [playingDraftPosition, setPlayingDraftPosition] = useState<number | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedRef = useRef(0);
@@ -174,6 +177,7 @@ export function GiftStudio({
   const advancingRef = useRef(false);
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const continuousBoundariesRef = useRef<number[]>([]);
+  const localPreviewUrlsRef = useRef<Record<number, string>>({});
 
   const refresh = () =>
     fetch('/api/gift-drafts')
@@ -202,6 +206,8 @@ export function GiftStudio({
   }, [message]);
   useEffect(() => () => {
     bgmPreviewRef.current?.pause();
+    previewRef.current?.pause();
+    Object.values(localPreviewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
     fullPreviewVoiceRef.current?.pause();
     fullPreviewBgmRef.current?.pause();
   }, []);
@@ -330,10 +336,18 @@ export function GiftStudio({
       autoContinueRef.current = false;
       const position = targetDraft.nextPosition!;
       const item = targetDraft.items[position];
+      const recordingBlob = new Blob(chunksRef.current, { type: recorder.mimeType });
+      const previewUrl = URL.createObjectURL(recordingBlob);
+      setLocalPreviewUrls((current) => {
+        if (current[position]) URL.revokeObjectURL(current[position]);
+        const next = { ...current, [position]: previewUrl };
+        localPreviewUrlsRef.current = next;
+        return next;
+      });
       const form = new FormData();
       form.append(
         'audio',
-        new Blob(chunksRef.current, { type: recorder.mimeType }),
+        recordingBlob,
         'verse.webm',
       );
       form.append(
@@ -469,8 +483,6 @@ export function GiftStudio({
     setBgmPlaying(false);
     setBgmPaused(true);
   };
-  const toggleBgmPreview = () =>
-    bgmPlaying ? pauseBgmPreview() : playBgmPreview();
   const selectGiftBgm = (bgmId: string) => {
     stopBgmPreview();
     setBgmPreviewError(false);
@@ -483,6 +495,26 @@ export function GiftStudio({
     if (fullPreviewBgmRef.current) fullPreviewBgmRef.current.currentTime = 0;
     setFullPreviewPlaying(false);
     setFullPreviewIndex(0);
+  };
+  const toggleDraftItemPlayback = async (item: DraftItem) => {
+    const audio = previewRef.current;
+    if (!draft || !audio) return;
+    if (playingDraftPosition === item.position && !audio.paused) {
+      audio.pause();
+      return;
+    }
+    const src = localPreviewUrls[item.position] ?? `/api/gift-drafts/${draft.id}/items/${item.position}/audio`;
+    if (audio.getAttribute('src') !== src) {
+      audio.src = src;
+      audio.load();
+    }
+    try {
+      await audio.play();
+      setPlayingDraftPosition(item.position);
+    } catch {
+      setPlayingDraftPosition(null);
+      setMessage('녹음을 재생하지 못했어요. 다시 한 번 눌러 주세요.');
+    }
   };
   const playFullGiftPreview = async (index = 0, restartBgm = true) => {
     if (!draft) return;
@@ -1080,7 +1112,7 @@ export function GiftStudio({
                   </small>
                 </div>
                 {savingRecording ? (
-                  <button className="gift-record-button" type="button" disabled><LoaderCircle className="spin" size={20} /> 녹음 저장 중</button>
+                  <button className="record-button" type="button" disabled><span><LoaderCircle className="spin" size={20} /></span> 녹음 저장 중</button>
                 ) : recording && recordingMode === 'continuous' && (
                   <div className="continuous-record-actions">
                     <button
@@ -1107,20 +1139,20 @@ export function GiftStudio({
                 )}
                 {!savingRecording && recording && recordingMode === 'verse' && (
                   <button
-                    className="gift-record-button"
+                    className="record-button recording"
                     type="button"
                     onClick={() => recorderRef.current?.stop()}
                   >
-                    <Pause size={18} /> 이 절 저장
+                    <span><Pause size={18} /></span> 이 절 저장
                   </button>
                 )}
                 {!savingRecording && !recording && (
                   <button
-                    className="gift-record-button"
+                    className="record-button"
                     type="button"
                     onClick={() => void startRecording()}
                   >
-                    <Mic size={22} />{' '}
+                    <span><Mic size={22} /></span>{' '}
                     {recordingMode === 'continuous'
                       ? `${draft.items[draft.nextPosition]?.verse}절부터 이어 녹음`
                       : '이 절 다시 녹음'}
@@ -1128,49 +1160,39 @@ export function GiftStudio({
                 )}
               </div>
             )}
-            <div className="gift-recording-sound">
-              <div>
-                <Music2 size={18} />
+            <aside className="sound-panel gift-sound-panel" aria-label="선물 녹음 음향 설정">
+              <div className="panel-heading">
+                <span><Music2 size={18} /></span>
                 <div>
-                  <strong>배경음악</strong>
-                  <small>녹음 전에 분위기와 음량을 확인해 보세요.</small>
+                  <p className="eyebrow">음향 설정</p>
+                  <h2>배경음악</h2>
                 </div>
               </div>
-              <select
-                value={draft.bgmId}
-                onChange={(event) => {
-                  stopFullGiftPreview();
-                  selectGiftBgm(event.target.value);
-                }}
-              >
-                {GIFT_BGM_CATALOG.map((track) => (
-                  <option value={track.id} key={track.id}>
-                    {track.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={draft.bgmId === 'none'}
-                onClick={() => void toggleBgmPreview()}
-              >
-                {bgmPlaying ? (
-                  <>
-                    <Pause size={15} /> BGM 일시정지
-                  </>
-                ) : (
-                  <>
-                    <Play size={15} /> BGM 미리 듣기
-                  </>
-                )}
-              </button>
-              {bgmPreviewError && (
-                <small role="alert">
-                  BGM을 재생할 수 없어요. 잠시 후 다시 시도해 주세요.
-                </small>
-              )}
-              <label>
-                <span>음량 {draft.bgmVolume}%</span>
+              <fieldset className="setting-group">
+                <legend><Music2 size={17} /> 배경음악</legend>
+                <p>곡을 고른 뒤 녹음하면서 재생하거나 잠시 멈출 수 있어요.</p>
+                <div className="music-list">
+                  {GIFT_BGM_CATALOG.map((track) => (
+                    <div className={`music-option ${draft.bgmId === track.id ? 'selected' : ''}`} key={track.id}>
+                      <button className="music-select" type="button" disabled={recording} onClick={() => { stopFullGiftPreview(); selectGiftBgm(track.id); }}>
+                        <span className="music-icon">{track.id === 'none' ? '—' : 'recommended' in track && track.recommended ? <Sparkles size={15} /> : '♪'}</span>
+                        <span><strong>{track.name}</strong><small>{track.description}</small></span>
+                        <span className="radio-dot" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="bgm-transport" aria-label="배경음악 재생 조작">
+                <button className={bgmPlaying ? 'active' : ''} type="button" onClick={() => void playBgmPreview()} disabled={draft.bgmId === 'none' || bgmPlaying || bgmLoading} aria-label="배경음악 재생">
+                  {bgmLoading ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}<span>{bgmLoading ? '음악 준비 중' : bgmPlaying ? '재생 중' : '재생'}</span>
+                </button>
+                <button className={bgmPaused ? 'active' : ''} type="button" onClick={pauseBgmPreview} disabled={!bgmPlaying} aria-label="배경음악 일시정지"><Pause size={16} /><span>일시정지</span></button>
+                <button type="button" onClick={stopBgmPreview} disabled={!bgmPlaying && !bgmPaused} aria-label="배경음악 정지"><CircleStop size={16} /><span>정지</span></button>
+              </div>
+              {bgmPreviewError && <small role="alert">BGM을 재생할 수 없어요. 잠시 후 다시 시도해 주세요.</small>}
+              <label className="volume-control">
+                <span><Volume2 size={17} /> 배경음악 음량 <strong>{draft.bgmVolume}%</strong></span>
                 <input
                   type="range"
                   min="0"
@@ -1187,7 +1209,8 @@ export function GiftStudio({
                   }}
                 />
               </label>
-            </div>
+              <div className="sound-summary"><Sparkles size={18} /><p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>선택한 음악은 선물 전체에 함께 재생돼요.</small></p></div>
+            </aside>
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 녹음 본문이 화면에 함께 표시됩니다. */}
             <audio ref={fullPreviewVoiceRef} onEnded={handleFullPreviewEnded} />
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 배경음악에는 음성 자막이 필요하지 않습니다. */}
@@ -1209,11 +1232,14 @@ export function GiftStudio({
                   </div>
                   {item.recorded && (
                     <>
-                      <audio
-                        ref={item.position === 0 ? previewRef : undefined}
-                        controls
-                        src={`/api/gift-drafts/${draft.id}/items/${item.position}/audio`}
-                      />
+                      <button
+                        className="record-complete-button saved-listen"
+                        type="button"
+                        onClick={() => void toggleDraftItemPlayback(item)}
+                      >
+                        {playingDraftPosition === item.position ? <Pause size={16} /> : <Play size={16} />}
+                        {playingDraftPosition === item.position ? '듣기 멈춤' : '이 절 듣기'}
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -1229,6 +1255,14 @@ export function GiftStudio({
                 </article>
               ))}
             </div>
+            {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 녹음 본문이 화면에 함께 표시됩니다. */}
+            <audio
+              ref={previewRef}
+              preload="metadata"
+              onPlay={() => undefined}
+              onPause={() => setPlayingDraftPosition(null)}
+              onEnded={() => setPlayingDraftPosition(null)}
+            />
             <div className="gift-studio-actions">
               <button
                 className="secondary"
