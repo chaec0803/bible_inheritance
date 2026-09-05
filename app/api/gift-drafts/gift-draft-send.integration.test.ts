@@ -12,10 +12,11 @@ const mocks = vi.hoisted(() => ({
   statements: [] as Array<{ sql: string; values: unknown[] }>,
   batch: vi.fn(),
   r2Put: vi.fn(),
+  r2Get: vi.fn(),
   r2Delete: vi.fn(),
 }));
 
-vi.mock('cloudflare:workers', () => ({ env: { FILES: { put: mocks.r2Put, delete: mocks.r2Delete } } }));
+vi.mock('cloudflare:workers', () => ({ env: { FILES: { put: mocks.r2Put, get: mocks.r2Get, delete: mocks.r2Delete } } }));
 vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate }));
 vi.mock('@/lib/friend-server', () => ({ ensureUserProfile: mocks.ensureProfile }));
 vi.mock('@/db', () => ({
@@ -76,10 +77,11 @@ describe('선물 초안 바로 보내기 API 통합 회귀', () => {
     mocks.statements = [];
     mocks.batch.mockReset().mockImplementation(async (statements: unknown[]) => statements.map(() => ({ success: true })));
     mocks.r2Put.mockReset().mockResolvedValue(undefined);
+    mocks.r2Get.mockReset().mockResolvedValue({ arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer });
     mocks.r2Delete.mockReset().mockResolvedValue(undefined);
   });
 
-  it('녹음을 마친 초안을 선물로 만들고 초안 음원을 그대로 넘긴다', async () => {
+  it('녹음을 마친 초안을 선물로 만들고 초안 음원을 독립 저장한다', async () => {
     const response = await POST(sendRequest(), context);
     expect(response.status).toBe(201);
     const payload = await response.json() as { gift: { id: string; title: string; recordingCount: number } };
@@ -93,10 +95,23 @@ describe('선물 초안 바로 보내기 API 통합 회귀', () => {
 
     const giftRecordings = statements.filter((statement) => statement.sql.includes('INSERT INTO gift_recordings'));
     expect(giftRecordings).toHaveLength(2);
-    expect(giftRecordings[0].values).toContain('sender-1/gift-drafts/draft-1/item-1');
+    expect(giftRecordings[0].values.some((value) => typeof value === 'string' && value.includes('/gifts/'))).toBe(true);
     expect(giftRecordings[1].values).toContain('r-9');
-    expect(mocks.r2Put).not.toHaveBeenCalled();
-    expect(mocks.r2Delete).not.toHaveBeenCalled();
+    expect(mocks.r2Put).toHaveBeenCalledOnce();
+    expect(mocks.r2Delete).toHaveBeenCalledWith(['sender-1/gift-drafts/draft-1/item-1']);
+  });
+
+  it('선택한 각 친구에게 독립 선물과 독립 초안 음원을 만든다', async () => {
+    mocks.draft = { ...mocks.draft, recipient_keys_json: JSON.stringify(['friend-2', 'friend-3']) };
+    const response = await POST(sendRequest(), context);
+    expect(response.status).toBe(201);
+    const payload = await response.json() as { gifts: Array<{ id: string; recipientUserId: string }> };
+    expect(payload.gifts.map((gift) => gift.recipientUserId)).toEqual(['friend-2', 'friend-3']);
+    const statements = batchedStatements();
+    expect(statements.filter((statement) => statement.sql.includes('INSERT INTO gifts'))).toHaveLength(2);
+    const ownedKeys = statements.filter((statement) => statement.sql.includes('INSERT INTO gift_recordings')).map((statement) => statement.values[8]).filter(Boolean);
+    expect(new Set(ownedKeys).size).toBe(2);
+    expect(mocks.r2Put).toHaveBeenCalledTimes(2);
   });
 
   it('보낸 뒤에는 초안 절 목록을 정리하고 초안을 보낸 선물과 연결한다', async () => {
@@ -114,9 +129,9 @@ describe('선물 초안 바로 보내기 API 통합 회귀', () => {
     expect(gift.values).toContain('text');
     expect(gift.values).toContain('기도하는 마음으로 보내요.');
 
-    mocks.batch.mockClear(); mocks.statements = [];
+    mocks.batch.mockClear(); mocks.r2Put.mockClear(); mocks.statements = [];
     await POST(sendRequest({ type: 'voice', dataUrl: 'data:audio/webm;base64,AQID', mimeType: 'audio/webm', sizeBytes: 3, durationSeconds: 3 }), context);
-    expect(mocks.r2Put).toHaveBeenCalledOnce();
+    expect(mocks.r2Put).toHaveBeenCalledTimes(2);
     gift = batchedStatements().find((statement) => statement.sql.includes('INSERT INTO gifts'))!;
     expect(gift.values).toContain('voice');
   });

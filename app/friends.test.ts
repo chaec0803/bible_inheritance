@@ -224,8 +224,19 @@ describe('공용 친구 선택 모달', () => {
   it('선택 전에는 확인 버튼을 비활성화하고 선택 후에만 확정한다', () => {
     expect(picker).toContain('이 친구 선택');
     expect(picker).toContain('취소');
-    expect(picker).toContain('disabled={!selectedUserId}');
+    expect(picker).toContain('multiple ? !selectedFriends.length : !selectedUserId');
     expect(picker).toContain('onSelect(');
+  });
+
+  it('선택한 친구를 다시 누르면 선택을 해제한다', () => {
+    expect(picker).toContain("current === person.userId ? '' : person.userId");
+  });
+
+  it('다중 선택은 상단 칩과 개별 해제를 제공하고 30명에서 제한한다', () => {
+    expect(picker).toContain('friend-picker-selected');
+    expect(picker).toContain('선택 {selectedFriends.length}/30');
+    expect(picker).toContain('current.filter((id) => id !== friend.userId)');
+    expect(picker).toContain('current.length < 30');
   });
 
   it('닫기 버튼, ESC, 바깥 클릭으로 모달을 닫는다', () => {

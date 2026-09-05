@@ -10,7 +10,7 @@ export const GIFT_BGM_CATALOG = {
 export type GiftBgmId = keyof typeof GIFT_BGM_CATALOG;
 
 export type GiftRequest = {
-  recipientUserId: string;
+  recipientUserIds: string[];
   recordingIds: string[];
   title: string;
   bgmId: GiftBgmId;
@@ -21,7 +21,11 @@ export type GiftRequest = {
 export function normalizeGiftRequest(input: unknown): GiftRequest | null {
   if (!input || typeof input !== 'object') return null;
   const body = input as Record<string, unknown>;
-  const recipientUserId = typeof body.recipientUserId === 'string' ? body.recipientUserId.trim() : '';
+  const rawRecipients = Array.isArray(body.recipientUserIds)
+    ? body.recipientUserIds
+    : typeof body.recipientUserId === 'string' ? [body.recipientUserId] : [];
+  if (rawRecipients.some((value) => typeof value !== 'string' || !value.trim())) return null;
+  const recipientUserIds = [...new Set((rawRecipients as string[]).map((value) => value.trim()))];
   const title = typeof body.title === 'string' ? body.title.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
   const bgmId = typeof body.bgmId === 'string' && body.bgmId in GIFT_BGM_CATALOG ? body.bgmId as GiftBgmId : null;
   const rawIds = Array.isArray(body.recordingIds) ? body.recordingIds : [];
@@ -31,6 +35,6 @@ export function normalizeGiftRequest(input: unknown): GiftRequest | null {
   const bgmVolume = Math.max(0, Math.min(100, Math.round(rawVolume)));
   const letter = normalizeGiftLetter(body.letter);
 
-  if (!recipientUserId || !title || !bgmId || !letter || recordingIds.length === 0 || recordingIds.length > 40_000) return null;
-  return { recipientUserId, recordingIds, title, bgmId, bgmVolume, letter };
+  if (!recipientUserIds.length || recipientUserIds.length > 30 || !title || !bgmId || !letter || recordingIds.length === 0 || recordingIds.length > 40_000) return null;
+  return { recipientUserIds, recordingIds, title, bgmId, bgmVolume, letter };
 }

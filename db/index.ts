@@ -96,7 +96,7 @@ export function ensureDbSchema() {
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_drafts (
       id TEXT PRIMARY KEY NOT NULL, owner_key TEXT NOT NULL, recipient_key TEXT NOT NULL,
-      title TEXT NOT NULL, bgm_id TEXT NOT NULL DEFAULT 'none', bgm_volume INTEGER NOT NULL DEFAULT 12,
+      title TEXT NOT NULL, bgm_id TEXT NOT NULL DEFAULT 'none', bgm_volume INTEGER NOT NULL DEFAULT 12, recipient_keys_json TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, sent_gift_id TEXT
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_draft_items (
@@ -134,6 +134,8 @@ export function ensureDbSchema() {
     if (!giftColumns.results.some((column) => column.name === 'thanked_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN thanked_at INTEGER').run();
     }
+    const draftColumns = await env.DB.prepare('PRAGMA table_info(gift_drafts)').all<{ name: string }>();
+    if (!draftColumns.results.some((column) => column.name === 'recipient_keys_json')) await env.DB.prepare("ALTER TABLE gift_drafts ADD COLUMN recipient_keys_json TEXT NOT NULL DEFAULT '[]'").run();
     for (const [name, definition] of [
       ['letter_type', 'TEXT'], ['letter_text', 'TEXT'], ['letter_object_key', 'TEXT'],
       ['letter_mime_type', 'TEXT'], ['letter_size_bytes', 'INTEGER'],

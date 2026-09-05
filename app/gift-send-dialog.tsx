@@ -26,7 +26,7 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose,
   );
   const [selectedBgmVolume, setSelectedBgmVolume] = useState(bgmVolume);
   const [friends, setFriends] = useState<FriendPerson[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState('');
@@ -45,21 +45,21 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose,
     return () => { active = false; };
   }, []);
 
-  const selectedFriend = friends.find((friend) => friend.userId === selectedUserId) ?? null;
+  const selectedFriends = selectedUserIds.map((id) => friends.find((friend) => friend.userId === id)).filter((friend): friend is FriendPerson => Boolean(friend));
 
   const sendGift = async () => {
-    if (!selectedFriend || sending) return;
+    if (!selectedFriends.length || sending) return;
     setSending(true);
     setMessage('');
     try {
       const response = await fetch('/api/gifts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientUserId: selectedFriend.userId, recordingIds, title: giftTitle.trim(), bgmId: selectedBgmId, bgmVolume: selectedBgmVolume, letter: letter.type === 'text' && !letter.text.trim() ? { type: 'none' } : letter }),
+        body: JSON.stringify({ recipientUserIds: selectedFriends.map((friend) => friend.userId), recordingIds, title: giftTitle.trim(), bgmId: selectedBgmId, bgmVolume: selectedBgmVolume, letter: letter.type === 'text' && !letter.text.trim() ? { type: 'none' } : letter }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? '선물을 보내지 못했어요.');
-      onSent(selectedFriend.nickname, giftTitle.trim());
+      onSent(selectedFriends.length === 1 ? selectedFriends[0].nickname : `${selectedFriends.length}명의 친구`, giftTitle.trim());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '선물을 보내지 못했어요.');
       setSending(false);
@@ -98,17 +98,19 @@ export function GiftSendDialog({ title, recordingIds, bgmId, bgmVolume, onClose,
 
         <GiftLetterComposer value={letter} disabled={sending} onChange={setLetter} />
 
+        {selectedFriends.length > 0 && <div className="gift-selected-friends" aria-label={`선택한 친구 ${selectedFriends.length}명`}><strong>선택 {selectedFriends.length}</strong><div>{selectedFriends.map((friend) => <button type="button" disabled={sending} onClick={() => setSelectedUserIds((current) => current.filter((id) => id !== friend.userId))} key={friend.userId}><span>{friend.nickname.slice(0, 1)}</span>{friend.nickname}<X size={13} /></button>)}</div></div>}
+
         {loading ? <div className="gift-friend-state"><LoaderCircle className="spin" size={25} /><strong>친구를 불러오고 있어요</strong></div> : friends.length ? (
           <div className="gift-friend-list" aria-label="선물을 받을 친구">
             {friends.map((friend) => {
-              const selected = friend.userId === selectedUserId;
-              return <button className={selected ? 'selected' : ''} type="button" aria-pressed={selected} disabled={sending} onClick={() => setSelectedUserId(friend.userId)} key={friend.userId}><span>{friend.nickname.slice(0, 1)}</span><div><strong>{friend.nickname}</strong><small>{friend.emailHint}</small></div>{selected && <Check size={18} />}</button>;
+              const selected = selectedUserIds.includes(friend.userId);
+              return <button className={selected ? 'selected' : ''} type="button" aria-pressed={selected} disabled={sending} onClick={() => setSelectedUserIds((current) => selected ? current.filter((id) => id !== friend.userId) : [...current, friend.userId])} key={friend.userId}><span>{friend.nickname.slice(0, 1)}</span><div><strong>{friend.nickname}</strong><small>{friend.emailHint}</small></div>{selected && <Check size={18} />}</button>;
             })}
           </div>
         ) : <div className="gift-friend-state"><Users size={27} /><strong>선물할 친구가 아직 없어요</strong><p>친구 탭에서 먼저 친구 요청을 주고받아 주세요.</p></div>}
 
         {message && <output className="gift-message" aria-live="polite">{message}</output>}
-        <button className="gift-send-confirm" type="button" disabled={!selectedFriend || !giftTitle.trim() || sending} onClick={() => void sendGift()}>{sending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{sending ? '선물 포장 중' : selectedFriend ? `${selectedFriend.nickname}님에게 보내기` : '친구를 선택해 주세요'}</button>
+        <button className="gift-send-confirm" type="button" disabled={!selectedFriends.length || !giftTitle.trim() || sending} onClick={() => void sendGift()}>{sending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{sending ? `${selectedFriends.length}개의 선물 포장 중` : selectedFriends.length ? `${selectedFriends.length}명에게 보내기` : '친구를 선택해 주세요'}</button>
       </dialog>
     </div>
   );

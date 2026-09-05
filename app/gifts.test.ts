@@ -40,9 +40,18 @@ describe('말씀 선물 UI·데이터 회귀', () => {
   });
 
   it('전송 완료 안내에는 사용자가 입력한 선물 이름을 표시한다', () => {
-    expect(dialog).toContain('onSent(selectedFriend.nickname, giftTitle.trim())');
+    expect(dialog).toContain('onSent(selectedFriends.length === 1');
     expect(page).toContain('onSent={(nickname, sentTitle) =>');
     expect(page).toContain('‘${sentTitle}’ 녹음과 BGM');
+  });
+
+  it('카카오톡처럼 여러 친구를 누적 선택하고 칩에서 해제한다', () => {
+    expect(dialog).toContain('selectedUserIds');
+    expect(dialog).toContain('selectedFriends.map');
+    expect(dialog).toContain('gift-selected-friends');
+    expect(dialog).toContain('선택 {selectedFriends.length}');
+    expect(dialog).toContain('`${selectedFriends.length}명에게 보내기`');
+    expect(dialog).toContain('recipientUserIds: selectedFriends.map');
   });
 
   it('진행 중 듣기 화면에는 선물 버튼을 두지 않고 완료를 먼저 확인한다', () => {
@@ -75,6 +84,13 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('열어보기 전');
     expect(panel).toContain('window.setInterval');
     expect(panel).toContain('보낸 선물 삭제');
+    expect(panel).toContain('받는 사람의 선물은 그대로 유지돼요');
+  });
+
+  it('보낸 선물 삭제는 브라우저 시스템 확인창 대신 말씀유산 모달을 사용한다', () => {
+    expect(panel).not.toMatch(/\b(?:window\.)?(?:alert|confirm|prompt)\s*\(/);
+    expect(panel).toContain('confirmDeleteSentGift');
+    expect(panel).toContain('gift-sent-delete-title');
     expect(panel).toContain('받는 사람의 선물은 그대로 유지돼요');
   });
 

@@ -90,6 +90,7 @@ export function GiftsPanel({
   const [paused, setPaused] = useState(false);
   const [openLists, setOpenLists] = useState<string[]>([]);
   const [confirmDeleteGift, setConfirmDeleteGift] = useState<ReceivedGift | null>(null);
+  const [confirmDeleteSentGift, setConfirmDeleteSentGift] = useState<SentGift | null>(null);
   const [deletingGiftId, setDeletingGiftId] = useState<string | null>(null);
   const [openingGiftId, setOpeningGiftId] = useState<string | null>(null);
   const [downloadingGiftId, setDownloadingGiftId] = useState<string | null>(null);
@@ -311,8 +312,9 @@ export function GiftsPanel({
     }
   };
 
-  const deleteSentGift = async (gift: SentGift) => {
-    if (deletingGiftId || !window.confirm(`‘${gift.title}’을(를) 보낸 선물 목록에서 삭제할까요?`)) return;
+  const deleteSentGift = async () => {
+    if (deletingGiftId || !confirmDeleteSentGift) return;
+    const gift = confirmDeleteSentGift;
     setDeletingGiftId(gift.id);
     try {
       const response = await fetch(`/api/gifts/${gift.id}`, { method: 'DELETE' });
@@ -320,6 +322,7 @@ export function GiftsPanel({
       if (!response.ok) throw new Error(payload.error ?? '보낸 선물을 삭제하지 못했어요.');
       await refresh();
       setDetailSentGiftId(null);
+      setConfirmDeleteSentGift(null);
       setMessage('보낸 선물 목록에서 삭제했어요. 받는 사람의 선물은 그대로 유지돼요.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '보낸 선물을 삭제하지 못했어요.');
@@ -478,7 +481,7 @@ export function GiftsPanel({
               {gift.hasLetter && <div className="sent-gift-letter-tag"><MessageCircle size={15} /> {gift.letterType === 'voice' ? '음성 편지' : '텍스트 편지'}를 함께 보냈어요</div>}
               <div className={`sent-gift-status ${opened ? 'opened' : ''}`}><span>{status}</span><p>{opened && gift.openedAt ? `열어본 시간 · ${formatGiftDateTime(gift.openedAt)}` : `${gift.recipientNickname}님이 열어보기를 기다리고 있어요.`}</p></div>
               {gift.thankYouNote && <div className="sent-thank-you-note"><MessageCircle size={18} /><div><strong>감사 인사가 도착했어요</strong><blockquote>{gift.thankYouNote}</blockquote>{gift.thankedAt && <small>{formatGiftDateTime(gift.thankedAt)}</small>}</div></div>}
-              <button className="completed-journey-delete" type="button" disabled={deletingGiftId === gift.id} onClick={() => void deleteSentGift(gift)}><Trash2 size={15} /> {deletingGiftId === gift.id ? '삭제 중' : '보낸 선물 삭제'}</button>
+              <button className="completed-journey-delete" type="button" disabled={deletingGiftId === gift.id} onClick={() => setConfirmDeleteSentGift(gift)}><Trash2 size={15} /> {deletingGiftId === gift.id ? '삭제 중' : '보낸 선물 삭제'}</button>
               </>}
             </article>;
           })}
@@ -505,6 +508,7 @@ export function GiftsPanel({
       <audio ref={bgmRef} />
 
       {confirmDeleteGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-delete-dialog" open aria-labelledby="gift-delete-title"><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)} aria-label="삭제 확인 닫기"><X size={20} /></button><span><Trash2 size={25} /></span><h2 id="gift-delete-title">‘{confirmDeleteGift.title}’ 선물을 삭제할까요?</h2><p>삭제하면 선물함과 다운로드 파일에서 모두 사라지고 복구할 수 없어요.</p><div><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)}>돌아가기</button><button className="delete" type="button" onClick={() => void deleteGift()} disabled={Boolean(deletingGiftId)}>{deletingGiftId ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{deletingGiftId ? '삭제 중' : '선물 삭제'}</button></div></dialog></div>}
+      {confirmDeleteSentGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-delete-dialog" open aria-labelledby="gift-sent-delete-title"><button type="button" onClick={() => setConfirmDeleteSentGift(null)} disabled={Boolean(deletingGiftId)} aria-label="보낸 선물 삭제 확인 닫기"><X size={20} /></button><span><Trash2 size={25} /></span><h2 id="gift-sent-delete-title">‘{confirmDeleteSentGift.title}’을 보낸 목록에서 삭제할까요?</h2><p>내 보낸 선물함에서만 사라져요. 받는 사람의 선물은 그대로 유지돼요.</p><div><button type="button" onClick={() => setConfirmDeleteSentGift(null)} disabled={Boolean(deletingGiftId)}>돌아가기</button><button className="delete" type="button" onClick={() => void deleteSentGift()} disabled={Boolean(deletingGiftId)}>{deletingGiftId ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{deletingGiftId ? '삭제 중' : '보낸 목록에서 삭제'}</button></div></dialog></div>}
       {thankYouGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-thank-you-dialog" open aria-labelledby="gift-thank-you-title">
         <button className="gift-dialog-close" type="button" onClick={() => setThankYouGift(null)} disabled={sendingThankYou} aria-label="감사 인사 닫기"><X size={20} /></button>
         <span className="gift-dialog-icon"><MessageCircle size={25} /></span>

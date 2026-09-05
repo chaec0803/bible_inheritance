@@ -171,30 +171,18 @@ export async function POST(request: Request) {
 
   const giftRequest = normalizeGiftRequest(await request.json().catch(() => null));
   if (!giftRequest) return Response.json({ error: '보낼 선물 정보를 다시 확인해 주세요.' }, { status: 400 });
-  if (giftRequest.recipientUserId === user.id) return Response.json({ error: '나 자신에게는 선물할 수 없습니다.' }, { status: 400 });
+  if (giftRequest.recipientUserIds.includes(user.id)) return Response.json({ error: '나 자신에게는 선물할 수 없습니다.' }, { status: 400 });
 
   await ensureDbSchema();
   await ensureUserProfile(user);
-  const [userA, userB] = canonicalFriendPair(user.id, giftRequest.recipientUserId);
-  const friendship = await getD1().prepare("SELECT id FROM friendships WHERE user_a_key = ? AND user_b_key = ? AND status = 'accepted'")
-    .bind(userA, userB)
-    .first<{ id: string }>();
-  if (!friendship) return Response.json({ error: '친구에게만 말씀을 선물할 수 있습니다.' }, { status: 403 });
-
-  const block = await getD1().prepare(`SELECT id FROM friend_blocks
-    WHERE (blocker_key = ? AND blocked_key = ?) OR (blocker_key = ? AND blocked_key = ?)
-    LIMIT 1`)
-    .bind(user.id, giftRequest.recipientUserId, giftRequest.recipientUserId, user.id)
-    .first<{ id: string }>();
-  if (block) return Response.json({ error: '차단한 사용자에게는 말씀 선물을 보낼 수 없습니다.' }, { status: 403 });
-
-  const unopenedGift = await getD1().prepare(`SELECT id FROM gifts
-    WHERE sender_key = ? AND recipient_key = ? AND opened_at IS NULL
-    LIMIT 1`)
-    .bind(user.id, giftRequest.recipientUserId)
-    .first<{ id: string }>();
-  if (unopenedGift) {
-    return Response.json({ error: '친구가 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });
+  for (const recipientUserId of giftRequest.recipientUserIds) {
+    const [userA, userB] = canonicalFriendPair(user.id, recipientUserId);
+    const friendship = await getD1().prepare("SELECT id FROM friendships WHERE user_a_key = ? AND user_b_key = ? AND status = 'accepted'").bind(userA, userB).first<{ id: string }>();
+    if (!friendship) return Response.json({ error: '선택한 모든 사람이 현재 친구인지 확인해 주세요.' }, { status: 403 });
+    const block = await getD1().prepare(`SELECT id FROM friend_blocks WHERE (blocker_key = ? AND blocked_key = ?) OR (blocker_key = ? AND blocked_key = ?) LIMIT 1`).bind(user.id, recipientUserId, recipientUserId, user.id).first<{ id: string }>();
+    if (block) return Response.json({ error: '차단 관계인 친구가 포함되어 있어 선물을 보낼 수 없습니다.' }, { status: 403 });
+    const unopenedGift = await getD1().prepare(`SELECT id FROM gifts WHERE sender_key = ? AND recipient_key = ? AND opened_at IS NULL LIMIT 1`).bind(user.id, recipientUserId).first<{ id: string }>();
+    if (unopenedGift) return Response.json({ error: '선택한 친구 중 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });
   }
 
   const sourceResult = await getD1().prepare(`SELECT
@@ -215,46 +203,46 @@ export async function POST(request: Request) {
   const recordings = selection.orderedRecordingIds.map((id) => sourceById.get(id)!).filter(Boolean);
   const totalSizeBytes = recordings.reduce((sum, recording) => sum + recording.size_bytes, 0);
 
-  const giftId = crypto.randomUUID();
+  const giftIds = giftRequest.recipientUserIds.map(() => crypto.randomUUID());
   const now = Date.now();
-  const letterObjectKey = giftRequest.letter.type === 'voice' ? `${user.id}/gift-letters/${giftId}` : null;
+  const letterBytes = giftRequest.letter.type === 'voice' ? decodeGiftLetterAudio(giftRequest.letter) : null;
   if (giftRequest.letter.type === 'voice') {
-    const bytes = decodeGiftLetterAudio(giftRequest.letter);
-    if (!bytes) return Response.json({ error: '음성 편지 파일을 다시 확인해 주세요.' }, { status: 400 });
-    await env.FILES.put(letterObjectKey!, bytes, { httpMetadata: { contentType: giftRequest.letter.mimeType } });
+    if (!letterBytes) return Response.json({ error: '음성 편지 파일을 다시 확인해 주세요.' }, { status: 400 });
+    await Promise.all(giftIds.map((giftId) => env.FILES.put(`${user.id}/gift-letters/${giftId}`, letterBytes, { httpMetadata: { contentType: giftRequest.letter.type === 'voice' ? giftRequest.letter.mimeType : undefined } })));
   }
-  const giftRecordings: Array<SourceRecordingRow & { id: string; position: number }> = recordings.map((recording, position) => ({ ...recording, id: crypto.randomUUID(), position }));
 
   try {
     const d1 = getD1();
-    const statements = [
+    const statements = giftRequest.recipientUserIds.flatMap((recipientUserId, recipientIndex) => {
+      const giftId = giftIds[recipientIndex];
+      const letterObjectKey = giftRequest.letter.type === 'voice' ? `${user.id}/gift-letters/${giftId}` : null;
+      return [
       d1.prepare(`INSERT INTO gifts (
         id, sender_key, recipient_key, title, bgm_id, bgm_volume,
         recording_count, total_size_bytes, created_at, letter_type, letter_text,
         letter_object_key, letter_mime_type, letter_size_bytes, letter_duration_seconds
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(giftId, user.id, giftRequest.recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now,
+        .bind(giftId, user.id, recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now,
           giftRequest.letter.type === 'none' ? null : giftRequest.letter.type,
           giftRequest.letter.type === 'text' ? giftRequest.letter.text : null,
           letterObjectKey,
           giftRequest.letter.type === 'voice' ? giftRequest.letter.mimeType : null,
           giftRequest.letter.type === 'voice' ? giftRequest.letter.sizeBytes : null,
           giftRequest.letter.type === 'voice' ? giftRequest.letter.durationSeconds : null),
-      ...giftRecordings.map((recording) => d1.prepare(`INSERT INTO gift_recordings (
+      ...recordings.map((recording, position) => d1.prepare(`INSERT INTO gift_recordings (
         id, gift_id, position, book, chapter, verse, verse_text,
         source_recording_id, object_key, mime_type, size_bytes, duration_seconds
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
-        .bind(recording.id, giftId, recording.position, recording.book, recording.chapter, recording.verse, recording.verse_text, sourceById.get(selection.orderedRecordingIds[recording.position])!.id, recording.mime_type, recording.size_bytes, recording.duration_seconds)),
-    ];
+        .bind(crypto.randomUUID(), giftId, position, recording.book, recording.chapter, recording.verse, recording.verse_text, sourceById.get(selection.orderedRecordingIds[position])!.id, recording.mime_type, recording.size_bytes, recording.duration_seconds)),
+      ];
+    });
     for (let offset = 0; offset < statements.length; offset += 500) await d1.batch(statements.slice(offset, offset + 500));
-    return Response.json({ gift: { id: giftId, title: giftRequest.title, recordingCount: recordings.length } }, { status: 201 });
+    const gifts = giftIds.map((id, index) => ({ id, recipientUserId: giftRequest.recipientUserIds[index], title: giftRequest.title, recordingCount: recordings.length }));
+    return Response.json({ gift: gifts[0], gifts }, { status: 201 });
   } catch (error) {
     const d1 = getD1();
-    if (letterObjectKey) await env.FILES.delete(letterObjectKey).catch(() => undefined);
-    await d1.batch([
-      d1.prepare('DELETE FROM gift_recordings WHERE gift_id = ?').bind(giftId),
-      d1.prepare('DELETE FROM gifts WHERE id = ?').bind(giftId),
-    ]).catch(() => undefined);
+    if (giftRequest.letter.type === 'voice') await env.FILES.delete(giftIds.map((giftId) => `${user.id}/gift-letters/${giftId}`)).catch(() => undefined);
+    await d1.batch(giftIds.flatMap((giftId) => [d1.prepare('DELETE FROM gift_recordings WHERE gift_id = ?').bind(giftId), d1.prepare('DELETE FROM gifts WHERE id = ?').bind(giftId)])).catch(() => undefined);
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes('idx_gifts_one_unopened_per_pair') || errorMessage.includes('UNIQUE constraint failed: gifts.sender_key, gifts.recipient_key')) {
       return Response.json({ error: '친구가 이전 선물을 아직 열지 않았어요. 선물을 연 뒤에 다시 보낼 수 있어요.' }, { status: 409 });

@@ -8,5 +8,7 @@ export function presentItems(rows: DraftItemRow[]) {
 
 export function presentDraft(row: Record<string, unknown>, rows: DraftItemRow[]) {
   const progressItems = rows.map((item) => ({ objectKey: item.object_key, sourceRecordingId: item.source_recording_id }));
-  return { id: row.id, recipientUserId: row.recipient_key, recipientNickname: row.recipient_nickname, title: row.title, bgmId: row.bgm_id, bgmVolume: row.bgm_volume, createdAt: row.created_at, updatedAt: row.updated_at, ...getGiftDraftProgress(progressItems), sendable: isGiftDraftSendable(progressItems), items: presentItems(rows) };
+  let recipientUserIds = [String(row.recipient_key)];
+  try { const parsed = JSON.parse(typeof row.recipient_keys_json === 'string' ? row.recipient_keys_json : '[]'); if (Array.isArray(parsed) && parsed.length) recipientUserIds = parsed.filter((id): id is string => typeof id === 'string'); } catch { /* 이전 초안은 대표 수신자를 사용합니다. */ }
+  return { id: row.id, recipientUserId: row.recipient_key, recipientUserIds, recipientCount: recipientUserIds.length, recipientNickname: row.recipient_nickname, title: row.title, bgmId: row.bgm_id, bgmVolume: row.bgm_volume, createdAt: row.created_at, updatedAt: row.updated_at, ...getGiftDraftProgress(progressItems), sendable: isGiftDraftSendable(progressItems), items: presentItems(rows) };
 }

@@ -122,6 +122,18 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(gift.values).toContain('audio/webm');
   });
 
+  it('여러 친구에게 수신자별 독립된 선물을 한 번에 만든다', async () => {
+    const response = await POST(sendRequest({ recipientUserIds: ['friend-2', 'friend-3'] }));
+    expect(response.status).toBe(201);
+    const statements = mocks.batch.mock.calls.flatMap((call) => call[0] as Array<{ sql: string; values: unknown[] }>);
+    const gifts = statements.filter((statement) => statement.sql.includes('INSERT INTO gifts'));
+    expect(gifts).toHaveLength(2);
+    expect(gifts[0].values).toContain('friend-2');
+    expect(gifts[1].values).toContain('friend-3');
+    expect(gifts[0].values[0]).not.toBe(gifts[1].values[0]);
+    expect((await response.json() as { gifts: unknown[] }).gifts).toHaveLength(2);
+  });
+
   it('수신자가 쪽지를 열기 전에는 편지 내용을 목록 응답에 노출하지 않는다', async () => {
     mocks.authenticate.mockResolvedValue({ id: 'friend-2', email: 'friend@example.com' });
     mocks.giftRows = [{ id: 'gift-letter', title: '힘이 되는 말씀', sender_nickname: '말씀친구', bgm_id: 'none', bgm_volume: 0, recording_count: 1, total_size_bytes: 4, created_at: 100, opened_at: 110, thank_you_note: null, thanked_at: null, letter_type: 'text', letter_text: '사랑해요', letter_mime_type: null, letter_size_bytes: null, letter_duration_seconds: null, letter_opened_at: null }];

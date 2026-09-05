@@ -18,8 +18,11 @@ type FriendPickerModalProps = {
   description?: string;
   confirmLabel?: string;
   initialSelectedUserId?: string | null;
+  initialSelectedFriends?: FriendPickerPerson[];
+  multiple?: boolean;
   onCancel: () => void;
   onSelect: (friend: FriendPickerPerson) => void;
+  onSelectMany?: (friends: FriendPickerPerson[]) => void;
 };
 
 async function readFriends(url: string) {
@@ -34,12 +37,16 @@ export function FriendPickerModal({
   description = '친구 한 명을 선택해 주세요.',
   confirmLabel = '이 친구 선택',
   initialSelectedUserId = null,
+  initialSelectedFriends = [],
+  multiple = false,
   onCancel,
   onSelect,
+  onSelectMany,
 }: FriendPickerModalProps) {
   const [friends, setFriends] = useState<FriendPickerPerson[]>([]);
   const [results, setResults] = useState<FriendPickerPerson[]>([]);
   const [selectedUserId, setSelectedUserId] = useState(initialSelectedUserId ?? '');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialSelectedFriends.map((friend) => friend.userId));
   const [query, setQuery] = useState('');
   const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -98,13 +105,15 @@ export function FriendPickerModal({
   }, [query, runSearch]);
 
   const selected = [...friends, ...results].find((person) => person.userId === selectedUserId) ?? null;
+  const people = [...initialSelectedFriends, ...friends, ...results].filter((person, index, all) => all.findIndex((candidate) => candidate.userId === person.userId) === index);
+  const selectedFriends = selectedUserIds.map((id) => people.find((person) => person.userId === id)).filter((person): person is FriendPickerPerson => Boolean(person));
 
   const renderRow = (person: FriendPickerPerson) => (
     <button
-      className={`friend-picker-row ${person.userId === selectedUserId ? 'selected' : ''}`}
+      className={`friend-picker-row ${(multiple ? selectedUserIds.includes(person.userId) : person.userId === selectedUserId) ? 'selected' : ''}`}
       type="button"
-      aria-pressed={person.userId === selectedUserId}
-      onClick={() => setSelectedUserId(person.userId)}
+      aria-pressed={multiple ? selectedUserIds.includes(person.userId) : person.userId === selectedUserId}
+      onClick={() => multiple ? setSelectedUserIds((current) => current.includes(person.userId) ? current.filter((id) => id !== person.userId) : current.length < 30 ? [...current, person.userId] : current) : setSelectedUserId((current) => current === person.userId ? '' : person.userId)}
       key={person.userId}
     >
       <span className="friend-row-avatar" aria-hidden="true">{person.nickname.slice(0, 1)}</span>
@@ -112,7 +121,7 @@ export function FriendPickerModal({
         <strong className="friend-row-name">{person.nickname}</strong>
         <small className="friend-row-mail">{person.emailHint}</small>
       </span>
-      {person.userId === selectedUserId && <Check size={17} aria-label="선택함" />}
+      {(multiple ? selectedUserIds.includes(person.userId) : person.userId === selectedUserId) && <Check size={17} aria-label="선택함" />}
     </button>
   );
 
@@ -127,6 +136,7 @@ export function FriendPickerModal({
         <p className="eyebrow">SELECT A FRIEND</p>
         <h2 id="friend-picker-title">{title}</h2>
         <p className="friend-picker-description">{description}</p>
+        {multiple && selectedFriends.length > 0 && <div className="friend-picker-selected" aria-label={`선택한 친구 ${selectedFriends.length}명`}><strong>선택 {selectedFriends.length}/30</strong><div>{selectedFriends.map((friend) => <button type="button" onClick={() => setSelectedUserIds((current) => current.filter((id) => id !== friend.userId))} key={friend.userId}><span>{friend.nickname.slice(0, 1)}</span>{friend.nickname}<X size={13} /></button>)}</div></div>}
 
         <form className="friend-picker-search" onSubmit={(event) => void runSearch(event)}>
           <label htmlFor="friend-picker-query">
@@ -176,10 +186,10 @@ export function FriendPickerModal({
           <button
             className="confirm"
             type="button"
-            disabled={!selectedUserId}
-            onClick={() => selected && onSelect(selected)}
+            disabled={multiple ? !selectedFriends.length : !selectedUserId}
+            onClick={() => multiple ? onSelectMany?.(selectedFriends) : selected && onSelect(selected)}
           >
-            {confirmLabel}
+            {multiple ? `${selectedFriends.length}명 선택` : confirmLabel}
           </button>
         </div>
       </dialog>

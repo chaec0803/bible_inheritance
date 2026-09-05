@@ -146,6 +146,7 @@ export const giftDrafts = sqliteTable(
   {
     id: text('id').primaryKey(), ownerKey: text('owner_key').notNull(), recipientKey: text('recipient_key').notNull(),
     title: text('title').notNull(), bgmId: text('bgm_id').notNull().default('none'), bgmVolume: integer('bgm_volume').notNull().default(12),
+    recipientKeysJson: text('recipient_keys_json').notNull().default('[]'),
     createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(), sentGiftId: text('sent_gift_id'),
   },
   (table) => [index('idx_gift_drafts_owner_updated').on(table.ownerKey, table.updatedAt)],

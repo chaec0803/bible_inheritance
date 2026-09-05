@@ -104,6 +104,31 @@ describe('선물 초안 만들기 API 통합 회귀', () => {
     expect(written).toContain('INSERT INTO gift_drafts');
   });
 
+  it('최대 30명의 수신자를 초안에 함께 저장한다', async () => {
+    const response = await POST(createRequest({
+      recipientUserId: 'friend-2',
+      recipientUserIds: ['friend-2', 'friend-3'],
+      scope: { kind: 'chapter', bookCode: '옵', chapter: 1 },
+    }));
+    expect(response.status).toBe(201);
+    const payload = await response.json() as { draft: { recipientUserIds: string[]; recipientCount: number } };
+    expect(payload.draft).toMatchObject({ recipientUserIds: ['friend-2', 'friend-3'], recipientCount: 2 });
+    const insert = mocks.batch.mock.calls[0][0][0] as { values: unknown[] };
+    expect(insert.values).toContain(JSON.stringify(['friend-2', 'friend-3']));
+  });
+
+  it('31명 이상의 수신자는 초안 생성 전에 거절한다', async () => {
+    const recipientUserIds = Array.from({ length: 31 }, (_, index) => `friend-${index}`);
+    const response = await POST(createRequest({
+      recipientUserId: recipientUserIds[0],
+      recipientUserIds,
+      scope: { kind: 'chapter', bookCode: '옵', chapter: 1 },
+    }));
+    expect(response.status).toBe(400);
+    expect((await response.json() as { error: string }).error).toContain('최대 30명');
+    expect(mocks.batch).not.toHaveBeenCalled();
+  });
+
   it('진행 중인 말씀 여정을 고르면 그 여정의 녹음만 순서대로 참조한다', async () => {
     mocks.journeyRows = [
       { id: 'r-2', book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', mime_type: 'audio/wav', size_bytes: 20, duration_seconds: 4 },

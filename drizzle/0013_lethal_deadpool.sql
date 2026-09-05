@@ -1,0 +1,1 @@
+ALTER TABLE `gift_drafts` ADD `recipient_keys_json` text DEFAULT '[]' NOT NULL;

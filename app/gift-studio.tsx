@@ -64,6 +64,9 @@ type Draft = {
   bgmVolume: number;
   nextPosition: number | null;
   recipientNickname?: string;
+  recipientUserId?: string;
+  recipientUserIds?: string[];
+  recipientCount?: number;
   items: DraftItem[];
 };
 type ApiPayload = {
@@ -101,6 +104,7 @@ export function GiftStudio({
 }) {
   const [step, setStep] = useState<GiftStudioStep>('friend');
   const [selectedFriend, setSelectedFriend] = useState<FriendPickerPerson | null>(initialFriend ?? null);
+  const [selectedFriends, setSelectedFriends] = useState<FriendPickerPerson[]>(initialFriend ? [initialFriend] : []);
   const [friendPickerOpen, setFriendPickerOpen] = useState(false);
   const recipient = selectedFriend?.userId ?? '';
   const [scopeKind, setScopeKind] = useState<GiftDraftScope['kind']>(
@@ -134,6 +138,7 @@ export function GiftStudio({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [message, setMessage] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const [letter, setLetter] = useState<GiftLetterInput>({ type: 'none' });
   const [sendSuccessGiftId, setSendSuccessGiftId] = useState<string | null>(
     null,
@@ -274,6 +279,7 @@ export function GiftStudio({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         recipientUserId: recipient,
+        recipientUserIds: selectedFriends.map((friend) => friend.userId),
         scope: makeScope(),
         title: resolvedGiftTitle,
       }),
@@ -506,16 +512,18 @@ export function GiftStudio({
     await refresh();
   };
   const send = async () => {
-    if (!draft || !draft.title.trim() || !isGiftDraftSendable(draft.items))
+    if (!draft || sending || !draft.title.trim() || !isGiftDraftSendable(draft.items))
       return;
     if (!(await saveTitle(draft.title))) return;
     setSendError(null);
+    setSending(true);
     const response = await fetch(`/api/gift-drafts/${draft.id}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ letter: letter.type === 'text' && !letter.text.trim() ? { type: 'none' } : letter }),
+      body: JSON.stringify({ letter: letter.type === 'text' && !letter.text.trim() ? { type: 'none' } : letter, recipientUserIds: selectedFriends.map((friend) => friend.userId) }),
     });
     const payload = await readPayload(response);
+    setSending(false);
     if (!response.ok) {
       setSendError(payload.error ?? '선물을 보내지 못했어요.');
       return;
@@ -574,24 +582,11 @@ export function GiftStudio({
             <p className="eyebrow">STEP 1</p>
             <h2>받을 친구를 골라 주세요</h2>
             <p className="gift-studio-description">
-              소중한 목소리를 전하고 싶은 친구 한 명을 선택해 주세요.
+              소중한 목소리를 전하고 싶은 친구를 최대 30명까지 선택해 주세요.
             </p>
             <div className="gift-recipient-slot">
-              {selectedFriend ? (
-                <div className="friend-row static">
-                  <span className="friend-row-avatar" aria-hidden="true">
-                    {selectedFriend.nickname.slice(0, 1)}
-                  </span>
-                  <span className="friend-row-body">
-                    <strong className="friend-row-name">
-                      {selectedFriend.nickname}
-                    </strong>
-                    <small className="friend-row-mail">
-                      {selectedFriend.emailHint}
-                    </small>
-                  </span>
-                  <Check size={17} aria-label="선택함" />
-                </div>
+              {selectedFriends.length ? (
+                <div className="gift-selected-friends"><strong>선택 {selectedFriends.length}/30</strong><div>{selectedFriends.map((friend) => <button type="button" onClick={() => { const next = selectedFriends.filter((candidate) => candidate.userId !== friend.userId); setSelectedFriends(next); setSelectedFriend(next[0] ?? null); }} key={friend.userId}><span>{friend.nickname.slice(0, 1)}</span>{friend.nickname}<X size={13} /></button>)}</div></div>
               ) : (
                 <p className="gift-recipient-placeholder">
                   <Users size={16} /> 아직 받을 친구를 고르지 않았어요.
@@ -602,13 +597,13 @@ export function GiftStudio({
                 type="button"
                 onClick={() => setFriendPickerOpen(true)}
               >
-                {selectedFriend ? '다른 친구 선택하기' : '친구 선택하기'}
+                {selectedFriends.length ? '친구 더 선택하기' : '친구 선택하기'}
               </button>
             </div>
             <button
               className="gift-studio-continue"
               type="button"
-              disabled={!recipient}
+              disabled={!selectedFriends.length}
               onClick={() => setStep('scope')}
             >
               말씀 선택하기 <ArrowRight size={17} />
@@ -1234,11 +1229,11 @@ export function GiftStudio({
                   className="gift-send-button"
                   type="button"
                   disabled={
-                    !draft.title.trim() || !isGiftDraftSendable(draft.items)
+                    sending || !draft.title.trim() || !isGiftDraftSendable(draft.items)
                   }
                   onClick={() => void send()}
                 >
-                  <Send size={19} /> 바로 선물하기
+                  {sending ? <LoaderCircle className="spin" size={19} /> : <Send size={19} />} {sending ? `${selectedFriends.length}개 선물 포장 중` : `${selectedFriends.length}명에게 보내기`}
                 </button>
               </div>
             )}
@@ -1316,12 +1311,17 @@ export function GiftStudio({
         {friendPickerOpen && (
           <FriendPickerModal
             title="누구에게 선물할까요?"
-            description="말씀 선물을 받을 친구 한 명을 선택해 주세요."
-            confirmLabel="이 친구 선택"
-            initialSelectedUserId={recipient || null}
+            description="말씀 선물을 받을 친구를 최대 30명까지 선택해 주세요."
+            multiple
+            initialSelectedFriends={selectedFriends}
             onCancel={() => setFriendPickerOpen(false)}
             onSelect={(friend) => {
               setSelectedFriend(friend);
+              setFriendPickerOpen(false);
+            }}
+            onSelectMany={(friends) => {
+              setSelectedFriends(friends);
+              setSelectedFriend(friends[0] ?? null);
               setFriendPickerOpen(false);
             }}
           />
@@ -1335,7 +1335,7 @@ export function GiftStudio({
             <div>
               <dt>받을 친구</dt>
               <dd>
-                {selectedFriend?.nickname ??
+                {selectedFriends.length > 1 ? `${selectedFriends.length}명` : selectedFriend?.nickname ??
                   draft?.recipientNickname ??
                   '아직 선택하지 않았어요'}
               </dd>
@@ -1370,7 +1370,14 @@ export function GiftStudio({
       <InProgressGifts gifts={drafts as InProgressGift[]} activeGiftId={draft?.id ?? null} onDelete={setConfirmDiscardDraft} onResume={(item) => {
         const target = drafts.find((candidate) => candidate.id === item.id);
         if (!target) return;
-        void hydrateVerseTexts(target).then((hydratedDraft) => {
+        void Promise.all([
+          hydrateVerseTexts(target),
+          fetch('/api/friends').then((response) => response.json() as Promise<{ friends?: FriendPickerPerson[] }>),
+        ]).then(([hydratedDraft, friendsPayload]) => {
+          const ids = target.recipientUserIds ?? (target.recipientUserId ? [target.recipientUserId] : []);
+          const restoredFriends = ids.map((id) => friendsPayload.friends?.find((friend) => friend.userId === id)).filter((friend): friend is FriendPickerPerson => Boolean(friend));
+          setSelectedFriends(restoredFriends);
+          setSelectedFriend(restoredFriends[0] ?? null);
           setDraft(hydratedDraft);
           setRecordingMode('continuous');
           setStep(hydratedDraft.nextPosition == null ? 'preview' : 'record');

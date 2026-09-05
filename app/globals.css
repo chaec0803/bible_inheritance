@@ -194,7 +194,7 @@ html[data-theme='dark'] {
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif; transition: background-color .22s ease, color .22s ease; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif; word-break: keep-all; overflow-wrap: break-word; line-break: strict; transition: background-color .22s ease, color .22s ease; }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
@@ -1408,3 +1408,13 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
 .gift-voice-letter small { color: #7c898e; }
 .sent-gift-letter-tag { margin: 10px 0; display: flex; align-items: center; gap: 6px; color: #805d28; font-size: 13px; }
 @media (max-width: 560px) { .gift-letter-types { grid-template-columns: 1fr; } .gift-letter-voice-ready { align-items: stretch; flex-direction: column; } .gift-letter-voice-ready > button { justify-content: center; } }
+.gift-selected-friends { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: #f3f7f4; }
+.gift-selected-friends > strong { color: #526b60; font-size: 12px; }
+.gift-selected-friends > div { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; }
+.gift-selected-friends button { flex: 0 0 auto; border: 1px solid #cbd9d1; border-radius: 999px; padding: 5px 9px 5px 5px; background: #fff; color: #385247; display: inline-flex; align-items: center; gap: 5px; }
+.gift-selected-friends button > span { width: 25px; height: 25px; border-radius: 50%; background: #dce9e2; display: grid; place-items: center; font-weight: 800; }
+.friend-picker-selected { display: grid; gap: 7px; margin-bottom: 12px; padding: 10px; border-radius: 15px; background: #f3f7f4; }
+.friend-picker-selected > strong { color: #526b60; font-size: 11px; }
+.friend-picker-selected > div { display: flex; gap: 6px; overflow-x: auto; }
+.friend-picker-selected button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px 4px 4px; color: #385247; background: #fff; border: 1px solid #cbd9d1; border-radius: 999px; }
+.friend-picker-selected button > span { width: 23px; height: 23px; display: grid; place-items: center; background: #dce9e2; border-radius: 50%; font-weight: 800; }

@@ -87,6 +87,15 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).not.toContain('<h2>누구에게 선물할까요?</h2>');
   });
 
+  it('여러 친구를 칩으로 관리하고 수신자 수만큼 포장한다', () => {
+    expect(studio).toContain('initialSelectedFriends={selectedFriends}');
+    expect(studio).toContain('setSelectedFriends(friends)');
+    expect(studio).toContain('선택 {selectedFriends.length}/30');
+    expect(studio).toContain('selectedFriends.filter');
+    expect(studio).toContain('recipientUserIds: selectedFriends.map');
+    expect(studio).toContain('개 선물 포장 중');
+  });
+
   it('한 장 읽기 또는 공용 범위 지정으로 말씀을 고른다', () => {
     expect(studio).toContain('한 장 읽기');
     expect(studio).toContain('범위 지정');
@@ -199,7 +208,7 @@ describe('말씀 골라 선물하기 흐름', () => {
 
   it('녹음을 마치면 곧바로 선물을 보낸다', () => {
     expect(studio).toContain('/send');
-    expect(studio).toContain('바로 선물하기');
+    expect(studio).toContain('명에게 보내기');
     expect(studio).toContain('isGiftDraftSendable');
   });
 
