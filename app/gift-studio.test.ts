@@ -182,6 +182,15 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('onClick={() => setStep(\'letter\')}');
   });
 
+  it('현재 절까지 저장을 누르면 같은 자리에 즉시 로딩 상태를 표시한다', () => {
+    const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
+    expect(studio).toContain('const finishRecordingHere');
+    expect(studio).toContain('setSavingRecording(true)');
+    expect(recorder).toContain('현재 절 저장 중');
+    expect(recorder).toContain('disabled={savingRecording}');
+    expect(recorder).toContain('LoaderCircle className="spin"');
+  });
+
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {
     expect(studio).toContain('전체 미리 듣기');
     expect(studio).toContain('이 절 다시 녹음');

@@ -472,6 +472,12 @@ export function GiftStudio({
     if (!hasNext) setSavingRecording(true);
     recorderRef.current?.stop();
   };
+  const finishRecordingHere = () => {
+    if (savingRecording || !recorderRef.current) return;
+    autoContinueRef.current = false;
+    setSavingRecording(true);
+    recorderRef.current.stop();
+  };
   const bgmSrc = (id: string) =>
     id === 'still-waters'
       ? '/api/bgm/aeternum?v=3'
@@ -792,7 +798,7 @@ export function GiftStudio({
             </article>
             <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>{Array.from({ length: 34 }).map((_, index) => <span key={index} style={{ height: `${12 + ((index * 17) % 42)}%`, animationDelay: `${index * 45}ms` }} />)}</div>
             <div className="timer"><span>{formatTime(seconds)}</span><small>{savingRecording ? '녹음을 안전하게 저장하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : viewingRecordedItem ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
-            {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행"><button className="next" type="button" onClick={finishCurrentVerseAndContinue}>{draft.nextPosition === draft.items.length - 1 ? '마지막 절 완료' : '다음 절'} <ChevronRight size={18} /></button><button className="finish" type="button" onClick={() => { autoContinueRef.current = false; recorderRef.current?.stop(); }}><CircleStop size={18} /> 현재 절까지 저장</button></div>}
+            {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행"><button className="next" type="button" disabled={savingRecording} onClick={finishCurrentVerseAndContinue}>{draft.nextPosition === draft.items.length - 1 ? '마지막 절 완료' : '다음 절'} <ChevronRight size={18} /></button><button className="finish" type="button" disabled={savingRecording} onClick={finishRecordingHere}>{savingRecording ? <LoaderCircle className="spin" size={18} /> : <CircleStop size={18} />}{savingRecording ? '현재 절 저장 중…' : '현재 절까지 저장'}</button></div>}
             <div className={`record-controls ${viewingRecordedItem ? 'saved-recording-actions' : ''}`}>
               {savingRecording ? <button className="record-button" type="button" disabled><span><LoaderCircle className="spin" size={27} /></span>녹음 저장 중</button> : viewingRecordedItem ? <><button className="record-complete-button saved-listen" type="button" onClick={() => void toggleDraftItemPlayback(activeGiftItem)}>{playingDraftPosition === activeGiftItem.position ? <Pause size={22} /> : <Play size={22} />}<span>{playingDraftPosition === activeGiftItem.position ? '듣기 멈춤' : '이 절 듣기'}</span></button><button className="record-complete-button restart" type="button" onClick={() => void editDraftItem(activeGiftItem)}><RotateCcw size={21} /><span>이 절 수정</span></button></> : recording && recordingMode === 'verse' ? <button className="record-button stop" type="button" onClick={() => recorderRef.current?.stop()}><span><CircleStop size={27} /></span>이 절 저장</button> : recording ? null : <button className="record-button" type="button" onClick={requestGiftRecording}><span><Mic size={29} /></span>{activeGiftItem.verse}절부터 이어 녹음</button>}
             </div>
