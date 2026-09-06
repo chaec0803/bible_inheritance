@@ -160,3 +160,76 @@ export const giftDraftItems = sqliteTable(
   },
   (table) => [uniqueIndex('idx_gift_draft_items_position').on(table.draftId, table.position), index('idx_gift_draft_items_draft').on(table.draftId)],
 );
+
+export const friendGroups = sqliteTable(
+  'friend_groups',
+  {
+    id: text('id').primaryKey(),
+    ownerKey: text('owner_key').notNull(),
+    name: text('name').notNull(),
+    memberKeysJson: text('member_keys_json').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [index('idx_friend_groups_owner_updated').on(table.ownerKey, table.updatedAt)],
+);
+
+export const relayProjects = sqliteTable(
+  'relay_projects',
+  {
+    id: text('id').primaryKey(),
+    creatorKey: text('creator_key').notNull(),
+    groupId: text('group_id').notNull(),
+    title: text('title').notNull(),
+    scopeJson: text('scope_json').notNull(),
+    bgmId: text('bgm_id').notNull().default('none'),
+    bgmVolume: integer('bgm_volume').notNull().default(12),
+    rotation: integer('rotation').notNull(),
+    currentTurnIndex: integer('current_turn_index'),
+    status: text('status').notNull().default('pending_invites'),
+    inviteMessage: text('invite_message').notNull().default(''),
+    createdAt: integer('created_at').notNull(),
+    startedAt: integer('started_at'),
+    completedAt: integer('completed_at'),
+    cancelledAt: integer('cancelled_at'),
+    cancelReason: text('cancel_reason'),
+  },
+  (table) => [
+    index('idx_relay_projects_creator_created').on(table.creatorKey, table.createdAt),
+    index('idx_relay_projects_status').on(table.status),
+  ],
+);
+
+export const relayParticipants = sqliteTable(
+  'relay_participants',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id').notNull(),
+    memberKey: text('member_key').notNull(),
+    position: integer('position').notNull(),
+    inviteStatus: text('invite_status').notNull().default('pending'),
+    respondedAt: integer('responded_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_relay_participants_project_member').on(table.projectId, table.memberKey),
+    uniqueIndex('idx_relay_participants_project_position').on(table.projectId, table.position),
+    index('idx_relay_participants_member').on(table.memberKey),
+  ],
+);
+
+export const relayTurns = sqliteTable(
+  'relay_turns',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id').notNull(),
+    turnIndex: integer('turn_index').notNull(),
+    memberKey: text('member_key').notNull(),
+    passagesJson: text('passages_json').notNull(),
+    arrivalSeenAt: integer('arrival_seen_at'),
+    completedAt: integer('completed_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_relay_turns_project_index').on(table.projectId, table.turnIndex),
+    index('idx_relay_turns_member').on(table.memberKey),
+  ],
+);

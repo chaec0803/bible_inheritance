@@ -4,7 +4,8 @@ import { ensureDbSchema, getDb } from '@/db';
 import { recordings } from '@/db/schema';
 import { CURRENT_DATA_VERSION } from '@/lib/data-version';
 import { parseByteRange } from '@/lib/http-range';
-import { isRecordingMutationLocked } from '@/lib/recording-lock-server';
+import { canAccessRelayRecording, isRecordingMutationLocked } from '@/lib/recording-lock-server';
+import { parseRelayRecordingProjectId } from '@/lib/relay-recording-completeness';
 import { authenticateRequest } from '@/lib/supabase-auth';
 
 type RouteContext = {
@@ -19,12 +20,14 @@ export async function GET(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const [recording] = await getDb()
-    .select({ objectKey: recordings.objectKey, mimeType: recordings.mimeType })
+    .select({ objectKey: recordings.objectKey, mimeType: recordings.mimeType, ownerKey: recordings.ownerKey, projectId: recordings.projectId })
     .from(recordings)
-    .where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
+    .where(and(eq(recordings.id, id), eq(recordings.dataVersion, CURRENT_DATA_VERSION)))
     .limit(1);
 
-  if (!recording) return Response.json({ error: '녹음을 찾을 수 없습니다.' }, { status: 404 });
+  if (!recording || (recording.ownerKey !== ownerKey && !await canAccessRelayRecording(ownerKey, recording.projectId))) {
+    return Response.json({ error: '녹음을 찾을 수 없습니다.' }, { status: 404 });
+  }
 
   const metadata = await env.FILES.head(recording.objectKey);
   if (!metadata) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404 });
@@ -93,6 +96,13 @@ export async function PUT(request: Request, context: RouteContext) {
     return Response.json({ error: '구절 정보가 올바르지 않습니다.' }, { status: 400 });
   }
 
+  const existingRelay = parseRelayRecordingProjectId(existing.projectId);
+  const replacementRelay = parseRelayRecordingProjectId(projectId);
+  if ((existingRelay.kind !== 'standard' || replacementRelay.kind !== 'standard')
+    && (existing.projectId !== projectId || await isRecordingMutationLocked(ownerKey, { id, projectId, book, chapter, verse }))) {
+    return Response.json({ error: '현재 이어읽기 차례의 배정 말씀만 수정할 수 있어요.' }, { status: 409 });
+  }
+
   const replacementObjectKey = `${ownerKey}/${id}-replacement-${crypto.randomUUID()}`;
   const mimeType = audio.type || 'audio/webm';
   const createdAt = Date.now();
@@ -147,6 +157,10 @@ export async function DELETE(request: Request, context: RouteContext) {
     .limit(1);
 
   if (!existing) return Response.json({ error: '삭제할 녹음을 찾을 수 없습니다.' }, { status: 404 });
+  if (parseRelayRecordingProjectId(existing.projectId).kind !== 'standard'
+    && await isRecordingMutationLocked(ownerKey, { id, projectId: existing.projectId, book: existing.book, chapter: existing.chapter, verse: existing.verse })) {
+    return Response.json({ error: '완료되었거나 현재 차례가 아닌 이어읽기 녹음은 삭제할 수 없어요.' }, { status: 409 });
+  }
   await getDb().delete(recordings).where(and(eq(recordings.id, id), eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION)));
   await env.FILES.delete(existing.objectKey);
   return Response.json({ id });

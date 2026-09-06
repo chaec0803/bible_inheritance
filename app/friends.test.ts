@@ -83,9 +83,10 @@ describe('친구 추가 기능 회귀', () => {
     expect(route).toContain('existing.requested_by === user.id');
   });
 
-  it('데스크톱과 모바일 내비게이션에서 친구 화면을 연다', () => {
+  it('전역 플로팅 진입점에서 친구 화면을 연다', () => {
     expect(page).toContain("navigateTo('friends')");
-    expect(page.match(/onClick={openFriendsTab}/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(page).toContain('className="floating-friends-button"');
+    expect(page).toContain('aria-label="친구 보기"');
     expect(page).toContain("appTab === 'friends' && <FriendsPanel");
   });
 });

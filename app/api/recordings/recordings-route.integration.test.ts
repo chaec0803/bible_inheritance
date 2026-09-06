@@ -32,14 +32,14 @@ vi.mock('@/db', () => ({
 
 import { POST } from './route';
 
-function validRequest() {
+function validRequest(projectId = 'free-시') {
   const form = new FormData();
   form.append('audio', new File([new Uint8Array([1, 2, 3, 4])], 'verse.wav', { type: 'audio/wav' }));
   form.append('book', '시편');
   form.append('chapter', '23');
   form.append('verse', '1');
   form.append('verseText', '여호와는 나의 목자시니');
-  form.append('projectId', 'free-시');
+  form.append('projectId', projectId);
   form.append('projectTitle', '시편 녹음');
   form.append('recordingMode', 'continuous');
   form.append('recordingGroupId', 'group-1');
@@ -115,5 +115,12 @@ describe('녹음 저장 API 통합 회귀', () => {
     const response = await POST(validRequest());
     expect(response.status).toBe(409);
     expect(mocks.r2Put).not.toHaveBeenCalled();
+  });
+
+  it('relay 권한이 확인된 녹음은 auth user를 owner로 저장한다', async () => {
+    const response = await POST(validRequest('relay:project-1:turn:0'));
+    expect(response.status).toBe(201);
+    expect(mocks.mutationLocked).toHaveBeenCalledWith('user-1', expect.objectContaining({ projectId: 'relay:project-1:turn:0' }));
+    expect(mocks.inserted[0]).toMatchObject({ ownerKey: 'user-1', projectId: 'relay:project-1:turn:0' });
   });
 });

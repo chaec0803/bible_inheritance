@@ -180,4 +180,10 @@ describe('이어듣기·목록 UI 회귀', () => {
     expect(page).toContain('onClick={openFriendsTab}');
     expect(page).not.toContain('가족 기능 준비 중');
   });
+
+  it('relay mode는 고정 context로 저장하고 일반 녹음은 기존 context를 유지한다', () => {
+    expect(page).toContain("`relay:${project.id}:turn:${turn.turnIndex}`");
+    expect(page).toContain("relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording'");
+    expect(page).toContain('배정 범위는 변경할 수 없어요.');
+  });
 });

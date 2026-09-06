@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   authenticate: vi.fn(),
   ensureSchema: vi.fn(),
-  selected: [] as Array<{ objectKey: string; mimeType?: string; projectId?: string; book?: string; chapter?: number; verse?: number }>,
+  selected: [] as Array<{ objectKey: string; ownerKey?: string; mimeType?: string; projectId?: string; book?: string; chapter?: number; verse?: number }>,
   updated: [] as Array<Record<string, unknown>>,
   deletedWhere: vi.fn(),
   r2Head: vi.fn(),
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   r2Put: vi.fn(),
   r2Delete: vi.fn(),
   mutationLocked: vi.fn(),
+  relayAccess: vi.fn(),
 }));
 
 vi.mock('cloudflare:workers', () => ({
@@ -25,7 +26,7 @@ vi.mock('cloudflare:workers', () => ({
 }));
 
 vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate }));
-vi.mock('@/lib/recording-lock-server', () => ({ isRecordingMutationLocked: mocks.mutationLocked }));
+vi.mock('@/lib/recording-lock-server', () => ({ isRecordingMutationLocked: mocks.mutationLocked, canAccessRelayRecording: mocks.relayAccess }));
 vi.mock('@/db', () => ({
   ensureDbSchema: mocks.ensureSchema,
   getDb: () => ({
@@ -39,14 +40,14 @@ import { DELETE, GET, PUT } from './[id]/audio/route';
 
 const context = { params: Promise.resolve({ id: 'recording-1' }) };
 
-function replacementRequest() {
+function replacementRequest(projectId = 'free-시') {
   const form = new FormData();
   form.append('audio', new File([new Uint8Array([9, 8, 7])], 'replacement.wav', { type: 'audio/wav' }));
   form.append('book', '시편');
   form.append('chapter', '23');
   form.append('verse', '2');
   form.append('verseText', '그가 나를 푸른 풀밭에 누이시며');
-  form.append('projectId', 'free-시');
+  form.append('projectId', projectId);
   form.append('projectTitle', '시편 녹음');
   form.append('recordingMode', 'verse');
   form.append('bgmId', 'word-breath');
@@ -59,7 +60,7 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
   beforeEach(() => {
     mocks.authenticate.mockReset().mockResolvedValue({ id: 'user-1' });
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
-    mocks.selected = [{ objectKey: 'user-1/recording-1', mimeType: 'audio/wav', projectId: 'free-시', book: '시편', chapter: 23, verse: 1 }];
+    mocks.selected = [{ objectKey: 'user-1/recording-1', ownerKey: 'user-1', mimeType: 'audio/wav', projectId: 'free-시', book: '시편', chapter: 23, verse: 1 }];
     mocks.updated = [];
     mocks.deletedWhere.mockReset().mockResolvedValue(undefined);
     mocks.r2Head.mockReset().mockResolvedValue({ size: 1000 });
@@ -71,6 +72,7 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
     mocks.r2Put.mockReset().mockResolvedValue(undefined);
     mocks.r2Delete.mockReset().mockResolvedValue(undefined);
     mocks.mutationLocked.mockReset().mockResolvedValue(false);
+    mocks.relayAccess.mockReset().mockResolvedValue(false);
   });
 
   it('아이폰 탐색 재생을 위한 byte range 응답을 반환한다', async () => {
@@ -82,6 +84,14 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
     expect(response.headers.get('content-length')).toBe('100');
     expect(response.headers.get('content-type')).toBe('audio/wav');
     expect(mocks.r2Get).toHaveBeenCalledWith('user-1/recording-1', { range: { offset: 100, length: 100 } });
+  });
+
+  it('완료된 relay participant는 다른 멤버의 녹음을 재생할 수 있다', async () => {
+    mocks.selected = [{ objectKey: 'member-a/recording-1', ownerKey: 'member-a', mimeType: 'audio/mp4', projectId: 'relay:project-1:turn:0' }];
+    mocks.relayAccess.mockResolvedValue(true);
+    const response = await GET(new Request('https://example.test/api/recordings/recording-1/audio'), context);
+    expect(response.status).toBe(200);
+    expect(mocks.relayAccess).toHaveBeenCalledWith('user-1', 'relay:project-1:turn:0');
   });
 
   it('절별 수정 저장은 새 파일과 메타데이터를 반영한 뒤 이전 파일을 지운다', async () => {
@@ -117,5 +127,31 @@ describe('녹음 듣기·교체·삭제 API 통합 회귀', () => {
     expect((await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context)).status).toBe(200);
     expect(mocks.r2Put).not.toHaveBeenCalled();
     expect(mocks.r2Delete).toHaveBeenCalledWith('user-1/recording-1');
+  });
+
+  it('relay 녹음은 현재 turn 권한이 잠기면 삭제하지 않는다', async () => {
+    mocks.selected = [{ objectKey: 'user-1/recording-1', projectId: 'relay:project-1:turn:0', book: '창세기', chapter: 1, verse: 1 }];
+    mocks.mutationLocked.mockResolvedValue(true);
+    const response = await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context);
+    expect(response.status).toBe(409);
+    expect(mocks.deletedWhere).not.toHaveBeenCalled();
+    expect(mocks.r2Delete).not.toHaveBeenCalled();
+  });
+
+  it('완료 전 현재 relay turn 담당자는 자신의 녹음을 삭제할 수 있다', async () => {
+    mocks.selected = [{ objectKey: 'user-1/recording-1', projectId: 'relay:project-1:turn:0', book: '창세기', chapter: 1, verse: 1 }];
+    const response = await DELETE(new Request('https://example.test/api/recordings/recording-1/audio', { method: 'DELETE' }), context);
+    expect(response.status).toBe(200);
+    expect(mocks.mutationLocked).toHaveBeenCalledOnce();
+    expect(mocks.deletedWhere).toHaveBeenCalledOnce();
+  });
+
+  it('relay 녹음 교체는 기존 절뿐 아니라 요청한 새 절 권한도 검사한다', async () => {
+    mocks.selected = [{ objectKey: 'user-1/recording-1', projectId: 'relay:project-1:turn:0', book: '창세기', chapter: 1, verse: 1 }];
+    mocks.mutationLocked.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const response = await PUT(replacementRequest('relay:project-1:turn:0'), context);
+    expect(response.status).toBe(409);
+    expect(mocks.mutationLocked).toHaveBeenCalledTimes(2);
+    expect(mocks.r2Put).not.toHaveBeenCalled();
   });
 });

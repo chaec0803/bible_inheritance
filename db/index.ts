@@ -103,6 +103,26 @@ export function ensureDbSchema() {
       source_recording_id TEXT, object_key TEXT UNIQUE, mime_type TEXT NOT NULL DEFAULT '',
       size_bytes INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 0
     )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS friend_groups (
+      id TEXT PRIMARY KEY NOT NULL, owner_key TEXT NOT NULL, name TEXT NOT NULL,
+      member_keys_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS relay_projects (
+      id TEXT PRIMARY KEY NOT NULL, creator_key TEXT NOT NULL, group_id TEXT NOT NULL,
+      title TEXT NOT NULL, scope_json TEXT NOT NULL, bgm_id TEXT NOT NULL DEFAULT 'none',
+      bgm_volume INTEGER NOT NULL DEFAULT 12, rotation INTEGER NOT NULL,
+      current_turn_index INTEGER, status TEXT NOT NULL DEFAULT 'pending_invites',
+      invite_message TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+      started_at INTEGER, completed_at INTEGER, cancelled_at INTEGER, cancel_reason TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS relay_participants (
+      id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, member_key TEXT NOT NULL,
+      position INTEGER NOT NULL, invite_status TEXT NOT NULL DEFAULT 'pending', responded_at INTEGER
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS relay_turns (
+      id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, turn_index INTEGER NOT NULL,
+      member_key TEXT NOT NULL, passages_json TEXT NOT NULL, arrival_seen_at INTEGER, completed_at INTEGER
+    )`),
   ]).then(async () => {
     const columns = await env.DB.prepare('PRAGMA table_info(recordings)').all<{ name: string }>();
     const names = new Set(columns.results.map((column) => column.name));
@@ -184,6 +204,14 @@ export function ensureDbSchema() {
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_drafts_owner_updated ON gift_drafts(owner_key, updated_at)'),
       env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_draft_items_position ON gift_draft_items(draft_id, position)'),
       env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_gift_draft_items_draft ON gift_draft_items(draft_id)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_friend_groups_owner_updated ON friend_groups(owner_key, updated_at)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_relay_projects_creator_created ON relay_projects(creator_key, created_at)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_relay_projects_status ON relay_projects(status)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_participants_project_member ON relay_participants(project_id, member_key)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_participants_project_position ON relay_participants(project_id, position)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_relay_participants_member ON relay_participants(member_key)'),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_turns_project_index ON relay_turns(project_id, turn_index)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_relay_turns_member ON relay_turns(member_key)'),
     ]);
     await env.DB.prepare('PRAGMA optimize').run();
   }).catch((error) => {

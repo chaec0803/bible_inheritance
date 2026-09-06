@@ -11,7 +11,8 @@ export type NavigationRoute =
   | 'recording'
   | 'library'
   | 'gifts'
-  | 'friends';
+  | 'friends'
+  | 'relay';
 
 const navigationRoutes = new Set<NavigationRoute>([
   'home',
@@ -25,6 +26,7 @@ const navigationRoutes = new Set<NavigationRoute>([
   'library',
   'gifts',
   'friends',
+  'relay',
 ]);
 
 export function getNavigationHash(route: NavigationRoute) {

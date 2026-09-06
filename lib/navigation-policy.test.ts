@@ -11,11 +11,13 @@ describe('앱 화면 경로', () => {
   it('홈과 친구 화면에 고유한 해시 경로를 만든다', () => {
     expect(getNavigationHash('home')).toBe('#home');
     expect(getNavigationHash('friends')).toBe('#friends');
+    expect(getNavigationHash('relay')).toBe('#relay');
   });
 
   it('브라우저 뒤로가기로 전달된 경로를 안전하게 해석한다', () => {
     expect(parseNavigationRoute('#friends')).toBe('friends');
     expect(parseNavigationRoute('#gifts')).toBe('gifts');
+    expect(parseNavigationRoute('#relay')).toBe('relay');
     expect(parseNavigationRoute('#unknown')).toBe('home');
     expect(parseNavigationRoute('')).toBe('home');
   });

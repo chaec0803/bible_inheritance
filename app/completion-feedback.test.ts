@@ -74,6 +74,15 @@ describe('완료 피드백과 재생 제어', () => {
     expect(awardHandler).toContain('void saveUserState({');
   });
 
+  it('이미 지급된 미수령 카드는 로그인할 때 모달로 다시 열지 않는다', () => {
+    const awardHandler = page.slice(
+      page.indexOf('const awardDailyWordCard'),
+      page.indexOf('const revealQueuedWordCard'),
+    );
+    expect(awardHandler).not.toContain("} else {\n      setEarnedCard(card);");
+    expect(page).toContain('setPendingCardAwards(restoredAwards.filter((award) => !award.collected))');
+  });
+
   it('말씀카드는 닫기 버튼뿐 아니라 바깥 영역과 Esc로도 닫을 수 있다', () => {
     expect(page).toContain('event.target === event.currentTarget');
     expect(page).toContain("event.key === 'Escape'");

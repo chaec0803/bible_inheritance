@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Archive, ArrowRight, AudioLines, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, CircleStop, Cloud, Gift, Headphones, Home, List, LoaderCircle, LogOut, Mic, Moon, Music2, Pause, Play, RotateCcw, Search, Sparkles, Sun, Target, Trash2, Users, Volume2, X } from 'lucide-react';
+import { Archive, ArrowLeft, ArrowRight, AudioLines, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, CircleStop, Cloud, Gift, Headphones, Home, List, LoaderCircle, LogOut, Mic, Moon, Music2, Pause, Play, RotateCcw, Search, Sparkles, Sun, Target, Trash2, Users, Volume2, X } from 'lucide-react';
 import { bibleBooks, type BibleBook } from './bible-metadata';
 import { normalizeReadingDay } from '@/lib/reading-policy';
 import { collectWordCardAward, createDailyAward, type WordCardAward } from '@/lib/reward-policy';
@@ -24,6 +24,8 @@ import { GiftSendDialog } from './gift-send-dialog';
 import { GiftsPanel } from './gifts-panel';
 import { GiftStudio } from './gift-studio';
 import { GiftArrivalModal } from './gift-arrival-modal';
+import { RelayHomeJourneys, RelayPanel, type RelayProjectDetail, type RelayTurn } from './relay-panel';
+import { ContinuousPlaybackView } from './continuous-playback-view';
 import { BibleRangePicker } from './bible-range-picker';
 import type { GiftDraftScope } from '@/lib/gift-draft';
 import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
@@ -674,7 +676,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [chapterPlaying, setChapterPlaying] = useState(false);
   const [chapterPaused, setChapterPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
-  const [appTab, setAppTab] = useState<'recording' | 'library' | 'gifts' | 'friends'>('recording');
+  const [appTab, setAppTab] = useState<'recording' | 'library' | 'gifts' | 'friends' | 'relay'>('recording');
+  const [relayStartCreating, setRelayStartCreating] = useState(false);
+  const [relayRecording, setRelayRecording] = useState<{
+    projectId: string; projectTitle: string; turnIndex: number; contextProjectId: string;
+    passages: ProjectPassage[]; activePassageIndex: number;
+  } | null>(null);
   const [giftSendOpen, setGiftSendOpen] = useState(false);
   const [giftChapterKeys, setGiftChapterKeys] = useState<string[]>([]);
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
@@ -1119,9 +1126,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const completedCount = saved.filter(Boolean).length;
   const progress = useMemo(() => Math.round((completedCount / passageVerses.length) * 100), [completedCount, passageVerses.length]);
   const activeLibraryRecordings = useMemo(() => {
+    if (relayRecording) return libraryRecordings.filter((item) => item.projectId === relayRecording.contextProjectId);
     if (!activeProject) return libraryRecordings;
     return libraryRecordings.filter((item) => recordingBelongsToJourney(item, activeProject));
-  }, [activeProject, libraryRecordings]);
+  }, [activeProject, libraryRecordings, relayRecording]);
   const currentProjectDay = activeProject ? getProjectDay(activeProject, kstToday) : 1;
   const displayedProjectDay = viewedProjectDay ?? currentProjectDay;
   const displayedProjectDayIndex = Math.max(0, displayedProjectDay - 1);
@@ -1397,7 +1405,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const refreshLibrary = async () => {
     const recordings = await fetchLibrary();
     setLibraryRecordings(recordings);
-    setSaved(passageVerses.map((_, index) => recordings.some((item) => recordingBelongsToJourney(item, activeProject) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
+    setSaved(passageVerses.map((_, index) => recordings.some((item) => (!relayRecording ? recordingBelongsToJourney(item, activeProject) : item.projectId === relayRecording.contextProjectId) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
     return recordings;
   };
 
@@ -1439,8 +1447,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         description: `${displayedProjectDay}일차 말씀을 모두 녹음했어요. 오늘의 말씀카드도 준비했어요.`,
         showLibraryAction: true,
       });
-    } else {
-      setEarnedCard(card);
     }
     setWordCardCollectionMode(false);
     setWordCardFlipped(false);
@@ -1611,7 +1617,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   useEffect(() => {
-    window.history.replaceState({ verseLegacyRoute: 'home' }, '', getNavigationHash('home'));
+    const initialRoute = parseNavigationRoute(window.location.hash);
+    window.history.replaceState({ verseLegacyRoute: initialRoute }, '', getNavigationHash(initialRoute));
+    const initialRouteTimer = window.setTimeout(() => applyNavigationRoute(initialRoute), 0);
     const handlePopState = (event: PopStateEvent) => {
       stopChapterPlaybackRef.current();
       const stateRoute = typeof event.state?.verseLegacyRoute === 'string' ? getNavigationHash(event.state.verseLegacyRoute as NavigationRoute) : window.location.hash;
@@ -1620,7 +1628,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    return () => {
+      window.clearTimeout(initialRouteTimer);
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, [applyNavigationRoute]);
 
   const openRecordingTab = () => {
@@ -1635,9 +1646,38 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     navigateTo('friends');
   };
 
-  const openGiftsTab = () => {
-    navigateTo('gifts');
+  const openRelayTab = () => {
+    setRelayRecording(null);
+    setRelayStartCreating(false);
+    navigateTo('relay');
   };
+
+  const openRelayCreate = () => {
+    setRelayRecording(null);
+    setRelayStartCreating(true);
+    navigateTo('relay');
+  };
+
+  const startRelayRecording = async (project: RelayProjectDetail, turn: RelayTurn) => {
+    const contextProjectId = `relay:${project.id}:turn:${turn.turnIndex}`;
+    const recorded = new Set(libraryRecordings.filter((item) => item.projectId === contextProjectId).map((item) => `${item.book}-${item.chapter}-${item.verse}`));
+    const activePassageIndex = Math.max(0, turn.passages.findIndex((passage) => Array.from({ length: passage.endVerse - passage.startVerse + 1 }, (_, index) => `${passage.name}-${passage.chapter}-${passage.startVerse + index}`).some((reference) => !recorded.has(reference))));
+    const passage = turn.passages[activePassageIndex];
+    if (!passage) { setNotice('배정된 말씀을 찾지 못했어요.'); return; }
+    try {
+      const response = await fetch(`/data/bible/${encodeURIComponent(passage.code)}.json`);
+      if (!response.ok) throw new Error();
+      const chapters = await response.json() as string[][];
+      const verses = (chapters[passage.chapter - 1] ?? []).slice(passage.startVerse - 1, passage.endVerse);
+      if (!verses.length) throw new Error();
+      setActiveProject(null);
+      setRelayRecording({ projectId: project.id, projectTitle: project.title, turnIndex: turn.turnIndex, contextProjectId, passages: turn.passages, activePassageIndex });
+      setPassageBook({ code: passage.code, name: passage.name }); setPassageChapter(passage.chapter); setPassageStartVerse(passage.startVerse); setPassageVerses(verses);
+      setVerseIndex(0); setTakes(verses.map(() => null)); setSaved(verses.map((_, index) => recorded.has(`${passage.name}-${passage.chapter}-${passage.startVerse + index}`)));
+      setBgm(project.bgmId); setVolume(project.bgmVolume); setRecordingMode('continuous'); navigateTo('recording');
+    } catch { setNotice('배정된 말씀 본문을 불러오지 못했어요.'); }
+  };
+
 
   const clearInitialReceivedGift = useCallback(() => {
     setSelectedReceivedGiftId(null);
@@ -2098,8 +2138,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           formData.append('chapter', String(passageChapter));
           formData.append('verse', String(verseNumber));
           formData.append('verseText', passageVerses[boundary.verseIndex] ?? '');
-          formData.append('projectId', activeProject?.id ?? 'free-recording');
-          formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
+          formData.append('projectId', relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording');
+          formData.append('projectTitle', relayRecording?.projectTitle ?? activeProject?.title ?? '자유 녹음');
           formData.append('recordingGroupId', continuousRecordingGroupIdRef.current ?? '');
           formData.append('recordingMode', 'continuous');
           formData.append('bgmId', bgm);
@@ -2298,8 +2338,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       formData.append('chapter', String(passageChapter));
       formData.append('verse', String(currentVerseNumber));
       formData.append('verseText', passageVerses[verseIndex]);
-      formData.append('projectId', activeProject?.id ?? 'free-recording');
-      formData.append('projectTitle', activeProject?.title ?? '자유 녹음');
+      formData.append('projectId', relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording');
+      formData.append('projectTitle', relayRecording?.projectTitle ?? activeProject?.title ?? '자유 녹음');
       formData.append('recordingMode', 'verse');
       formData.append('bgmId', bgm);
       formData.append('durationSeconds', String(currentTake.duration));
@@ -2723,6 +2763,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                     읽기 일정 고르기 <ArrowRight size={15} />
                   </em>
                 </button>
+                <button type="button" onClick={openRelayCreate}>
+                  <span><Users size={22} /></span>
+                  <strong>함께 말씀 이어읽기</strong>
+                  <small>친구나 가족과 순서대로 목소리를 이어 하나의 말씀을 완성해요.</small>
+                  <em>우리 말씀 여정 시작하기 <ArrowRight size={15} /></em>
+                </button>
               </div>
               <button className="word-card-library-entry journey-library-entry" type="button" onClick={() => navigateTo('journeys')}>
                 <span>
@@ -2741,6 +2787,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                 </div>
                 <ArrowRight size={18} />
               </button>
+              <RelayHomeJourneys onOpenList={openRelayTab} />
               <button className="word-card-library-entry" type="button" onClick={() => navigateTo('cards')}>
                 <span>
                   <Sparkles size={21} />
@@ -3375,30 +3422,24 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             <small>VERSE LEGACY</small>
           </span>
         </a>
-        <div className="project-progress" aria-label={activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
+        <div className="project-progress" aria-label={relayRecording ? `${relayRecording.projectTitle} 이어읽기 녹음 중` : activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
           <div>
-            <span>{activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span>
-            <strong>{activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong>
+            <span>{relayRecording?.projectTitle ?? activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span>
+            <strong>{relayRecording ? `${relayRecording.turnIndex + 1} turn` : activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong>
           </div>
           <div className="progress-track">
             <span style={{ width: `${progress}%` }} />
           </div>
         </div>
         <div className="topbar-actions">
-          <nav className="desktop-tabs" aria-label="주요 화면">
+          {appTab !== 'relay' && <nav className="desktop-tabs" aria-label="주요 화면">
             <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}>
               <Mic size={16} /> 녹음
             </button>
             <button className={appTab === 'library' ? 'active' : ''} type="button" onClick={openLibraryTab}>
               <Headphones size={16} /> 듣기
             </button>
-            <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}>
-              <Gift size={16} /> 선물
-            </button>
-            <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}>
-              <Users size={16} /> 친구
-            </button>
-          </nav>
+          </nav>}
           <button className="icon-button theme-icon-button" onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} type="button" aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'} title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -3418,9 +3459,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <section className="workspace" id="recording">
           <aside className="chapter-panel" aria-label="말씀 여정 정보">
             <div>
-              <p className="eyebrow">{activeProject ? (activeProject.kind === 'free' ? '자유 녹음 여정' : `${activeProject.duration}일 말씀 여정`) : '우리 가족 첫 번째 낭독'}</p>
-              <h2>{activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
-              <p className="muted">{activeProject?.tasks[0] ? activeProject.kind === 'free' ? activeProject.scope : `${displayedProjectDay === currentProjectDay ? '오늘' : '지난 과제'} · ${displayedProjectDay}일차: ${displayedProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
+              <p className="eyebrow">{relayRecording ? '친구와 이어읽기' : activeProject ? (activeProject.kind === 'free' ? '자유 녹음 여정' : `${activeProject.duration}일 말씀 여정`) : '우리 가족 첫 번째 낭독'}</p>
+              <h2>{relayRecording?.projectTitle ?? activeProject?.title ?? `${passageBook.name} ${passageChapter}장`}</h2>
+              <p className="muted">{relayRecording ? `${relayRecording.turnIndex + 1}번째 turn · 배정 범위는 변경할 수 없어요.` : activeProject?.tasks[0] ? activeProject.kind === 'free' ? activeProject.scope : `${displayedProjectDay === currentProjectDay ? '오늘' : '지난 과제'} · ${displayedProjectDay}일차: ${displayedProjectTask}` : '엄마의 목소리로 남기는 말씀'}</p>
             </div>
             {activeProject && activeProject.kind !== 'free' && (
               <div className="project-day-progress" aria-label={`${activeProject.duration}일 말씀 여정 진행 상황`}>
@@ -3467,6 +3508,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                 </button>
               ))}
             </div>
+            {relayRecording && <button className="chapter-schedule-button" type="button" onClick={openRelayTab}><ArrowLeft size={15} /> 이어읽기로 돌아가기</button>}
             <button className="family-card" type="button" onClick={openFriendsTab} aria-label="이메일이나 닉네임으로 친구 찾기">
               <div className="avatar-stack" aria-hidden="true">
                 <span>엄</span>
@@ -4042,64 +4084,18 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           )}
 
           {chapterPlaying && currentlyPlayingRecording && (
-            <div className="continuous-player-backdrop" role="presentation">
-              <dialog className="continuous-player-modal" open aria-labelledby="continuous-player-title">
-                <button className="continuous-player-close" type="button" onClick={stopChapterPlayback} aria-label="이어듣기 닫기">
-                  <X size={22} />
-                </button>
-                <p className="eyebrow">CONTINUOUS PLAYBACK</p>
-                <div className="continuous-player-progress">
-                  <span
-                    style={{
-                      width: `${((currentlyPlayingChapterIndex + 1) / playbackQueue.length) * 100}%`,
-                    }}
-                  />
-                </div>
-                <small>
-                  {currentlyPlayingChapterIndex + 1} / {playbackQueue.length} · {currentlyPlayingRecording.book} {currentlyPlayingRecording.chapter}
-                  {currentlyPlayingRecording.book === '시편' ? '편' : '장'}
-                </small>
-                <div className="continuous-player-verse">
-                  <span>{currentlyPlayingRecording.verse}</span>
-                  <h2 id="continuous-player-title">{currentlyPlayingRecording.verseText}</h2>
-                </div>
-                <label className="continuous-player-volume">
-                  <span>
-                    <Volume2 size={15} /> BGM 볼륨 <strong>{volume}%</strong>
-                  </span>
-                  <input aria-label="이어듣기 재생 중 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
-                </label>
-                <div className="continuous-player-actions">
-                  <button className="continuous-player-list-trigger" type="button" onClick={() => setPlaybackListOpen((current) => !current)} aria-expanded={playbackListOpen}>
-                    <List size={19} />
-                    <span>목록</span>
-                  </button>
-                  <button className="continuous-player-stop" type="button" onClick={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}>
-                    {chapterPaused ? <Play size={18} /> : <Pause size={18} />}
-                    {chapterPaused ? '계속 듣기' : '일시정지'}
-                  </button>
-                  <button className="continuous-player-stop" type="button" onClick={stopChapterPlayback}>
-                    <CircleStop size={18} /> 종료
-                  </button>
-                </div>
-                {playbackListOpen && (
-                  <div className="continuous-player-list" aria-label="녹음된 절 목록">
-                    <strong>녹음된 절</strong>
-                    <div>
-                      {playbackQueue.map((item, index) => (
-                        <button className={index === currentlyPlayingChapterIndex ? 'playing' : ''} type="button" onClick={() => void jumpToChapterRecording(item)} key={item.id}>
-                          <span>
-                            {item.book} {item.chapter}
-                            {item.book === '시편' ? '편' : '장'} · {item.verse}절
-                          </span>
-                          <small>{index === currentlyPlayingChapterIndex ? '재생 중' : '여기부터 듣기'}</small>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </dialog>
-            </div>
+            <ContinuousPlaybackView
+              items={playbackQueue}
+              index={currentlyPlayingChapterIndex}
+              paused={chapterPaused}
+              listOpen={playbackListOpen}
+              volume={volume}
+              onClose={stopChapterPlayback}
+              onTogglePlayback={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}
+              onToggleList={() => setPlaybackListOpen((current) => !current)}
+              onSelect={(index) => void jumpToChapterRecording(playbackQueue[index])}
+              onVolumeChange={setVolume}
+            />
           )}
 
           {libraryChapterMenuOpen && (
@@ -4192,6 +4188,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         />
       )}
       {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} onNotice={setNotice} onGiftFriend={openGiftStudioWithFriend} />}
+      {appTab === 'relay' && <RelayPanel initialCreate={relayStartCreating} onBack={() => window.history.back()} onStartRecording={(project, turn) => void startRelayRecording(project, turn)} />}
 
       {completedJourneyModal && (
         <div className="continuous-player-backdrop" role="presentation">
@@ -4245,7 +4242,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         <p>말씀유산 · 소중한 목소리를 오래 간직하는 성경 낭독</p>
       </footer>
 
-      <nav className="mobile-nav" aria-label="주요 메뉴">
+      {appTab !== 'relay' && <nav className="mobile-nav" aria-label="주요 메뉴">
         <button className={appTab === 'recording' ? 'active' : ''} type="button" onClick={openRecordingTab}>
           <Mic size={19} />
           <span>녹음</span>
@@ -4254,29 +4251,17 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           <Headphones size={19} />
           <span>듣기</span>
         </button>
-        <button className={appTab === 'gifts' ? 'active' : ''} type="button" onClick={openGiftsTab}>
-          <Gift size={19} />
-          <span>선물</span>
-        </button>
-        <button className={appTab === 'friends' ? 'active' : ''} type="button" onClick={openFriendsTab}>
-          <Users size={19} />
-          <span>친구</span>
-        </button>
-      </nav>
+      </nav>}
 
       <nav className="floating-route-actions" aria-label="빠른 화면 이동">
-        {onboardingStep !== 'app' && (
-          <>
-            <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기">
-              <Users size={22} />
-              <span>친구</span>
-            </button>
-            <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기">
-              <Gift size={22} />
-              <span>선물</span>
-            </button>
-          </>
-        )}
+        <button className="floating-friends-button" type="button" onClick={() => navigateTo('friends')} aria-label="친구 보기">
+          <Users size={22} />
+          <span>친구</span>
+        </button>
+        <button className="floating-gifts-button" type="button" onClick={() => navigateTo('gifts')} aria-label="받은 선물 보기">
+          <Gift size={22} />
+          <span>선물</span>
+        </button>
         <button className="floating-home-button" type="button" onClick={() => navigateTo('home')} aria-label="말씀 여정과 성경 읽기를 선택하는 홈으로 이동">
           <Home size={22} />
           <span>홈</span>
