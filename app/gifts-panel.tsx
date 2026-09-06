@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, CircleStop, Download, Gift, Headphones, List, LoaderCircle, MessageCircle, Music2, Pause, Play, Send, Trash2, Volume2, X } from 'lucide-react';
 import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
 import { THANK_YOU_TEMPLATES } from '@/lib/gift-thank-you';
-import { toAudibleBgmGain } from '@/lib/audio-volume';
-import { isPlaybackPauseInterruption } from '@/lib/audio-playback';
+import { isPlaybackPauseInterruption, PLAYBACK_AUTO_CLOSE_DELAY_MS } from '@/lib/audio-playback';
+import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
 
 type GiftRecording = {
   id: string;
@@ -109,6 +109,8 @@ export function GiftsPanel({
   const [letterPopupStage, setLetterPopupStage] = useState<'notice' | 'content'>('notice');
   const voiceRef = useRef<HTMLAudioElement | null>(null);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
+  const playbackCloseTimerRef = useRef<number | null>(null);
+  const bgmGainController = useMemo(() => createBrowserBgmGainController(), []);
   const sentGiftsRef = useRef<SentGift[]>([]);
 
   const refresh = async () => {
@@ -160,10 +162,12 @@ export function GiftsPanel({
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
+      if (playbackCloseTimerRef.current !== null) window.clearTimeout(playbackCloseTimerRef.current);
       voice?.pause();
       bgmAudio?.pause();
+      bgmGainController.dispose();
     };
-  }, [initialReceivedGiftId, onInitialReceivedHandled]);
+  }, [bgmGainController, initialReceivedGiftId, onInitialReceivedHandled]);
 
   useEffect(() => {
     if (!message) return;
@@ -216,6 +220,10 @@ export function GiftsPanel({
   const activeRecording = activeGift?.recordings[activeIndex] ?? null;
 
   const stopPlayback = () => {
+    if (playbackCloseTimerRef.current !== null) {
+      window.clearTimeout(playbackCloseTimerRef.current);
+      playbackCloseTimerRef.current = null;
+    }
     voiceRef.current?.pause();
     if (voiceRef.current) voiceRef.current.currentTime = 0;
     bgmRef.current?.pause();
@@ -238,7 +246,7 @@ export function GiftsPanel({
     const playRequests: Promise<void>[] = [voice.play()];
     const bgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
     const selectedVolume = giftVolumes[gift.id] ?? gift.bgmVolume;
-    if (bgmAudio && bgm.audioSrc) bgmAudio.volume = toAudibleBgmGain(selectedVolume);
+    if (bgmAudio && bgm.audioSrc) bgmGainController.connect(bgmAudio, selectedVolume);
     if (bgmAudio && bgm.audioSrc && restartBgm) {
       bgmAudio.src = bgm.audioSrc;
       bgmAudio.loop = true;
@@ -266,8 +274,13 @@ export function GiftsPanel({
     const nextIndex = activeIndex + 1;
     if (!activeGift.recordings[nextIndex]) {
       const title = activeGift.title;
-      stopPlayback();
+      bgmRef.current?.pause();
+      setPaused(true);
       setMessage(`‘${title}’ 선물을 모두 들었어요.`);
+      playbackCloseTimerRef.current = window.setTimeout(() => {
+        playbackCloseTimerRef.current = null;
+        stopPlayback();
+      }, PLAYBACK_AUTO_CLOSE_DELAY_MS);
       return;
     }
     playPosition(activeGift, nextIndex, false);
@@ -485,17 +498,17 @@ export function GiftsPanel({
                   <button type="button" aria-label="받은 선물 BGM 음량 낮추기" disabled={giftVolume === 0} onClick={() => {
                     const nextVolume = Math.max(0, giftVolume - 5);
                     setGiftVolumes((current) => ({ ...current, [gift.id]: nextVolume }));
-                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = toAudibleBgmGain(nextVolume);
+                    if (activeGiftId === gift.id) bgmGainController.setVolume(nextVolume);
                   }}>−</button>
-                  <input type="range" min="0" max="100" step="1" value={giftVolume} aria-label={`${gift.title} BGM 음량`} onChange={(event) => {
+                  <input type="range" min="0" max="100" step="1" value={giftVolume} aria-label={`${gift.title} BGM 음량`} onInput={(event) => {
                     const nextVolume = Number(event.currentTarget.value);
                     setGiftVolumes((current) => ({ ...current, [gift.id]: nextVolume }));
-                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = toAudibleBgmGain(nextVolume);
+                    if (activeGiftId === gift.id) bgmGainController.setVolume(nextVolume);
                   }} />
                   <button type="button" aria-label="받은 선물 BGM 음량 높이기" disabled={giftVolume === 100} onClick={() => {
                     const nextVolume = Math.min(100, giftVolume + 5);
                     setGiftVolumes((current) => ({ ...current, [gift.id]: nextVolume }));
-                    if (activeGiftId === gift.id && bgmRef.current) bgmRef.current.volume = toAudibleBgmGain(nextVolume);
+                    if (activeGiftId === gift.id) bgmGainController.setVolume(nextVolume);
                   }}>+</button>
                   </div>
                 </div>}

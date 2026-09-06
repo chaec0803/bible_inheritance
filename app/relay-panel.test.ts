@@ -54,6 +54,12 @@ describe('이어읽기 UI 회귀', () => {
     expect(panel).toContain('openRelayPlayback(project)');
   });
 
+  it('녹음 완료 CTA로 돌아오면 목록이 아니라 해당 이어읽기 상세를 바로 연다', () => {
+    expect(panel).toContain('initialProjectId?: string');
+    expect(panel).toContain('openProject(initialProjectId)');
+    expect(page).toContain('initialProjectId={relayRecording?.projectId}');
+  });
+
   it('초대 상세에 그룹 이름을 표시한다', () => {
     expect(panel).toContain('{project.groupName}');
   });
@@ -186,6 +192,13 @@ describe('이어읽기 UI 회귀', () => {
     expect(playback).toContain('continuous-player-list-trigger');
     expect(playback).toContain('continuous-player-volume');
     expect(playback).toContain('readerName');
+  });
+
+  it('마지막 relay 녹음이 끝나면 잠시 뒤 공통 플레이어를 닫는다', () => {
+    expect(panel).toContain('onEnded={handlePlaybackEnded}');
+    expect(panel).toContain('PLAYBACK_AUTO_CLOSE_DELAY_MS');
+    expect(panel).toContain('playbackCloseTimerRef.current = window.setTimeout');
+    expect(panel).toContain('setPlayback(null)');
   });
 
   it('모바일에서도 목록 버튼이 고정 헤더 아래에 가려지지 않는다', () => {

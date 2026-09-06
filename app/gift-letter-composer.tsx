@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FileText, Mic, Pause, Play, RotateCcw } from 'lucide-react';
 import { GIFT_LETTER_AUDIO_MAX_SECONDS, GIFT_LETTER_TEXT_MAX_LENGTH, type GiftLetterInput } from '@/lib/gift-letter';
 import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
+import { getVoiceRecordingConstraints } from '@/lib/recording-audio';
 
 function blobToDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
@@ -62,7 +63,7 @@ export function GiftLetterComposer({ value, disabled, onChange }: { value: GiftL
     try {
       recordingSessionRef.current?.dispose();
       const session = await createRecordingSession({
-        constraints: { audio: true },
+        constraints: getVoiceRecordingConstraints(),
         timeslice: 1_000,
         onCaptured: async (capture) => {
           if (recordingSessionRef.current === session) recordingSessionRef.current = null;

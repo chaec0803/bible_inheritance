@@ -2,6 +2,22 @@ export function getSupportedMimeType() {
   return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
+export function getVoiceRecordingConstraints(): MediaStreamConstraints {
+  return {
+    audio: {
+      // iPhone microphones can expose a conservative input level to the web.
+      // Prefer the device's clipping-aware speech gain while keeping denoise
+      // and echo processing off so the original voice character is preserved.
+      autoGainControl: { ideal: true },
+      echoCancellation: { ideal: false },
+      noiseSuppression: { ideal: false },
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: 48_000 },
+      sampleSize: { ideal: 16 },
+    },
+  };
+}
+
 export function createAudioContextCloser(context: Pick<AudioContext, 'state' | 'close'>) {
   let closed = false;
   return () => {

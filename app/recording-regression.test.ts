@@ -5,6 +5,7 @@ const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replac
 const recordingsRoute = readFileSync(new URL('./api/recordings/route.ts', import.meta.url), 'utf8');
 const audioRoute = readFileSync(new URL('./api/recordings/[id]/audio/route.ts', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('./globals.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+const recordingAudio = readFileSync(new URL('../lib/recording-audio.ts', import.meta.url), 'utf8');
 
 function functionBody(startMarker: string, endMarker: string) {
   return page.slice(page.indexOf(startMarker), page.indexOf(endMarker));
@@ -85,10 +86,11 @@ describe('녹음·저장·수정 회귀', () => {
     expect(page).toContain('audioBitsPerSecond: 256_000');
   });
 
-  it('원음 보존을 위해 브라우저의 자동 음성 보정을 강제하지 않는다', () => {
-    expect(page).toContain('autoGainControl: false');
-    expect(page).toContain('echoCancellation: false');
-    expect(page).toContain('noiseSuppression: false');
+  it('아이폰의 작은 마이크 입력은 기기 AGC를 선호하되 음색을 바꾸는 보정은 강제하지 않는다', () => {
+    expect(page).toContain('getVoiceRecordingConstraints()');
+    expect(recordingAudio).toContain('autoGainControl: { ideal: true }');
+    expect(recordingAudio).toContain('echoCancellation: { ideal: false }');
+    expect(recordingAudio).toContain('noiseSuppression: { ideal: false }');
   });
 
   it('저장·마이크 요청 중에는 녹음 버튼을 다시 누를 수 없다', () => {
@@ -180,6 +182,12 @@ describe('이어듣기·목록 UI 회귀', () => {
     expect(page).toContain('resumeChapterPlayback');
     expect(page).toContain("chapterPaused ? '계속 듣기' : '일시정지'");
     expect(page).toContain('onClick={stopChapterPlayback}');
+  });
+
+  it('마지막 개인 녹음이 끝나면 잠시 뒤 이어듣기를 닫는다', () => {
+    expect(page).toContain('PLAYBACK_AUTO_CLOSE_DELAY_MS');
+    expect(page).toContain('chapterPlaybackCloseTimerRef.current = window.setTimeout');
+    expect(page).toContain('playbackBgmAudioRef.current?.pause()');
   });
 
   it('보관함이 로그인 계정에 저장된다는 안내를 표시한다', () => {

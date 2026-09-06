@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isPlaybackPauseInterruption, toggleAudioPlayback } from './audio-playback';
+import { isPlaybackPauseInterruption, PLAYBACK_AUTO_CLOSE_DELAY_MS, toggleAudioPlayback } from './audio-playback';
+
+describe('연속 재생 완료', () => {
+  it('마지막 녹음이 끝난 뒤 완료 상태를 잠시 보여주고 닫는다', () => {
+    expect(PLAYBACK_AUTO_CLOSE_DELAY_MS).toBe(1_500);
+  });
+});
 
 describe('절별 녹음 듣기 버튼', () => {
   it('정지 상태면 오디오 재생을 시작한다', async () => {

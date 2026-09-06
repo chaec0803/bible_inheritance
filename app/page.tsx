@@ -10,7 +10,7 @@ import { getBackStep, getNavigationHash, parseNavigationRoute, type NavigationRo
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
-import { toggleAudioPlayback } from '@/lib/audio-playback';
+import { PLAYBACK_AUTO_CLOSE_DELAY_MS, toggleAudioPlayback } from '@/lib/audio-playback';
 import { createLatestAudioRequestGate } from '@/lib/audio-request-gate';
 import { loadArrayBufferOnce, preloadImages } from '@/lib/media-preload';
 import { recoverJourneyProjects } from '@/lib/user-state-policy';
@@ -32,6 +32,7 @@ import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
 import { createRecordingSession, type CapturedRecording, type RecordingSession } from '@/lib/recording-session';
 import { createSegmentedRecordingSession, type SegmentedRecordingSession } from '@/lib/segmented-recording-session';
 import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
+import { getVoiceRecordingConstraints } from '@/lib/recording-audio';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
 import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
 export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
@@ -636,6 +637,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     title: string;
     description: string;
     showLibraryAction?: boolean;
+    relayProjectId?: string;
   } | null>(null);
   const [confirmJourneyCompletion, setConfirmJourneyCompletion] = useState(false);
   const [completedJourneyModal, setCompletedJourneyModal] = useState<ActiveProject | null>(null);
@@ -746,6 +748,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const cardPreloadImagesRef = useRef<ReturnType<typeof preloadImages>>([]);
   const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
   const stopChapterPlaybackRef = useRef<() => void>(() => undefined);
+  const chapterPlaybackCloseTimerRef = useRef<number | null>(null);
   const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
   const bibleVersePaneRef = useRef<HTMLElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
@@ -847,6 +850,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
         description: `${verseNumbers.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
         showLibraryAction: finishedLastVerse,
+        relayProjectId: finishedLastVerse ? relayRecording?.projectId : undefined,
       });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '녹음을 저장하지 못했어요. 로컬 원본은 다음 접속 때 다시 전송할게요.');
@@ -1588,6 +1592,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, []);
 
   const stopChapterPlayback = () => {
+    if (chapterPlaybackCloseTimerRef.current !== null) {
+      window.clearTimeout(chapterPlaybackCloseTimerRef.current);
+      chapterPlaybackCloseTimerRef.current = null;
+    }
     playbackBgmRequestGateRef.current.cancel();
     chapterPlayingRef.current = false;
     chapterPausedRef.current = false;
@@ -1610,6 +1618,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   useEffect(() => {
     stopChapterPlaybackRef.current = stopChapterPlayback;
   });
+
+  useEffect(() => () => {
+    if (chapterPlaybackCloseTimerRef.current !== null) {
+      window.clearTimeout(chapterPlaybackCloseTimerRef.current);
+    }
+  }, []);
 
   const applyNavigationRoute = useCallback((route: NavigationRoute) => {
     if (route === 'home') {
@@ -1694,6 +1708,13 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const openRelayTab = () => {
     setRelayRecording(null);
+    setRelayStartCreating(false);
+    navigateTo('relay');
+  };
+
+  const openRelayProjectFromCompletion = () => {
+    if (!completionModal?.relayProjectId) return;
+    setCompletionModal(null);
     setRelayStartCreating(false);
     navigateTo('relay');
   };
@@ -1919,8 +1940,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const currentIndex = playbackQueue.findIndex((item) => item.id === recordingId);
     const next = playbackQueue[currentIndex + 1];
     if (!next) {
-      stopChapterPlayback();
+      playbackBgmAudioRef.current?.pause();
+      chapterPausedRef.current = true;
+      setChapterPaused(true);
       setNotice(isGuidedJourneyPlayback ? `‘${activeProject?.title ?? '말씀 여정'}’ 전체 이어듣기를 모두 마쳤어요.` : `${selectedLibraryGroup?.book ?? passageBook.name} ${selectedLibraryGroup?.chapter ?? passageChapter}${selectedLibraryGroup?.book === '시편' ? '편' : '장'} 이어듣기를 모두 마쳤어요.`);
+      chapterPlaybackCloseTimerRef.current = window.setTimeout(() => {
+        chapterPlaybackCloseTimerRef.current = null;
+        stopChapterPlayback();
+      }, PLAYBACK_AUTO_CLOSE_DELAY_MS);
       return;
     }
 
@@ -2190,7 +2217,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       const targetVerseIndex = verseIndex;
       if (recordingMode === 'continuous') {
         const session = await createSegmentedRecordingSession({
-          constraints: { audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
+          constraints: getVoiceRecordingConstraints(),
           mimeType,
           audioBitsPerSecond: 256_000,
           timeslice: 250,
@@ -2212,7 +2239,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         return;
       }
       const session = await createRecordingSession({
-        constraints: { audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
+        constraints: getVoiceRecordingConstraints(),
         mimeType,
         audioBitsPerSecond: 256_000,
         timeslice: 250,
@@ -2367,6 +2394,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
           description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 기기에 보관했어요. 클라우드 저장은 백그라운드로 이어져요.',
           showLibraryAction: completesPassage,
+          relayProjectId: completesPassage ? relayRecording?.projectId : undefined,
         });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
@@ -4183,7 +4211,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         />
       )}
       {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} onNotice={setNotice} onGiftFriend={openGiftStudioWithFriend} />}
-      {appTab === 'relay' && <RelayPanel initialCreate={relayStartCreating} onBack={() => window.history.back()} onStartRecording={(project, turn) => void startRelayRecording(project, turn)} />}
+      {appTab === 'relay' && <RelayPanel initialCreate={relayStartCreating} initialProjectId={relayRecording?.projectId} onBack={() => window.history.back()} onStartRecording={(project, turn) => void startRelayRecording(project, turn)} />}
 
       {completedJourneyModal && (
         <div className="continuous-player-backdrop" role="presentation">
@@ -4276,9 +4304,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               <button type="button" onClick={revealQueuedWordCard}>
                 확인하기
               </button>
-              {completionModal.showLibraryAction && (
+              {completionModal.showLibraryAction && !completionModal.relayProjectId && (
                 <button className="primary" type="button" onClick={openLibraryFromCompletion}>
                   <Headphones size={17} /> 보관함 가기
+                </button>
+              )}
+              {completionModal.relayProjectId && (
+                <button className="primary" type="button" onClick={openRelayProjectFromCompletion}>
+                  <Users size={17} /> 이어읽기에서 완료하기
                 </button>
               )}
             </div>

@@ -145,6 +145,12 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).not.toContain('<dialog open className="recording-manage-backdrop">');
   });
 
+  it('아직 녹음하지 않은 절은 이전 세션 시간이 남아 있어도 00:00으로 표시한다', () => {
+    expect(studio).toContain('const displayedSeconds = recording || savingRecording');
+    expect(studio).toContain("viewingRecordedItem\n        ? (activeGiftItem.durationSeconds ?? 0)\n        : 0");
+    expect(studio).toContain('formatTime(displayedSeconds)');
+  });
+
   it('연속 녹음은 절마다 원본 blob을 로컬에 저장하고 백그라운드 업로드한다', () => {
     const start = block(studio, 'async function startRecording', 'const requestGiftRecording');
     expect(start).toContain('createSegmentedRecordingSession({');
@@ -215,6 +221,14 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain("action: 'reset-recordings'");
     expect(studio).toContain('confirmResetRecordings');
     expect(studio).toContain('녹음은 그대로 유지돼요');
+  });
+
+  it('아이폰에서도 선물 BGM 미리듣기 음량을 GainNode로 조절한다', () => {
+    expect(studio).toContain('createBrowserBgmGainController');
+    expect(studio).toContain('bgmGainController.connect(audio, draft.bgmVolume)');
+    expect(studio).toContain('bgmGainController.connect(bgmAudio, draft.bgmVolume)');
+    expect(studio).toContain('bgmGainController.setVolume(value)');
+    expect(studio).not.toContain('fullPreviewBgmRef.current.volume =');
   });
 
   it('이 절 수정 시 서버와 왼쪽 완료 목록을 즉시 동기화한다', () => {
@@ -362,7 +376,7 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('playFullGiftPreview');
     expect(studio).toContain('fullPreviewVoiceRef');
     expect(studio).toContain('fullPreviewBgmRef');
-    expect(studio).toContain('toAudibleBgmGain(draft.bgmVolume)');
+    expect(studio).toContain('bgmGainController.connect(bgmAudio, draft.bgmVolume)');
     expect(studio).toContain('handleFullPreviewEnded');
     expect(studio).toContain('미리 듣기 일시정지');
   });

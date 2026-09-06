@@ -25,6 +25,7 @@ import { buildRelayTurns } from '@/lib/relay-reading';
 import { getRelayProgress, getRelayProjectView, relayErrorMessage } from '@/lib/relay-ui';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
 import { ContinuousPlaybackView } from './continuous-playback-view';
+import { PLAYBACK_AUTO_CLOSE_DELAY_MS } from '@/lib/audio-playback';
 
 type Friend = { userId: string; nickname: string; emailHint: string };
 type GroupMember = { memberKey: string; nickname: string; position: number };
@@ -158,10 +159,12 @@ export function RelayPanel({
   onBack,
   onStartRecording,
   initialCreate = false,
+  initialProjectId,
 }: {
   onBack: () => void;
   onStartRecording: (project: RelayProjectDetail, turn: RelayTurn) => void;
   initialCreate?: boolean;
+  initialProjectId?: string;
 }) {
   const [projects, setProjects] = useState<RelayProjectSummary[]>([]);
   const [project, setProject] = useState<RelayProjectDetail | null>(null);
@@ -194,7 +197,40 @@ export function RelayPanel({
   const [playbackVolume, setPlaybackVolume] = useState(0);
   const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackBgmRef = useRef<HTMLAudioElement | null>(null);
+  const playbackCloseTimerRef = useRef<number | null>(null);
   const initialCreateStartedRef = useRef(false);
+
+  const closePlayback = useCallback(() => {
+    if (playbackCloseTimerRef.current !== null) {
+      window.clearTimeout(playbackCloseTimerRef.current);
+      playbackCloseTimerRef.current = null;
+    }
+    playbackAudioRef.current?.pause();
+    playbackBgmRef.current?.pause();
+    setPlayback(null);
+    setPlaybackListOpen(false);
+    setPlaybackPaused(false);
+  }, []);
+
+  const handlePlaybackEnded = useCallback(() => {
+    if (!playback) return;
+    if (playback.index + 1 < playback.recordings.length) {
+      setPlayback({ ...playback, index: playback.index + 1 });
+      return;
+    }
+    playbackBgmRef.current?.pause();
+    setPlaybackPaused(true);
+    playbackCloseTimerRef.current = window.setTimeout(() => {
+      playbackCloseTimerRef.current = null;
+      closePlayback();
+    }, PLAYBACK_AUTO_CLOSE_DELAY_MS);
+  }, [closePlayback, playback]);
+
+  useEffect(() => () => {
+    if (playbackCloseTimerRef.current !== null) {
+      window.clearTimeout(playbackCloseTimerRef.current);
+    }
+  }, []);
 
   const refreshList = useCallback(async () => {
     const payload = await requestJson<{ projects: RelayProjectSummary[] }>(
@@ -227,6 +263,14 @@ export function RelayPanel({
       window.clearTimeout(timer);
     };
   }, [refreshList]);
+
+  useEffect(() => {
+    if (!initialProjectId) return;
+    const timer = window.setTimeout(() => {
+      void openProject(initialProjectId).catch((error: Error) => setMessage(error.message));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialProjectId, openProject]);
 
   useEffect(() => {
     const refreshOnFocus = () => {
@@ -929,11 +973,7 @@ export function RelayPanel({
             paused={playbackPaused}
             listOpen={playbackListOpen}
             volume={playbackVolume}
-            onClose={() => {
-              playbackAudioRef.current?.pause();
-              playbackBgmRef.current?.pause();
-              setPlayback(null);
-            }}
+            onClose={closePlayback}
             onTogglePlayback={() => {
               if (playbackPaused) {
                 void playbackAudioRef.current?.play();
@@ -947,6 +987,10 @@ export function RelayPanel({
             }}
             onToggleList={() => setPlaybackListOpen((current) => !current)}
             onSelect={(index) => {
+              if (playbackCloseTimerRef.current !== null) {
+                window.clearTimeout(playbackCloseTimerRef.current);
+                playbackCloseTimerRef.current = null;
+              }
               setPlayback((current) => current ? { ...current, index } : null);
               setPlaybackPaused(false);
             }}
@@ -973,13 +1017,7 @@ export function RelayPanel({
                 src={`/api/recordings/${playback.recordings[playback.index].id}/audio`}
                 onPlay={() => setPlaybackPaused(false)}
                 onPause={(event) => { if (!event.currentTarget.ended) setPlaybackPaused(true); }}
-                onEnded={() =>
-                  setPlayback((current) =>
-                    current && current.index + 1 < current.recordings.length
-                      ? { ...current, index: current.index + 1 }
-                      : current,
-                  )
-                }
+                onEnded={handlePlaybackEnded}
               />
           </ContinuousPlaybackView>
         )}

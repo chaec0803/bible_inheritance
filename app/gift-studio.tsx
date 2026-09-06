@@ -32,7 +32,7 @@ import { FriendPickerModal, type FriendPickerPerson } from './friend-picker-moda
 import { GiftLetterComposer } from './gift-letter-composer';
 import type { BibleRange } from '@/lib/bible-scope';
 import type { GiftLetterInput } from '@/lib/gift-letter';
-import { toAudibleBgmGain } from '@/lib/audio-volume';
+import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
 import {
   GIFT_BGM_CATALOG,
   getGiftDraftProgress,
@@ -41,6 +41,7 @@ import {
 } from '@/lib/gift-draft';
 import {
   getSupportedMimeType,
+  getVoiceRecordingConstraints,
 } from '@/lib/recording-audio';
 import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
 import type { CapturedRecording } from '@/lib/recording-session';
@@ -84,7 +85,6 @@ type ApiPayload = {
   error?: string;
 };
 type GiftVerseBoundary = { position: number; startMs: number; endMs: number };
-const setAudioVolume = (audio: HTMLAudioElement, volume: number) => { audio.volume = volume; };
 const configureBgmAudio = (audio: HTMLAudioElement, onEnded: () => void, onError: () => void) => {
   audio.onended = onEnded;
   audio.onerror = onError;
@@ -191,6 +191,7 @@ export function GiftStudio({
   const bgmPreviewRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewVoiceRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewBgmRef = useRef<HTMLAudioElement | null>(null);
+  const bgmGainController = useMemo(() => createBrowserBgmGainController(), []);
   const fullPreviewRunRef = useRef(0);
   const fullPreviewIndexRef = useRef(0);
   const musicSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -232,7 +233,8 @@ export function GiftStudio({
     Object.values(localPreviewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
     fullPreviewVoiceRef.current?.pause();
     fullPreviewBgmRef.current?.pause();
-  }, []);
+    bgmGainController.dispose();
+  }, [bgmGainController]);
   const selectedBook =
     bibleBooks.find((book) => book.code === bookCode) ?? bibleBooks[0];
   const currentIndex = GIFT_STUDIO_STEPS.indexOf(step);
@@ -437,7 +439,7 @@ export function GiftStudio({
     try {
       if (recordingMode === 'continuous') {
         const session = await createSegmentedRecordingSession({
-          constraints: { audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
+          constraints: getVoiceRecordingConstraints(),
           mimeType: getSupportedMimeType(),
           audioBitsPerSecond: 256_000,
           timeslice: 250,
@@ -455,7 +457,7 @@ export function GiftStudio({
         return;
       }
       const session = await createRecordingSession({
-        constraints: { audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 } } },
+        constraints: getVoiceRecordingConstraints(),
         mimeType: getSupportedMimeType(),
         timeslice: 250,
         now: () => performance.now(),
@@ -586,7 +588,7 @@ export function GiftStudio({
     if (!draft || draft.bgmId === 'none') return;
     const audio = bgmPreviewRef.current ?? new Audio(bgmSrc(draft.bgmId));
     bgmPreviewRef.current = audio;
-    setAudioVolume(audio, toAudibleBgmGain(draft.bgmVolume));
+    bgmGainController.connect(audio, draft.bgmVolume);
     configureBgmAudio(audio, () => {
       setBgmPlaying(false);
       setBgmPaused(false);
@@ -703,7 +705,7 @@ export function GiftStudio({
     const requests: Promise<void>[] = [voice.play()];
     const selectedBgmSrc = bgmSrc(draft.bgmId);
     if (bgmAudio && selectedBgmSrc) {
-      bgmAudio.volume = toAudibleBgmGain(draft.bgmVolume);
+      bgmGainController.connect(bgmAudio, draft.bgmVolume);
       if (restartBgm) {
         bgmAudio.src = selectedBgmSrc;
         bgmAudio.loop = true;
@@ -751,8 +753,7 @@ export function GiftStudio({
   };
   const updateGiftBgmVolume = (value: number) => {
     if (!draft) return;
-    if (bgmPreviewRef.current) bgmPreviewRef.current.volume = toAudibleBgmGain(value);
-    if (fullPreviewBgmRef.current) fullPreviewBgmRef.current.volume = toAudibleBgmGain(value);
+    bgmGainController.setVolume(value);
     void saveMusic(draft.bgmId, value);
   };
   const saveTitle = async (title: string) => {
@@ -848,6 +849,11 @@ export function GiftStudio({
 
   if (draft && step === 'record' && activeGiftItem) {
     const viewingRecordedItem = activeGiftItem.recorded && (selectedGiftPosition != null || draft.nextPosition == null);
+    const displayedSeconds = recording || savingRecording
+      ? seconds
+      : viewingRecordedItem
+        ? (activeGiftItem.durationSeconds ?? 0)
+        : 0;
     return (
       <div className="gift-studio-shell gift-standard-recorder" data-step={step}>
         <header className="gift-studio-header">
@@ -883,7 +889,7 @@ export function GiftStudio({
               <div className="continuous-verse-copy"><p>{activeGiftItem.verseText}</p>{!viewingRecordedItem && draft.items[activeGiftPosition + 1] && <span className="next-verse-preview"><small>다음 {draft.items[activeGiftPosition + 1].verse}절</small><span>{draft.items[activeGiftPosition + 1].verseText}</span></span>}</div>
             </article>
             <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>{Array.from({ length: 34 }).map((_, index) => <span key={index} style={{ height: `${12 + ((index * 17) % 42)}%`, animationDelay: `${index * 45}ms` }} />)}</div>
-            <div className="timer"><span>{formatTime(seconds)}</span><small>{savingRecording ? '녹음을 안전하게 저장하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : viewingRecordedItem ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
+            <div className="timer"><span>{formatTime(displayedSeconds)}</span><small>{savingRecording ? '녹음을 안전하게 저장하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : viewingRecordedItem ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
             {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행"><button className="next" type="button" disabled={savingRecording} onClick={finishCurrentVerseAndContinue}>{activeGiftPosition === draft.items.length - 1 ? '마지막 절 완료' : '다음 절'} <ChevronRight size={18} /></button><button className="finish" type="button" disabled={savingRecording} onClick={finishRecordingHere}>{savingRecording ? <LoaderCircle className="spin" size={18} /> : <CircleStop size={18} />}{savingRecording ? '현재 절 저장 중…' : '현재 절까지 저장'}</button></div>}
             <div className={`record-controls ${viewingRecordedItem ? 'saved-recording-actions' : ''}`}>
               {savingRecording ? <button className="record-button recording-save-loading" type="button" disabled><span><LoaderCircle className="spin" size={27} /></span>녹음 저장 중</button> : viewingRecordedItem ? <><button className="record-complete-button saved-listen" type="button" onClick={() => void toggleDraftItemPlayback(activeGiftItem)}>{playingDraftPosition === activeGiftItem.position ? <Pause size={22} /> : <Play size={22} />}<span>{playingDraftPosition === activeGiftItem.position ? '듣기 멈춤' : '이 절 듣기'}</span></button><button className="record-complete-button restart" type="button" onClick={() => void editDraftItem(activeGiftItem)}><RotateCcw size={21} /><span>이 절 수정</span></button></> : recording && recordingMode === 'verse' ? <button className="record-button stop" type="button" onClick={finishRecordingHere}><span><CircleStop size={27} /></span>이 절 저장</button> : recording ? null : <button className="record-button" type="button" onClick={requestGiftRecording}><span><Mic size={29} /></span>{activeGiftItem.verse}절부터 이어 녹음</button>}
