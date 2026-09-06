@@ -844,10 +844,42 @@ export function RelayPanel({
           <span><strong>{project.rotation}회</strong><small>rotation 횟수</small></span>
         </div>
         <p className="relay-next-reading"><small>내가 다음 읽을 말씀</small><strong>{nextReadingTurn ? passageLabel(nextReadingTurn.passages) : '내 차례 모두 완료'}</strong></p>
+        {view.kind === 'invites_pending' && (
+          <section className={`relay-state-card ${project.myInviteStatus === 'pending' ? 'relay-invite-action-card' : ''}`}>
+            <Users size={32} />
+            {project.myInviteStatus === 'pending' ? (
+              <>
+                <h3>이어읽기에 함께 하시겠습니까?</h3>
+                <p>{project.creator.nickname}님과 친구들이 함께 말씀을 이어 읽으려 해요.</p>
+                <div>
+                  <button
+                    className="relay-primary"
+                    disabled={busy}
+                    type="button"
+                    onClick={() => void respond('accept')}
+                  >
+                    함께 하기
+                  </button>
+                  <button
+                    className="relay-secondary"
+                    disabled={busy}
+                    type="button"
+                    onClick={() => void respond('decline')}
+                  >
+                    다음에 하기
+                  </button>
+                </div>
+              </>
+            ) : (
+              <h3>함께 읽을 친구들의 답을 기다리고 있어요.</h3>
+            )}
+          </section>
+        )}
         <nav className="relay-project-toolbar" aria-label="이어읽기 프로젝트 메뉴">
           <button
             className={project.canRecord ? 'active' : ''}
             type="button"
+            disabled={busy || view.kind === 'invites_pending' || view.kind === 'cancelled' || view.kind === 'completed'}
             onClick={() => void handleRecordAction()}
           >
             <Mic size={20} /><strong>녹음</strong>
@@ -864,32 +896,6 @@ export function RelayPanel({
           <button className="relay-delete-action" type="button" disabled={busy} onClick={() => setDeleteConfirmOpen(true)}>
             이어읽기 삭제
           </button>
-        )}
-        {view.kind === 'invites_pending' && (
-          <section className="relay-state-card">
-            <Users size={32} />
-            <h3>함께 읽을 친구들의 답을 기다리고 있어요.</h3>
-            {project.myInviteStatus === 'pending' && (
-              <div>
-                <button
-                  className="relay-primary"
-                  disabled={busy}
-                  type="button"
-                  onClick={() => void respond('accept')}
-                >
-                  함께 읽기
-                </button>
-                <button
-                  className="relay-secondary"
-                  disabled={busy}
-                  type="button"
-                  onClick={() => void respond('decline')}
-                >
-                  이번에는 참여하지 않기
-                </button>
-              </div>
-            )}
-          </section>
         )}
         {view.kind === 'cancelled' && (
           <section className="relay-state-card">

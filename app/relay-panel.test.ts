@@ -126,6 +126,14 @@ describe('이어읽기 UI 회귀', () => {
     expect(panel).toContain('님의 차례를 기다리고 있어요.');
   });
 
+  it('응답 전 초대는 해야 할 일을 중심으로 표시하고 녹음을 비활성화한다', () => {
+    expect(panel).toContain("disabled={busy || view.kind === 'invites_pending' || view.kind === 'cancelled' || view.kind === 'completed'}");
+    expect(panel).toContain('이어읽기에 함께 하시겠습니까?');
+    expect(panel).toContain('함께 하기');
+    expect(panel).toContain('다음에 하기');
+    expect(panel).not.toContain('지금 해야 할 일');
+  });
+
   it('듣기 화면은 현재 목소리·말씀·전체 위치와 재생 조작을 표시한다', () => {
     expect(playback).toContain('CONTINUOUS PLAYBACK');
     expect(playback).toContain('님의 목소리');
