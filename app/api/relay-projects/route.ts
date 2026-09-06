@@ -19,6 +19,12 @@ export async function GET(request: Request) {
       friend_groups.name AS group_name,
       relay_participants.invite_status AS my_invite_status,
       relay_participants.position AS my_position,
+      CASE WHEN relay_projects.status = 'in_progress' AND EXISTS (
+        SELECT 1 FROM relay_turns
+        WHERE relay_turns.project_id = relay_projects.id
+          AND relay_turns.turn_index = relay_projects.current_turn_index
+          AND relay_turns.member_key = relay_participants.member_key
+      ) THEN 1 ELSE 0 END AS can_record,
       (SELECT COUNT(*) FROM relay_turns WHERE relay_turns.project_id = relay_projects.id) AS total_turns,
       (SELECT COUNT(*) FROM relay_turns WHERE relay_turns.project_id = relay_projects.id AND relay_turns.completed_at IS NOT NULL) AS completed_turns,
       (SELECT user_profiles.nickname FROM relay_turns
@@ -43,6 +49,7 @@ export async function GET(request: Request) {
     groupName: row.group_name,
     myInviteStatus: row.my_invite_status,
     myPosition: row.my_position,
+    canRecord: Boolean(row.can_record),
     totalTurns: Number(row.total_turns),
     completedTurns: Number(row.completed_turns),
     currentMemberNickname: row.current_member_nickname,

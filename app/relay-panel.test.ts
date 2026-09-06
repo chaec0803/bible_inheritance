@@ -58,11 +58,34 @@ describe('이어읽기 UI 회귀', () => {
     expect(panel).toContain('{project.groupName}');
   });
 
+  it('참여자는 요약을 누르면 열리는 소형 dropdown으로 표시한다', () => {
+    expect(panel).toContain('className="relay-participant-menu"');
+    expect(panel).toContain('<summary>');
+    expect(panel).toContain('참여자 {project.participants.length}명');
+    expect(panel).toContain('className="relay-participant-dropdown"');
+    expect(panel).toContain('className={`relay-participant-row ${');
+    expect(panel).toContain('data-status={participant.inviteStatus}');
+    expect(panel).toContain('className="relay-participant-status"');
+    expect(styles).toContain('.relay-participant-dropdown {');
+  });
+
+  it('현재 turn 담당자 row만 다른 색으로 강조한다', () => {
+    expect(panel).toContain("participant.memberKey === currentTurn?.memberKey ? 'current' : ''");
+    expect(styles).toContain('.relay-participant-row.current {');
+  });
+
   it('초대 상세에서 전체 말씀 범위와 rotation을 명시한다', () => {
     expect(panel).toContain('전체 말씀 범위');
     expect(panel).toContain('rotation');
     expect(panel).toContain('project.rotation');
     expect(panel).toContain('relayScopeLabel(project.scope)');
+  });
+
+  it('rotation 숫자를 모두 지운 뒤 새 값을 입력할 수 있다', () => {
+    expect(panel).toContain("const [rotationInput, setRotationInput] = useState('1')");
+    expect(panel).toContain("value={rotationInput}");
+    expect(panel).toContain("setRotationInput(event.target.value)");
+    expect(panel).toContain("onBlur={() => setRotationInput(String(rotation))}");
   });
 
   it('진행 정보를 현재 round와 그룹 내 내 turn으로만 표시한다', () => {
@@ -120,14 +143,34 @@ describe('이어읽기 UI 회귀', () => {
     expect(panel).toContain('setCreating(false)');
   });
 
-  it('우리 말씀 여정 목록은 진행 중과 완료를 나누고 각 카드가 상세로 열린다', () => {
+  it('우리 말씀 여정 목록은 승인 대기·진행 중·완료를 나누고 각 카드가 상세로 열린다', () => {
+    expect(panel).toContain('id="relay-pending-title">승인 대기 중');
+    expect(panel).toContain('id="relay-my-turn-title">내 차례');
     expect(panel).toContain('id="relay-ongoing-title">진행 중');
     expect(panel).toContain('id="relay-completed-title">완료');
-    expect(panel).toContain("item.status !== 'completed' && item.status !== 'cancelled'");
+    expect(panel).toContain("item.status === 'pending_invites'");
+    expect(panel).toContain("item.status === 'in_progress' && item.canRecord");
+    expect(panel).toContain("item.status === 'in_progress' && !item.canRecord");
     expect(panel).toContain("item.status === 'completed'");
     expect(panel).toContain('openProject(item.id)');
     expect(panel).toContain('className="journey-status-sections relay-journey-status-sections"');
     expect(panel).toContain('running-project-list');
+  });
+
+  it('Home 우리 말씀 여정에 초대와 내 차례 합계를 작은 inbox badge로 표시한다', () => {
+    expect(panel).toContain("item.status === 'pending_invites' && item.myInviteStatus === 'pending'");
+    expect(panel).toContain("item.status === 'in_progress' && item.canRecord");
+    expect(panel).toContain('const inboxCount = pendingInvites.length + myTurnProjects.length');
+    expect(panel).toContain('className="relay-home-inbox-badge"');
+    expect(panel).toContain('aria-label={`확인할 이어읽기 ${inboxCount}개`}');
+    expect(panel).not.toContain('className="relay-home-invite"');
+  });
+
+  it('Home에 머물거나 앱으로 돌아오면 초대와 내 차례 badge를 갱신한다', () => {
+    const home = panel.slice(panel.indexOf('export function RelayHomeJourneys'));
+    expect(home).toContain('window.setInterval(() => void loadProjects(), 15_000)');
+    expect(home).toContain("document.addEventListener('visibilitychange', handleVisibility)");
+    expect(home).toContain("document.removeEventListener('visibilitychange', handleVisibility)");
   });
 
   it('취소된 제안도 목록의 종료 구역에서 확인할 수 있다', () => {

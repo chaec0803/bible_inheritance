@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Headphones,
@@ -77,16 +78,25 @@ type RelayProjectSummary = {
   completedTurns: number;
   currentMemberNickname: string | null;
   myInviteStatus: string;
+  canRecord: boolean;
 };
 
 function relayStatusLabel(status: string) {
   return status === 'pending_invites'
-    ? '제안 대기'
+    ? '승인 대기'
     : status === 'in_progress'
       ? '진행 중'
       : status === 'completed'
         ? '완료'
         : '취소';
+}
+
+function relayInviteStatusLabel(status: string) {
+  return status === 'accepted'
+    ? '참여함'
+    : status === 'declined'
+      ? '참여하지 않음'
+      : '응답 대기';
 }
 
 function relayScopeLabel(scope: BibleRange) {
@@ -168,7 +178,7 @@ export function RelayPanel({
   const [title, setTitle] = useState('함께 읽는 말씀');
   const [range, setRange] = useState<BibleRange>(initialRange);
   const [bgmId, setBgmId] = useState('still-waters');
-  const [rotation, setRotation] = useState(1);
+  const [rotationInput, setRotationInput] = useState('1');
   const [inviteMessage, setInviteMessage] = useState(
     '함께 목소리로 말씀을 남겨요.',
   );
@@ -298,6 +308,10 @@ export function RelayPanel({
     }
   };
 
+  const parsedRotation = Number(rotationInput);
+  const rotation = Number.isInteger(parsedRotation)
+    ? Math.max(1, Math.min(10, parsedRotation))
+    : 1;
   const selectedGroup =
     groups.find((group) => group.id === selectedGroupId) ?? null;
   const preview = useMemo(() => {
@@ -615,15 +629,9 @@ export function RelayPanel({
                   type="number"
                   min={1}
                   max={10}
-                  value={rotation}
-                  onChange={(event) =>
-                    setRotation(
-                      Math.max(
-                        1,
-                        Math.min(10, Number(event.target.value) || 1),
-                      ),
-                    )
-                  }
+                  value={rotationInput}
+                  onChange={(event) => setRotationInput(event.target.value)}
+                  onBlur={() => setRotationInput(String(rotation))}
                 />
               </label>
             </div>
@@ -654,7 +662,7 @@ export function RelayPanel({
             <button
               className="relay-primary"
               type="button"
-              disabled={busy || !preview.length || !title.trim()}
+              disabled={busy || !preview.length || !title.trim() || !rotationInput}
               onClick={() => void submitProject()}
             >
               {busy ? (
@@ -758,21 +766,31 @@ export function RelayPanel({
             {project.turns.length} turn
           </strong>
         </div>
-        <div className="relay-participants">
-          {project.participants.map((participant) => (
-            <div key={participant.memberKey}>
-              <span>{participant.position + 1}</span>
-              <strong>{participant.nickname}</strong>
-              <small>
-                {participant.inviteStatus === 'accepted'
-                  ? '참여함'
-                  : participant.inviteStatus === 'declined'
-                    ? '참여하지 않음'
-                    : '응답 대기'}
-              </small>
-            </div>
-          ))}
-        </div>
+        <details className="relay-participant-menu">
+          <summary>
+            <span className="relay-participant-avatars" aria-hidden="true">
+              {project.participants.slice(0, 3).map((participant) => (
+                <i key={participant.memberKey}>{participant.position + 1}</i>
+              ))}
+            </span>
+            <strong>참여자 {project.participants.length}명</strong>
+            <ChevronDown size={16} aria-hidden="true" />
+          </summary>
+          <div className="relay-participant-dropdown">
+            {project.participants.map((participant) => (
+              <div
+                className={`relay-participant-row ${participant.memberKey === currentTurn?.memberKey ? 'current' : ''}`}
+                data-status={participant.inviteStatus}
+                key={participant.memberKey}
+              >
+                <span>{participant.position + 1}</span>
+                <strong>{participant.nickname}</strong>
+                <small>{relayInviteStatusLabel(participant.inviteStatus)}</small>
+                <i className="relay-participant-status" aria-hidden="true" />
+              </div>
+            ))}
+          </div>
+        </details>
         <div className="relay-project-facts">
           <span><strong>{progress.currentRound} / {progress.totalRounds}</strong><small>현재 round</small></span>
           <span><strong>{progress.myTurn} / {progress.totalParticipants}</strong><small>내 turn</small></span>
@@ -969,8 +987,14 @@ export function RelayPanel({
     );
   }
 
+  const pendingProjects = projects.filter(
+    (item) => item.status === 'pending_invites',
+  );
+  const myTurnProjects = projects.filter(
+    (item) => item.status === 'in_progress' && item.canRecord,
+  );
   const ongoingProjects = projects.filter(
-    (item) => item.status !== 'completed' && item.status !== 'cancelled',
+    (item) => item.status === 'in_progress' && !item.canRecord,
   );
   const completedProjects = projects.filter(
     (item) => item.status === 'completed',
@@ -1020,6 +1044,14 @@ export function RelayPanel({
         </output>
       )}
       <div className="journey-status-sections relay-journey-status-sections">
+      {pendingProjects.length > 0 && <section aria-labelledby="relay-pending-title">
+        <div className="journey-status-heading"><h3 id="relay-pending-title">승인 대기 중</h3><span>{pendingProjects.length}</span></div>
+        {renderProjectCards(pendingProjects)}
+      </section>}
+      {myTurnProjects.length > 0 && <section aria-labelledby="relay-my-turn-title">
+        <div className="journey-status-heading relay-my-turn-heading"><h3 id="relay-my-turn-title">내 차례</h3><span>{myTurnProjects.length}</span></div>
+        {renderProjectCards(myTurnProjects)}
+      </section>}
       <section aria-labelledby="relay-ongoing-title">
         <div className="journey-status-heading"><h3 id="relay-ongoing-title">진행 중</h3><span>{ongoingProjects.length}</span></div>
         {ongoingProjects.length ? renderProjectCards(ongoingProjects) : (
@@ -1048,25 +1080,47 @@ export function RelayHomeJourneys({
 
   useEffect(() => {
     let active = true;
-    const timer = window.setTimeout(() => {
-      void requestJson<{ projects: RelayProjectSummary[] }>('/api/relay-projects')
-        .then((payload) => active && setProjects(payload.projects.filter((item) => item.status !== 'cancelled')))
-        .catch(() => undefined);
-    }, 0);
+    const loadProjects = async () => {
+      try {
+        const payload = await requestJson<{ projects: RelayProjectSummary[] }>('/api/relay-projects');
+        if (active) setProjects(payload.projects.filter((item) => item.status !== 'cancelled'));
+      } catch {
+        // Home inbox refresh failures should not interrupt the rest of Home.
+      }
+    };
+    const timer = window.setTimeout(() => void loadProjects(), 0);
+    const interval = window.setInterval(() => void loadProjects(), 15_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void loadProjects();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       active = false;
       window.clearTimeout(timer);
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 
-  const ongoingCount = projects.filter((item) => item.status !== 'completed' && item.status !== 'cancelled').length;
+  const pendingProjects = projects.filter((item) => item.status === 'pending_invites');
+  const pendingInvites = projects.filter(
+    (item) => item.status === 'pending_invites' && item.myInviteStatus === 'pending',
+  );
+  const myTurnProjects = projects.filter(
+    (item) => item.status === 'in_progress' && item.canRecord,
+  );
+  const ongoingCount = projects.filter((item) => item.status === 'in_progress').length;
   const completedCount = projects.filter((item) => item.status === 'completed').length;
+  const inboxCount = pendingInvites.length + myTurnProjects.length;
   return (
     <button className="word-card-library-entry journey-library-entry" type="button" onClick={onOpenList}>
-      <span><Users size={21} /></span>
+      <span>
+        <Users size={21} />
+        {inboxCount > 0 && <b className="relay-home-inbox-badge" aria-label={`확인할 이어읽기 ${inboxCount}개`}>{inboxCount > 99 ? '99+' : inboxCount}</b>}
+      </span>
       <div>
         <strong>우리 말씀 여정</strong>
-        <small>{projects.length ? `진행 중 ${ongoingCount}개 · 완료 ${completedCount}개` : '친구와 함께 읽을 말씀 여정을 시작해 보세요.'}</small>
+        <small>{projects.length ? `승인 대기 ${pendingProjects.length}개 · 내 차례 ${myTurnProjects.length}개 · 진행 중 ${ongoingCount}개 · 완료 ${completedCount}개` : '친구와 함께 읽을 말씀 여정을 시작해 보세요.'}</small>
       </div>
       <ChevronRight size={18} />
     </button>

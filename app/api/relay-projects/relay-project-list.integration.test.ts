@@ -59,11 +59,12 @@ describe('이어읽기 프로젝트 목록 API', () => {
   });
 
   it('참여자의 프로젝트만 상태·진행률과 함께 반환한다', async () => {
-    mocks.rows = [{ id: 'p1', title: '가족 이어읽기', status: 'in_progress', scope_json: '{"start":{"bookCode":"창","chapter":1,"verse":1},"end":{"bookCode":"창","chapter":1,"verse":10}}', rotation: 2, current_turn_index: 1, created_at: 10, group_name: '우리 가족', my_invite_status: 'accepted', my_position: 0, total_turns: 4, completed_turns: 1, current_member_nickname: '엄마' }];
+    mocks.rows = [{ id: 'p1', title: '가족 이어읽기', status: 'in_progress', scope_json: '{"start":{"bookCode":"창","chapter":1,"verse":1},"end":{"bookCode":"창","chapter":1,"verse":10}}', rotation: 2, current_turn_index: 1, created_at: 10, group_name: '우리 가족', my_invite_status: 'accepted', my_position: 0, total_turns: 4, completed_turns: 1, current_member_nickname: '엄마', can_record: 1 }];
     const response = await GET(new Request('https://example.test/api/relay-projects'));
     expect(response.status).toBe(200);
     expect(mocks.binds).toEqual(['member-a']);
-    expect(await response.json()).toEqual({ projects: [expect.objectContaining({ id: 'p1', status: 'in_progress', totalTurns: 4, completedTurns: 1, currentMemberNickname: '엄마', groupName: '우리 가족' })] });
+    expect(await response.json()).toEqual({ projects: [expect.objectContaining({ id: 'p1', status: 'in_progress', totalTurns: 4, completedTurns: 1, currentMemberNickname: '엄마', groupName: '우리 가족', canRecord: true })] });
+    expect(mocks.statements[0].sql).toContain('AS can_record');
   });
 
   it('내부 DB snake_case 필드를 응답에 노출하지 않는다', async () => {
