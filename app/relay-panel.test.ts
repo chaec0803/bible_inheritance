@@ -8,6 +8,11 @@ const page = readFileSync(join(process.cwd(), 'app/page.tsx'), 'utf8').replace(/
 const styles = readFileSync(join(process.cwd(), 'app/globals.css'), 'utf8').replace(/\s+/g, ' ');
 
 describe('이어읽기 UI 회귀', () => {
+  it('iPhone에서도 이어듣기 BGM을 GainNode로 조절한다', () => {
+    expect(panel).toContain('playbackBgmGainController.activate()');
+    expect(panel).toContain('playbackBgmGainController.connect(event.currentTarget, playbackVolume)');
+    expect(panel).toContain('playbackBgmGainController.setVolume(nextVolume)');
+  });
   it('서버 상태별 대기·취소·녹음·완료 화면을 갖는다', () => {
     expect(panel).toContain("view.kind === 'invites_pending'");
     expect(panel).toContain("view.kind === 'waiting'");

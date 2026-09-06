@@ -23,7 +23,7 @@ import type { BibleRange } from '@/lib/bible-scope';
 import type { ReadingPlanPassage } from '@/lib/custom-reading-plan';
 import { buildRelayTurns } from '@/lib/relay-reading';
 import { getRelayProgress, getRelayProjectView, relayErrorMessage } from '@/lib/relay-ui';
-import { toAudibleBgmGain } from '@/lib/audio-volume';
+import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
 import { ContinuousPlaybackView } from './continuous-playback-view';
 import { PLAYBACK_AUTO_CLOSE_DELAY_MS } from '@/lib/audio-playback';
 
@@ -198,6 +198,7 @@ export function RelayPanel({
   const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackBgmRef = useRef<HTMLAudioElement | null>(null);
   const playbackCloseTimerRef = useRef<number | null>(null);
+  const playbackBgmGainController = useMemo(() => createBrowserBgmGainController(), []);
   const initialCreateStartedRef = useRef(false);
 
   const closePlayback = useCallback(() => {
@@ -230,7 +231,8 @@ export function RelayPanel({
     if (playbackCloseTimerRef.current !== null) {
       window.clearTimeout(playbackCloseTimerRef.current);
     }
-  }, []);
+    playbackBgmGainController.dispose();
+  }, [playbackBgmGainController]);
 
   const refreshList = useCallback(async () => {
     const payload = await requestJson<{ projects: RelayProjectSummary[] }>(
@@ -458,6 +460,7 @@ export function RelayPanel({
     setBusy(true);
     setMessage('');
     try {
+      await playbackBgmGainController.activate();
       const payload = await requestJson<{
         recordings: RelayPlaybackRecording[];
       }>(`/api/relay-projects/${relayProject.id}/recordings`);
@@ -1002,7 +1005,7 @@ export function RelayPanel({
             }}
             onVolumeChange={(nextVolume) => {
               setPlaybackVolume(nextVolume);
-              if (playbackBgmRef.current) playbackBgmRef.current.volume = toAudibleBgmGain(nextVolume);
+              playbackBgmGainController.setVolume(nextVolume);
             }}
           >
               {bgmSources[playback.project.bgmId] && (
@@ -1013,7 +1016,7 @@ export function RelayPanel({
                   loop
                   src={bgmSources[playback.project.bgmId]}
                   ref={playbackBgmRef}
-                  onCanPlay={(event) => { event.currentTarget.volume = toAudibleBgmGain(playbackVolume); }}
+                  onCanPlay={(event) => { playbackBgmGainController.connect(event.currentTarget, playbackVolume); }}
                 />
               )}
               {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자들이 직접 녹음한 말씀입니다. */}

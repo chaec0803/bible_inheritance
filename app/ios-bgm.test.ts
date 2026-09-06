@@ -9,7 +9,8 @@ describe('아이폰 이어듣기 BGM', () => {
     expect(page).toContain("audioSrc: '/api/bgm/aeternum?v=3'");
     expect(page).toContain('createMediaElementSource(audio)');
     expect(page).toContain('playbackBgmAudioRef');
-    expect(page).toContain('bgmAudio.volume = toAudibleBgmGain(volume)');
+    expect(page).toContain('chapterBgmGainController.connect(bgmAudio, volume)');
+    expect(page).toContain('chapterBgmGainController.setVolume(volume)');
     expect(page).toContain('await bgmAudio.play()');
     const previewHandler = page.slice(page.indexOf('const playSelectedBgm'), page.indexOf('const pauseSelectedBgm'));
     expect(previewHandler).toContain('startInternalChapterBgm(context, option.id)');

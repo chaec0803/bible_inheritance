@@ -19,6 +19,8 @@ describe('완료 피드백과 재생 제어', () => {
     expect(page).toContain('completionModal.showLibraryAction && !completionModal.relayProjectId');
     const returnHandler = page.slice(page.indexOf('const openRelayTab'), page.indexOf('const openRelayProjectFromCompletion'));
     expect(returnHandler).not.toContain('setRelayRecording(null)');
+    expect(page).toContain('completionModal?.relayProjectId ?? relayRecording?.projectId');
+    expect(page).toContain('completionModal.relayProjectId ?? relayRecording?.projectId');
   });
 
   it('하단 완료 버튼도 현재 절이 범위의 마지막인지 전달한다', () => {

@@ -37,6 +37,11 @@ export function createBrowserBgmGainController(
     void audioContext.resume();
   };
 
+  const activate = async () => {
+    const audioContext = ensureContext();
+    if (audioContext.state !== 'running') await audioContext.resume();
+  };
+
   const setVolume = (percent: number) => {
     const value = toAudibleBgmGain(percent);
     nodes.forEach(({ gain }) => {
@@ -54,5 +59,5 @@ export function createBrowserBgmGainController(
     context = null;
   };
 
-  return { connect, setVolume, dispose };
+  return { activate, connect, setVolume, dispose };
 }

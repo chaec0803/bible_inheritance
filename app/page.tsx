@@ -33,7 +33,7 @@ import { createRecordingSession, type CapturedRecording, type RecordingSession }
 import { createSegmentedRecordingSession, type SegmentedRecordingSession } from '@/lib/segmented-recording-session';
 import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
 import { getVoiceRecordingConstraints } from '@/lib/recording-audio';
-import { toAudibleBgmGain } from '@/lib/audio-volume';
+import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
 import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
 export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
 
@@ -747,6 +747,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const bgmArrayBufferPromisesRef = useRef(new Map<string, Promise<ArrayBuffer>>());
   const cardPreloadImagesRef = useRef<ReturnType<typeof preloadImages>>([]);
   const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
+  const chapterBgmGainController = useMemo(() => createBrowserBgmGainController(), []);
   const stopChapterPlaybackRef = useRef<() => void>(() => undefined);
   const chapterPlaybackCloseTimerRef = useRef<number | null>(null);
   const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
@@ -1117,8 +1118,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, [activeProject?.id, activeProjects, collectedCardIds, pendingCardAwards, userStateReady]);
 
   useEffect(() => {
-    if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.volume = toAudibleBgmGain(volume);
-  }, [volume]);
+    chapterBgmGainController.setVolume(volume);
+  }, [chapterBgmGainController, volume]);
 
   useEffect(() => {
     let active = true;
@@ -1165,9 +1166,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       segmentedRecordingSessionRef.current = null;
       playbackBgmAudioRef.current?.pause();
       playbackBgmAudioRef.current = null;
+      chapterBgmGainController.dispose();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, []);
+  }, [chapterBgmGainController]);
 
   const completedCount = saved.filter(Boolean).length;
   const progress = useMemo(() => Math.round((completedCount / passageVerses.length) * 100), [completedCount, passageVerses.length]);
@@ -1573,11 +1575,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     playbackBgmAudioRef.current = null;
     const option = bgmOptions.find((item) => item.id === bgmId);
     if (!option?.audioSrc) return true;
+    await chapterBgmGainController.activate();
     await context.resume();
     if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
     const bgmAudio = new Audio(option.audioSrc);
     bgmAudio.loop = true;
-    bgmAudio.volume = toAudibleBgmGain(volume);
+    chapterBgmGainController.connect(bgmAudio, volume);
     playbackBgmAudioRef.current = bgmAudio;
     await bgmAudio.play();
     return true;
@@ -1712,7 +1715,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const openRelayProjectFromCompletion = () => {
-    if (!completionModal?.relayProjectId) return;
+    if (!(completionModal?.relayProjectId ?? relayRecording?.projectId)) return;
     setCompletionModal(null);
     setRelayStartCreating(false);
     navigateTo('relay');
@@ -4308,7 +4311,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   <Headphones size={17} /> 보관함 가기
                 </button>
               )}
-              {completionModal.relayProjectId && (
+              {(completionModal.relayProjectId ?? relayRecording?.projectId) && (
                 <button className="primary" type="button" onClick={openRelayProjectFromCompletion}>
                   <Users size={17} /> 이어읽기로 돌아가기
                 </button>

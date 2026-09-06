@@ -43,4 +43,18 @@ describe('iOS BGM gain controller', () => {
     expect(context.createMediaElementSource).toHaveBeenCalledTimes(1);
     expect(gain.gain.value).toBeCloseTo(0.3);
   });
+
+  it('iOS 사용자 동작 안에서 AudioContext를 미리 활성화할 수 있다', async () => {
+    const resume = vi.fn().mockResolvedValue(undefined);
+    const context = {
+      state: 'suspended', destination: {},
+      createMediaElementSource: vi.fn(), createGain: vi.fn(),
+      resume, close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as AudioContext;
+    const controller = createBrowserBgmGainController(() => context);
+
+    await controller.activate();
+
+    expect(resume).toHaveBeenCalledOnce();
+  });
 });

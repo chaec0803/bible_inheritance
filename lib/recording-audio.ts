@@ -2,6 +2,10 @@ export function getSupportedMimeType() {
   return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
+// A fixed, transparent preamp compensates for conservative mobile microphone
+// levels without enabling the browser's speech compression or denoising.
+export const VOICE_RECORDING_GAIN = 2;
+
 export function getVoiceRecordingConstraints(): MediaStreamConstraints {
   return {
     audio: {
@@ -30,12 +34,15 @@ export function createAudioContextCloser(context: Pick<AudioContext, 'state' | '
   };
 }
 
-export function createRecordingAudioGraph(stream: MediaStream) {
-  const context = new AudioContext();
+export function createRecordingAudioGraph(stream: MediaStream, createContext: () => AudioContext = () => new AudioContext()) {
+  const context = createContext();
   const source = context.createMediaStreamSource(stream);
+  const gain = context.createGain();
   const destination = context.createMediaStreamDestination();
-  source.connect(destination);
-  return { context, source, destination, stream: destination.stream, close: createAudioContextCloser(context) };
+  gain.gain.value = VOICE_RECORDING_GAIN;
+  source.connect(gain);
+  gain.connect(destination);
+  return { context, source, gain, destination, stream: destination.stream, close: createAudioContextCloser(context) };
 }
 
 export function encodeAudioBufferAsWav(buffer: AudioBuffer) {
