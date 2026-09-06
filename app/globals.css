@@ -1421,6 +1421,27 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
 .gift-letter-popup blockquote { margin: 18px 0 0; padding: 20px; color: #4f3b2c; background: rgba(255,255,255,.72); border: 1px solid #ead9b8; border-radius: 16px; font-family: AppleMyungjo, 'Noto Serif KR', serif; font-size: 17px; line-height: 1.8; white-space: pre-wrap; }
 .gift-letter-popup-primary { width: 100%; min-height: 50px; margin-top: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: white; background: linear-gradient(135deg, #b47a30, #cc9a3f); border: 0; border-radius: 14px; font-weight: 900; cursor: pointer; }
 .gift-letter-popup-primary:disabled { opacity: .58; cursor: wait; }
+
+/* Center every modal explicitly: native dialog inset plus margin: 0 shifts it left. */
+.gift-arrival-modal,
+.continuous-player-modal,
+.friend-detail-modal,
+.friend-block-confirm-modal,
+.friend-blocked-modal,
+.friend-remove-confirm-modal,
+.friend-picker-modal,
+.gift-dialog,
+.gift-delete-dialog,
+.gift-thank-you-dialog,
+.gift-draft-resume-dialog,
+.gift-send-error-dialog,
+.completion-modal,
+.headphone-modal,
+.word-card-modal,
+.confirm-retake-dialog,
+.gift-letter-popup {
+  margin: auto;
+}
 .gift-download-actions { grid-template-columns: 1fr; }
 .gift-download-actions a { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 13px; text-decoration: none; font-weight: 900; }
 .sent-gift-letter-tag { margin: 10px 0; display: flex; align-items: center; gap: 6px; color: #805d28; font-size: 13px; }

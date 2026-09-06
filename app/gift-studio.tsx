@@ -1,6 +1,7 @@
 'use client';
 /* oxlint-disable jsx-a11y/media-has-caption -- verse text is displayed beside each spoken recording */
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   ArrowRight,
   BookHeart,
@@ -42,6 +43,7 @@ import {
   getSupportedMimeType,
 } from '@/lib/recording-audio';
 import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
+import { encodeAudioBufferSegmentAsMp4 } from '@/lib/audio-mp4';
 
 export const GIFT_STUDIO_STEPS = [
   'friend',
@@ -78,6 +80,12 @@ type ApiPayload = {
   draft?: Draft;
   gift?: { id: string; title: string; recordingCount: number };
   error?: string;
+};
+type GiftVerseBoundary = { position: number; startMs: number; endMs: number };
+const setAudioVolume = (audio: HTMLAudioElement, volume: number) => { audio.volume = volume; };
+const configureBgmAudio = (audio: HTMLAudioElement, onEnded: () => void, onError: () => void) => {
+  audio.onended = onEnded;
+  audio.onerror = onError;
 };
 const readPayload = async (response: Response) =>
   response.json() as Promise<ApiPayload>;
@@ -170,13 +178,15 @@ export function GiftStudio({
   const [selectedGiftPosition, setSelectedGiftPosition] = useState<number | null>(null);
   const recordingSessionRef = useRef<RecordingSession | null>(null);
   const startedRef = useRef(0);
+  const recordingPositionRef = useRef(0);
+  const recordingVerseStartedAtRef = useRef(0);
+  const recordingBoundariesRef = useRef<GiftVerseBoundary[]>([]);
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const bgmPreviewRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewVoiceRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewBgmRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewRunRef = useRef(0);
   const fullPreviewIndexRef = useRef(0);
-  const autoContinueRef = useRef(false);
   const musicSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const localPreviewUrlsRef = useRef<Record<number, string>>({});
 
@@ -194,7 +204,7 @@ export function GiftStudio({
     const interval = window.setInterval(
       () =>
         setSeconds(
-          Math.max(0, Math.floor((Date.now() - startedRef.current) / 1000)),
+          Math.max(0, Math.floor((performance.now() - startedRef.current) / 1000)),
         ),
       500,
     );
@@ -343,17 +353,14 @@ export function GiftStudio({
   async function startRecording(targetDraft = draft) {
     if (!targetDraft || targetDraft.nextPosition == null || recordingSessionRef.current) return;
     const position = targetDraft.nextPosition;
-    const item = targetDraft.items[position];
     try {
       const session = await createRecordingSession({
         constraints: { audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 } } },
         mimeType: getSupportedMimeType(),
         timeslice: 250,
-        now: Date.now,
+        now: () => performance.now(),
         onCaptured: async (capture) => {
           if (recordingSessionRef.current === session) recordingSessionRef.current = null;
-          const shouldContinue = autoContinueRef.current && recordingMode === 'continuous' && position < targetDraft.items.length - 1;
-          autoContinueRef.current = false;
           setRecording(false);
           setSavingRecording(true);
           if (!capture || capture.blob.size === 0) {
@@ -362,24 +369,49 @@ export function GiftStudio({
             return;
           }
 
-          const previewUrl = URL.createObjectURL(capture.blob);
-          setLocalPreviewUrls((current) => {
-            if (current[position]) URL.revokeObjectURL(current[position]);
-            const next = { ...current, [position]: previewUrl };
-            localPreviewUrlsRef.current = next;
-            return next;
-          });
-          const form = new FormData();
-          form.append('audio', capture.blob, 'verse.webm');
-          form.append('verseText', item.verseText || `${item.book} ${item.chapter}:${item.verse}`);
-          form.append('durationSeconds', String(Math.max(1, Math.round(capture.durationMs / 1_000))));
-
           try {
-            const uploadResponse = await fetch(`/api/gift-drafts/${targetDraft.id}/items/${position}/audio`, { method: 'PUT', body: form });
-            if (!uploadResponse.ok) {
-              const payload = await readPayload(uploadResponse);
-              throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
+            const uploads: Array<{ position: number; blob: Blob; durationMs: number }> = [];
+            if (recordingMode === 'continuous') {
+              const finalBoundary = {
+                position: recordingPositionRef.current,
+                startMs: Math.max(0, Math.round(recordingVerseStartedAtRef.current - startedRef.current)),
+                endMs: capture.durationMs,
+              };
+              const boundaries = [...recordingBoundariesRef.current, finalBoundary];
+              const decodeContext = new AudioContext();
+              try {
+                const decoded = await decodeContext.decodeAudioData(await capture.blob.arrayBuffer());
+                for (const boundary of boundaries) uploads.push({
+                  position: boundary.position,
+                  blob: await encodeAudioBufferSegmentAsMp4(decoded, boundary.startMs, boundary.endMs),
+                  durationMs: boundary.endMs - boundary.startMs,
+                });
+              } finally {
+                await decodeContext.close();
+              }
+            } else {
+              uploads.push({ position, blob: capture.blob, durationMs: capture.durationMs });
             }
+
+            await Promise.all(uploads.map(async (upload) => {
+              const uploadItem = targetDraft.items[upload.position];
+              const form = new FormData();
+              form.append('audio', upload.blob, `verse-${upload.position + 1}.mp4`);
+              form.append('verseText', uploadItem.verseText || `${uploadItem.book} ${uploadItem.chapter}:${uploadItem.verse}`);
+              form.append('durationSeconds', String(Math.max(1, Math.round(upload.durationMs / 1_000))));
+              const uploadResponse = await fetch(`/api/gift-drafts/${targetDraft.id}/items/${upload.position}/audio`, { method: 'PUT', body: form });
+              if (!uploadResponse.ok) {
+                const payload = await readPayload(uploadResponse);
+                throw new Error(payload.error ?? `${uploadItem.verse}절을 저장하지 못했어요.`);
+              }
+              const previewUrl = URL.createObjectURL(upload.blob);
+              setLocalPreviewUrls((current) => {
+                if (current[upload.position]) URL.revokeObjectURL(current[upload.position]);
+                const next = { ...current, [upload.position]: previewUrl };
+                localPreviewUrlsRef.current = next;
+                return next;
+              });
+            }));
             const currentResponse = await fetch(`/api/gift-drafts/${targetDraft.id}`);
             if (!currentResponse.ok) throw new Error('저장한 말씀을 다시 불러오지 못했어요.');
             const current = await readPayload(currentResponse);
@@ -390,11 +422,6 @@ export function GiftStudio({
             setSelectedGiftPosition(hydratedDraft.nextPosition == null ? hydratedDraft.items.length - 1 : null);
             setRecordingMode('continuous');
             setStep('record');
-            if (shouldContinue && hydratedDraft.nextPosition != null) {
-              setSavingRecording(false);
-              void startRecording(hydratedDraft);
-              return;
-            }
             setMessage(hydratedDraft.nextPosition == null
               ? '녹음 검토 화면에서 전체 미리듣기와 절별 수정을 할 수 있어요.'
               : `${hydratedDraft.items[hydratedDraft.nextPosition].verse}절부터 이어 녹음할 수 있어요.`);
@@ -411,7 +438,12 @@ export function GiftStudio({
         },
       });
       recordingSessionRef.current = session;
-      startedRef.current = Date.now();
+      const startedAt = performance.now();
+      startedRef.current = startedAt;
+      recordingPositionRef.current = position;
+      recordingVerseStartedAtRef.current = startedAt;
+      recordingBoundariesRef.current = [];
+      setSelectedGiftPosition(position);
       setSeconds(0);
       session.start();
       setRecording(true);
@@ -433,17 +465,27 @@ export function GiftStudio({
     void startRecording();
   };
   const finishCurrentVerseAndContinue = () => {
-    if (!draft || draft.nextPosition == null || recordingSessionRef.current?.phase !== 'recording') return;
-    const position = draft.nextPosition;
+    if (!draft || recordingMode !== 'continuous' || recordingSessionRef.current?.phase !== 'recording') return;
+    const position = recordingPositionRef.current;
     const hasNext = position < draft.items.length - 1;
-    autoContinueRef.current = hasNext;
-    setRecording(false);
-    setSavingRecording(true);
-    void recordingSessionRef.current.stop();
+    if (!hasNext) {
+      setRecording(false);
+      setSavingRecording(true);
+      void recordingSessionRef.current.stop();
+      return;
+    }
+    const now = performance.now();
+    recordingBoundariesRef.current = [...recordingBoundariesRef.current, {
+      position,
+      startMs: Math.max(0, Math.round(recordingVerseStartedAtRef.current - startedRef.current)),
+      endMs: Math.max(0, Math.round(now - startedRef.current)),
+    }];
+    recordingPositionRef.current = position + 1;
+    recordingVerseStartedAtRef.current = now;
+    flushSync(() => setSelectedGiftPosition(position + 1));
   };
   const finishRecordingHere = () => {
     if (savingRecording || recordingSessionRef.current?.phase !== 'recording') return;
-    autoContinueRef.current = false;
     setRecording(false);
     setSavingRecording(true);
     void recordingSessionRef.current.stop();
@@ -469,17 +511,16 @@ export function GiftStudio({
     if (!draft || draft.bgmId === 'none') return;
     const audio = bgmPreviewRef.current ?? new Audio(bgmSrc(draft.bgmId));
     bgmPreviewRef.current = audio;
-    audio.volume = toAudibleBgmGain(draft.bgmVolume);
-    audio.onended = () => {
+    setAudioVolume(audio, toAudibleBgmGain(draft.bgmVolume));
+    configureBgmAudio(audio, () => {
       setBgmPlaying(false);
       setBgmPaused(false);
-    };
-    audio.onerror = () => {
+    }, () => {
       setBgmPlaying(false);
       setBgmPaused(false);
       setBgmLoading(false);
       setBgmPreviewError(true);
-    };
+    });
     try {
       setBgmPreviewError(false);
       setBgmLoading(true);
@@ -726,7 +767,7 @@ export function GiftStudio({
   };
 
   const activeGiftPosition = draft
-    ? (recording || savingRecording) ? draft.nextPosition ?? Math.max(0, draft.items.length - 1) : selectedGiftPosition ?? draft.nextPosition ?? Math.max(0, draft.items.length - 1)
+    ? selectedGiftPosition ?? draft.nextPosition ?? Math.max(0, draft.items.length - 1)
     : 0;
   const activeGiftItem = draft?.items[activeGiftPosition];
 
@@ -768,7 +809,7 @@ export function GiftStudio({
             </article>
             <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>{Array.from({ length: 34 }).map((_, index) => <span key={index} style={{ height: `${12 + ((index * 17) % 42)}%`, animationDelay: `${index * 45}ms` }} />)}</div>
             <div className="timer"><span>{formatTime(seconds)}</span><small>{savingRecording ? '녹음을 안전하게 저장하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : viewingRecordedItem ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
-            {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행"><button className="next" type="button" disabled={savingRecording} onClick={finishCurrentVerseAndContinue}>{draft.nextPosition === draft.items.length - 1 ? '마지막 절 완료' : '다음 절'} <ChevronRight size={18} /></button><button className="finish" type="button" disabled={savingRecording} onClick={finishRecordingHere}>{savingRecording ? <LoaderCircle className="spin" size={18} /> : <CircleStop size={18} />}{savingRecording ? '현재 절 저장 중…' : '현재 절까지 저장'}</button></div>}
+            {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행"><button className="next" type="button" disabled={savingRecording} onClick={finishCurrentVerseAndContinue}>{activeGiftPosition === draft.items.length - 1 ? '마지막 절 완료' : '다음 절'} <ChevronRight size={18} /></button><button className="finish" type="button" disabled={savingRecording} onClick={finishRecordingHere}>{savingRecording ? <LoaderCircle className="spin" size={18} /> : <CircleStop size={18} />}{savingRecording ? '현재 절 저장 중…' : '현재 절까지 저장'}</button></div>}
             <div className={`record-controls ${viewingRecordedItem ? 'saved-recording-actions' : ''}`}>
               {savingRecording ? <button className="record-button" type="button" disabled><span><LoaderCircle className="spin" size={27} /></span>녹음 저장 중</button> : viewingRecordedItem ? <><button className="record-complete-button saved-listen" type="button" onClick={() => void toggleDraftItemPlayback(activeGiftItem)}>{playingDraftPosition === activeGiftItem.position ? <Pause size={22} /> : <Play size={22} />}<span>{playingDraftPosition === activeGiftItem.position ? '듣기 멈춤' : '이 절 듣기'}</span></button><button className="record-complete-button restart" type="button" onClick={() => void editDraftItem(activeGiftItem)}><RotateCcw size={21} /><span>이 절 수정</span></button></> : recording && recordingMode === 'verse' ? <button className="record-button stop" type="button" onClick={finishRecordingHere}><span><CircleStop size={27} /></span>이 절 저장</button> : recording ? null : <button className="record-button" type="button" onClick={requestGiftRecording}><span><Mic size={29} /></span>{activeGiftItem.verse}절부터 이어 녹음</button>}
             </div>
@@ -1260,9 +1301,9 @@ export function GiftStudio({
                         : '다시 녹음할 말씀'}
                     </small>
                     <strong>
-                      {draft.items[draft.nextPosition]?.book}{' '}
-                      {draft.items[draft.nextPosition]?.chapter}:
-                      {draft.items[draft.nextPosition]?.verse}
+                      {draft.items[activeGiftPosition]?.book}{' '}
+                      {draft.items[activeGiftPosition]?.chapter}:
+                      {draft.items[activeGiftPosition]?.verse}
                     </strong>
                   </div>
                   <span className={`status-pill ${recording ? 'live' : ''}`}>
@@ -1271,22 +1312,22 @@ export function GiftStudio({
                 </div>
                 <article className="verse-paper continuous">
                   <span className="verse-number">
-                    {draft.items[draft.nextPosition]?.verse}
+                    {draft.items[activeGiftPosition]?.verse}
                   </span>
                   <div className="continuous-verse-copy">
                     <p>
-                      {draft.items[draft.nextPosition]?.verseText ||
+                      {draft.items[activeGiftPosition]?.verseText ||
                         '말씀 본문을 불러오고 있어요.'}
                     </p>
-                    {draft.items[draft.nextPosition + 1] &&
+                    {draft.items[activeGiftPosition + 1] &&
                       recordingMode === 'continuous' && (
                         <span className="next-verse-preview">
                           <small>
                             다음 말씀 ·{' '}
-                            {draft.items[draft.nextPosition + 1].verse}절
+                            {draft.items[activeGiftPosition + 1].verse}절
                           </small>
                           <span>
-                            {draft.items[draft.nextPosition + 1].verseText}
+                            {draft.items[activeGiftPosition + 1].verseText}
                           </span>
                         </span>
                       )}
@@ -1319,7 +1360,7 @@ export function GiftStudio({
                       type="button"
                       onClick={finishCurrentVerseAndContinue}
                     >
-                      {draft.nextPosition === draft.items.length - 1
+                      {activeGiftPosition === draft.items.length - 1
                         ? '마지막 절 완료'
                         : '다음 절로'}{' '}
                       <ArrowRight size={18} />
@@ -1350,7 +1391,7 @@ export function GiftStudio({
                   >
                     <span><Mic size={22} /></span>{' '}
                     {recordingMode === 'continuous'
-                      ? `${draft.items[draft.nextPosition]?.verse}절부터 이어 녹음`
+                      ? `${draft.items[activeGiftPosition]?.verse}절부터 이어 녹음`
                       : '이 절 다시 녹음'}
                   </button>
                 )}

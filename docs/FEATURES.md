@@ -152,8 +152,9 @@
 - 선물 초안의 녹음은 보관함 목록, 내 말씀 여정, 자유 녹음 목록, 말씀 카드 보상에 나타나지 않는다.
 - 한 선물 초안은 최대 500절까지 담고, 그보다 넓은 범위는 범위를 줄여 달라고 안내한다.
 - 녹음은 선택한 말씀 순서대로 한 절씩 진행하고, 다음에 녹음할 절로 자동 이동한다.
-- `다음 절` 또는 `마지막 절 완료`를 누르면 현재 절을 먼저 정지·업로드하고 서버의 초안을 다시 읽는다. 저장에 성공한 경우에만 다음 미녹음 절로 이동한다.
-- 저장에 실패하면 다음 절 녹음을 시작하지 않으며 현재 절에서 오류를 안내한다. 따라서 화면 진행률과 서버 저장 상태가 서로 앞서가지 않는다.
+- `다음 절`은 현재 연속 녹음을 끊거나 저장하지 않고 절 경계만 기록한 뒤 본문을 즉시 바꾼다.
+- `현재 절까지 저장` 또는 `마지막 절 완료`에서 연속 녹음을 한 번 종료하고, 기록한 경계대로 절별 음원을 잘라 일괄 저장한다.
+- 일괄 저장 중에는 로딩을 표시하고, 완료 뒤 서버 초안을 다시 조회해 진행률을 확정한다. 일부 저장이 실패하면 오류를 안내하고 서버에 실제 저장된 상태를 다시 기준으로 삼는다.
 - 미리 듣기는 선택한 순서대로 이어 재생하며, 마음에 들지 않는 절만 골라 다시 녹음하면 기존 음원을 즉시 교체한다.
 - 모든 절을 녹음하기 전에는 선물을 보낼 수 없다.
 - 초안은 나중에 이어서 만들 수 있고, 직접 버리면 초안과 초안 음원을 함께 지운다.
@@ -193,7 +194,7 @@
 - `lib/gift-draft.test.ts`, `app/gift-studio.test.ts`, `app/api/gift-drafts/*.integration.test.ts`: 선물 말씀 범위 정규화, 절 순서와 상한, 초안 진행 상태, 초안 격리, 절별 재녹음, 전송 시 친구·미개봉 검증.
 - `lib/gift-arrival.test.ts`, `app/gift-arrival.test.ts`, `app/api/gifts/arrivals/route.test.ts`: 전역 감지, 녹음 중 보류, 중복 합치기, 다중 선물 요약, 도착 확인 상태와 권한 검증.
 - `lib/gift-letter.test.ts`, `app/api/gifts/[id]/letter/**/*.test.ts`, 선물 API 통합 테스트: 편지 유형·크기 제한, 텍스트 사전 노출 방지, 음성 저장·개봉·수신자 전용 구간 스트리밍 검증.
-- `lib/recording-machine.test.ts`, `lib/recording-session.test.ts`, `app/recording-regression.test.ts`, `app/gift-studio.test.ts`, `app/gifts.test.ts`: 허용 상태 전이, 단일 자원 소유·중복 정리 방지, 일반·선물·음성 편지 공용 세션 사용, 저장 성공 후 다음 절 이동, 저장 실패 시 진행 중단을 검증한다.
+- `lib/recording-machine.test.ts`, `lib/recording-session.test.ts`, `app/recording-regression.test.ts`, `app/gift-studio.test.ts`, `app/gifts.test.ts`: 허용 상태 전이, 단일 자원 소유·중복 정리 방지, 일반·선물·음성 편지 공용 세션 사용, 다음 절 즉시 전환, 종료 시 절별 일괄 저장을 검증한다.
 - 빌드·정적 검사: TypeScript, oxlint, 프로덕션 번들, diff whitespace.
 - 브라우저 스모크: 홈 시작, 테마, 주요 진입점, 성경/장 선택, 여정 목록, 녹음/듣기 기본 UI.
 

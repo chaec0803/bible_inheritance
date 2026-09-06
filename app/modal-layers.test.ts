@@ -138,3 +138,34 @@ describe('차단 모달 레이어와 모바일 안전 영역', () => {
     }
   });
 });
+
+describe('모든 중앙 모달 정렬', () => {
+  it('native dialog의 기본 inset에 밀리지 않도록 양쪽 자동 여백을 강제한다', () => {
+    const centeredRule = css.match(/\/\* Center every modal[^]*?([^{}]+)\s*\{\s*margin:\s*auto;/)?.[1] ?? '';
+    for (const selector of [
+      '.gift-arrival-modal',
+      '.continuous-player-modal',
+      '.friend-detail-modal',
+      '.friend-block-confirm-modal',
+      '.friend-blocked-modal',
+      '.friend-remove-confirm-modal',
+      '.friend-picker-modal',
+      '.gift-dialog',
+      '.gift-delete-dialog',
+      '.gift-thank-you-dialog',
+      '.gift-draft-resume-dialog',
+      '.gift-send-error-dialog',
+      '.completion-modal',
+      '.headphone-modal',
+      '.word-card-modal',
+      '.confirm-retake-dialog',
+      '.gift-letter-popup',
+    ]) expect(centeredRule).toContain(selector);
+  });
+
+  it('아래에서 올라오는 시트는 중앙 모달 정렬 규칙에서 제외한다', () => {
+    const centeredRule = css.match(/\/\* Center every modal[^]*?([^{}]+)\s*\{\s*margin:\s*auto;/)?.[1] ?? '';
+    expect(centeredRule).not.toContain('.recording-manage-sheet');
+    expect(centeredRule).not.toContain('.chapter-menu-sheet');
+  });
+});
