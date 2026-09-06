@@ -30,6 +30,27 @@ describe('이어읽기 프로젝트 목록 API', () => {
     expect(await response.json()).toMatchObject({ project: { status: 'pending_invites', totalTurns: 4, currentTurnIndex: null } });
   });
 
+  it('그룹과 동일한 멤버 집합의 초대 전 순서를 participant와 turn snapshot에 반영한다', async () => {
+    mocks.first = [{ id: 'g1', member_keys_json: '["member-a","member-b"]' }];
+    mocks.allQueue = [[{ friend_key: 'member-b' }]];
+    const response = await POST(new Request('https://example.test/api/relay-projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      groupId: 'g1', memberKeys: ['member-b', 'member-a'], title: '순서 변경', scope: { start: { bookCode: '창', chapter: 1, verse: 1 }, end: { bookCode: '창', chapter: 1, verse: 4 } }, rotation: 2,
+    }) }));
+    expect(response.status).toBe(201);
+    const participantStatements = mocks.statements.filter((item) => item.sql.includes('INSERT INTO relay_participants'));
+    expect(participantStatements.map((item) => item.values.slice(2, 5))).toEqual([['member-b', 0, 'pending'], ['member-a', 1, 'accepted']]);
+    const turnStatements = mocks.statements.filter((item) => item.sql.includes('INSERT INTO relay_turns'));
+    expect(turnStatements.map((item) => item.values[3])).toEqual(['member-b', 'member-a', 'member-b', 'member-a']);
+  });
+
+  it('중복·누락 participant 순서와 creator가 빠진 순서를 거부한다', async () => {
+    for (const memberKeys of [['member-a', 'member-a'], ['member-b'], ['member-b', 'outsider']]) {
+      mocks.first = [{ id: 'g1', member_keys_json: '["member-a","member-b"]' }];
+      const response = await POST(new Request('https://example.test/api/relay-projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ groupId: 'g1', memberKeys, title: '잘못된 순서', scope: { start: { bookCode: '창', chapter: 1, verse: 1 }, end: { bookCode: '창', chapter: 1, verse: 2 } }, rotation: 1 }) }));
+      expect(response.status).toBe(409);
+    }
+  });
+
   it('타인 그룹과 친구 관계가 끊긴 멤버로는 제안을 생성하지 않는다', async () => {
     mocks.first = [null];
     const invalidGroup = await POST(new Request('https://example.test/api/relay-projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ groupId: 'other', title: 'x', scope: { start: { bookCode: '창', chapter: 1, verse: 1 }, end: { bookCode: '창', chapter: 1, verse: 2 } }, rotation: 1 }) }));

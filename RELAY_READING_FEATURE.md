@@ -33,6 +33,7 @@ DB는 기존 4개 relay 테이블만 사용하며 notification, progress, relay 
 - `GET/POST /api/friend-groups`
 - `GET/POST /api/relay-projects`
 - `GET /api/relay-projects/:projectId`
+- `DELETE /api/relay-projects/:projectId` (creator only)
 - `GET /api/relay-invites`
 - `POST /api/relay-projects/:projectId/accept`
 - `POST /api/relay-projects/:projectId/decline`
@@ -48,6 +49,21 @@ DB는 기존 4개 relay 테이블만 사용하며 notification, progress, relay 
 - 일반 녹음과 선물 녹음은 relay context가 있을 때만 분기하므로 기존 동작을 유지한다.
 - 다른 사용자의 relay 음성은 완료된 프로젝트 participant에게만 재생을 허용한다.
 - mutation이 stale 상태로 실패하면 클라이언트는 현재 project를 refetch한다.
+
+## 초대 전 순서 변경
+
+- 생성 wizard에서 선택한 그룹의 참여자 전체(creator 포함)를 위/아래로 이동할 수 있다.
+- 변경된 순서는 `memberKeys`로 생성 API에 전달되며, 서버는 저장된 그룹과 멤버 집합이 정확히 같은지 검증한다.
+- 검증된 순서 하나로 participant position, rotation turn, 말씀 배분 preview를 모두 만든다.
+- 프로젝트가 생성되어 초대가 발송된 뒤에는 순서 변경 API나 UI를 제공하지 않는다.
+
+## 프로젝트 삭제
+
+- `PENDING_INVITES`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED` 모두 creator만 삭제할 수 있다.
+- 확인 모달을 거치며 삭제 중에는 버튼을 잠가 중복 요청을 막는다.
+- 삭제 시 `relay:{projectId}:turn:%` 녹음의 R2 object와 recording row, relay turns, participants, project를 정리한다.
+- 재사용 가능한 friend group과 일반/선물 녹음은 유지한다.
+- 성공 후 상세를 닫고 `우리 말씀 여정` 목록을 다시 조회한다.
 
 ## Beta 비범위
 

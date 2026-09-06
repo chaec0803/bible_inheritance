@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/supabase-auth', () => ({ authenticateRequest: mocks.authenticate }));
+vi.mock('cloudflare:workers', () => ({ env: { FILES: { delete: vi.fn() } } }));
 vi.mock('@/db', () => ({
   ensureDbSchema: mocks.ensureSchema,
   getD1: () => ({
@@ -73,7 +74,7 @@ describe('이어읽기 프로젝트 조회 권한', () => {
     const response = await getProject(projectRequest, context);
     const payload = await response.json() as { project: Record<string, unknown> };
     expect(response.status).toBe(200);
-    expect(payload.project).toMatchObject({ id: 'project-1', groupName: '우리 가족', currentTurnIndex: 1, canRecord: true, myPosition: 1, currentTurnRecording: { complete: false, requiredCount: 3, recordedCount: 1 } });
+    expect(payload.project).toMatchObject({ id: 'project-1', groupName: '우리 가족', currentTurnIndex: 1, canRecord: true, isCreator: false, myPosition: 1, currentTurnRecording: { complete: false, requiredCount: 3, recordedCount: 1 } });
     expect(JSON.stringify(payload)).not.toContain('creator_key');
   });
 

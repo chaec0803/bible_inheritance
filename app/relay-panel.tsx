@@ -63,6 +63,7 @@ export type RelayProjectDetail = {
     missingReferences: string[];
   } | null;
   creator: { nickname: string };
+  isCreator: boolean;
   participants: RelayParticipant[];
   turns: RelayTurn[];
 };
@@ -161,6 +162,7 @@ export function RelayPanel({
   const [message, setMessage] = useState('');
   const [creating, setCreating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [memberOrder, setMemberOrder] = useState<GroupMember[]>([]);
   const [groupName, setGroupName] = useState('');
   const [selectedFriends, setSelectedFriends] = useState<Friend[]>([]);
   const [title, setTitle] = useState('함께 읽는 말씀');
@@ -176,6 +178,7 @@ export function RelayPanel({
     index: number;
   } | null>(null);
   const [recordingStatusModal, setRecordingStatusModal] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [playbackPaused, setPlaybackPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
   const [playbackVolume, setPlaybackVolume] = useState(0);
@@ -235,6 +238,7 @@ export function RelayPanel({
       setGroups(groupPayload.groups);
       setFriends(friendPayload.friends);
       setSelectedGroupId(groupPayload.groups[0]?.id ?? '');
+      setMemberOrder(groupPayload.groups[0]?.members ?? []);
       setCreating(true);
       setProject(null);
     } catch (error) {
@@ -282,6 +286,7 @@ export function RelayPanel({
       );
       setGroups(refreshed.groups);
       setSelectedGroupId(payload.group.id);
+      setMemberOrder(refreshed.groups.find((group) => group.id === payload.group.id)?.members ?? []);
       setGroupName('');
       setSelectedFriends([]);
     } catch (error) {
@@ -301,13 +306,13 @@ export function RelayPanel({
       return buildRelayTurns({
         books: bibleBooks,
         range,
-        memberKeys: selectedGroup.members.map((member) => member.memberKey),
+        memberKeys: memberOrder.map((member) => member.memberKey),
         rotation,
       });
     } catch {
       return [];
     }
-  }, [range, rotation, selectedGroup]);
+  }, [memberOrder, range, rotation, selectedGroup]);
 
   const submitProject = async () => {
     if (!selectedGroup || !preview.length) return;
@@ -321,6 +326,7 @@ export function RelayPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             groupId: selectedGroup.id,
+            memberKeys: memberOrder.map((member) => member.memberKey),
             title,
             scope: range,
             bgmId,
@@ -365,7 +371,7 @@ export function RelayPanel({
     }
   };
 
-  const completeTurn = async () => {
+    const completeTurn = async () => {
     if (busy || !project || project.currentTurnIndex === null) return;
     setBusy(true);
     setMessage('');
@@ -457,7 +463,7 @@ export function RelayPanel({
                     : 'relay-group'
                 }
                 type="button"
-                onClick={() => setSelectedGroupId(group.id)}
+                onClick={() => { setSelectedGroupId(group.id); setMemberOrder(group.members); }}
                 key={group.id}
               >
                 <strong>{group.name}</strong>
@@ -570,6 +576,17 @@ export function RelayPanel({
           </section>
           <section className="relay-form-card">
             <h3>2. 말씀과 순서</h3>
+            <div className="relay-project-order" aria-label="참여자 읽기 순서">
+              {memberOrder.map((member, index) => (
+                <div className="relay-order-row" key={member.memberKey}>
+                  <strong>{index + 1}. {member.nickname}</strong>
+                  <span>
+                    <button type="button" aria-label={`${member.nickname} 앞으로`} disabled={index === 0} onClick={() => setMemberOrder((current) => { const next = [...current]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}><ArrowUp size={14} /></button>
+                    <button type="button" aria-label={`${member.nickname} 뒤로`} disabled={index === memberOrder.length - 1} onClick={() => setMemberOrder((current) => { const next = [...current]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })}><ArrowDown size={14} /></button>
+                  </span>
+                </div>
+              ))}
+            </div>
             <label>
               이어읽기 이름
               <input
@@ -686,6 +703,21 @@ export function RelayPanel({
       }
       setRecordingStatusModal(true);
     };
+    const deleteProject = async () => {
+      if (busy || !project) return;
+      setBusy(true);
+      setMessage('');
+      try {
+        await requestJson(`/api/relay-projects/${project.id}`, { method: 'DELETE' });
+        setDeleteConfirmOpen(false);
+        setProject(null);
+        await refreshList();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : '이어읽기를 삭제하지 못했어요.');
+      } finally {
+        setBusy(false);
+      }
+    };
     const recordingStatusTitle = view.kind === 'invites_pending'
       ? '아직 모두의 답을 기다리고 있어요.'
       : view.kind === 'completed'
@@ -766,6 +798,11 @@ export function RelayPanel({
             <Headphones size={20} /><strong>듣기</strong>
           </button>
         </nav>
+        {project.isCreator && (
+          <button className="relay-delete-action" type="button" disabled={busy} onClick={() => setDeleteConfirmOpen(true)}>
+            이어읽기 삭제
+          </button>
+        )}
         {view.kind === 'invites_pending' && (
           <section className="relay-state-card">
             <Users size={32} />
@@ -851,6 +888,19 @@ export function RelayPanel({
                 </div>
               )}
               <button className="primary-action" type="button" onClick={() => setRecordingStatusModal(false)}>확인</button>
+            </dialog>
+          </div>
+        )}
+        {deleteConfirmOpen && (
+          <div className="completion-modal-backdrop" role="presentation">
+            <dialog className="completion-modal" open aria-labelledby="relay-delete-title">
+              <h2 id="relay-delete-title">이 이어읽기를 삭제할까요?</h2>
+              <p>{project.status === 'pending_invites' ? '아직 시작하지 않은 이어읽기와 초대가 모두 삭제됩니다.' : project.status === 'in_progress' ? '지금까지 함께 녹음한 말씀도 모두 삭제됩니다.' : project.status === 'completed' ? '완성된 이어읽기와 녹음이 모두 삭제됩니다.' : '종료된 이어읽기 기록이 삭제됩니다.'}</p>
+              <p>삭제 후에는 되돌릴 수 없어요.</p>
+              <div className="completion-modal-actions">
+                <button type="button" disabled={busy} onClick={() => setDeleteConfirmOpen(false)}>취소</button>
+                <button className="destructive" type="button" disabled={busy} onClick={() => void deleteProject()}>{busy ? '삭제 중' : '삭제'}</button>
+              </div>
             </dialog>
           </div>
         )}

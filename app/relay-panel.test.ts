@@ -33,6 +33,21 @@ describe('이어읽기 UI 회귀', () => {
     expect(panel).toContain('<BibleRangePicker');
     expect(panel).toContain('buildRelayTurns');
   });
+  it('초대 전에는 creator를 포함한 참여자 순서를 바꾸고 같은 순서로 preview와 생성 요청을 만든다', () => {
+    expect(panel).toContain('const [memberOrder, setMemberOrder]');
+    expect(panel).toContain('memberKeys: memberOrder.map');
+    expect(panel).toContain('memberKeys: memberOrder.map((member) => member.memberKey)');
+    expect(panel).toContain('aria-label={`${member.nickname} 앞으로`}');
+    expect(panel).toContain('aria-label={`${member.nickname} 뒤로`}');
+  });
+  it('creator에게만 secondary 삭제 동작과 확인 모달을 제공하고 중복 요청을 막는다', () => {
+    expect(panel).toContain('project.isCreator &&');
+    expect(panel).toContain('이어읽기 삭제');
+    expect(panel).toContain('삭제 후에는 되돌릴 수 없어요.');
+    expect(panel).toContain("method: 'DELETE'");
+    expect(panel).toContain('if (busy || !project) return;');
+    expect(panel).toContain('await refreshList()');
+  });
   it('canRecord 서버 값으로만 녹음 진입을 표시한다', () => {
     expect(panel).toContain('getRelayProjectView(project)');
     expect(panel).toContain('onStartRecording(latestProject, latestTurn)');

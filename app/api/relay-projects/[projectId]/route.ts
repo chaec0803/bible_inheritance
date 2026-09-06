@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers';
 import { ensureDbSchema, getD1 } from '@/db';
 import { authenticateRequest } from '@/lib/supabase-auth';
 import { getRelayRecordingProjectId, inspectRelayTurnRecordings } from '@/lib/relay-recording-completeness';
@@ -56,6 +57,7 @@ export async function GET(request: Request, context: RouteContext) {
     id: project.id,
     title: project.title,
     creator: { nickname: project.creator_nickname },
+    isCreator: project.creator_key === user.id,
     groupId: project.group_id,
     groupName: project.group_name,
     scope: parseJson(project.scope_json, null),
@@ -84,4 +86,26 @@ export async function GET(request: Request, context: RouteContext) {
       completedAt: item.completed_at,
     })),
   } });
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.', code: 'UNAUTHENTICATED' }, { status: 401 });
+  await ensureDbSchema();
+  const { projectId } = await context.params;
+  const db = getD1();
+  const project = await db.prepare('SELECT id FROM relay_projects WHERE id = ? AND creator_key = ?')
+    .bind(projectId, user.id).first<{ id: string }>();
+  if (!project) return Response.json({ error: '이어읽기를 찾을 수 없습니다.', code: 'NOT_FOUND' }, { status: 404 });
+  const relayPrefix = `relay:${projectId}:turn:`;
+  const recordingRows = await db.prepare('SELECT id, object_key FROM recordings WHERE project_id LIKE ?')
+    .bind(`${relayPrefix}%`).all<{ id: string; object_key: string }>();
+  if (recordingRows.results.length) await env.FILES.delete(recordingRows.results.map((row) => row.object_key));
+  await db.batch([
+    db.prepare('DELETE FROM recordings WHERE project_id LIKE ?').bind(`${relayPrefix}%`),
+    db.prepare('DELETE FROM relay_turns WHERE project_id = ?').bind(projectId),
+    db.prepare('DELETE FROM relay_participants WHERE project_id = ?').bind(projectId),
+    db.prepare('DELETE FROM relay_projects WHERE id = ? AND creator_key = ?').bind(projectId, user.id),
+  ]);
+  return Response.json({ deleted: true });
 }

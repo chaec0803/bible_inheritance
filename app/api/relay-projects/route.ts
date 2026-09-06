@@ -69,16 +69,19 @@ export async function POST(request: Request) {
   const group = await db.prepare('SELECT id, member_keys_json FROM friend_groups WHERE id = ? AND owner_key = ?')
     .bind(groupId, user.id).first<{ id: string; member_keys_json: string }>();
   if (!group) return Response.json({ error: '친구 그룹을 찾을 수 없어요.', code: 'GROUP_NOT_FOUND' }, { status: 404 });
-  let memberKeys: string[] = [];
+  let groupMemberKeys: string[] = [];
   try {
     const parsed = JSON.parse(group.member_keys_json);
-    if (Array.isArray(parsed)) memberKeys = parsed.filter((key): key is string => typeof key === 'string');
+    if (Array.isArray(parsed)) groupMemberKeys = parsed.filter((key): key is string => typeof key === 'string');
   } catch {
     return Response.json({ error: '친구 그룹 정보가 손상되었어요.', code: 'INVALID_GROUP' }, { status: 409 });
   }
-  if (memberKeys.length < 2 || memberKeys.length > 30 || new Set(memberKeys).size !== memberKeys.length || !memberKeys.includes(user.id)) {
+  const requestedMemberKeys = Array.isArray(body?.memberKeys) ? body.memberKeys.filter((key): key is string => typeof key === 'string') : groupMemberKeys;
+  const sameMembers = requestedMemberKeys.length === groupMemberKeys.length && new Set(requestedMemberKeys).size === requestedMemberKeys.length && requestedMemberKeys.every((key) => groupMemberKeys.includes(key));
+  if (groupMemberKeys.length < 2 || groupMemberKeys.length > 30 || new Set(groupMemberKeys).size !== groupMemberKeys.length || !groupMemberKeys.includes(user.id) || !sameMembers) {
     return Response.json({ error: '친구 그룹 멤버를 확인해 주세요.', code: 'INVALID_GROUP' }, { status: 409 });
   }
+  const memberKeys = requestedMemberKeys;
   const friendKeys = memberKeys.filter((key) => key !== user.id);
   const placeholders = friendKeys.map(() => '?').join(', ');
   const accepted = await db.prepare(`SELECT CASE WHEN user_a_key = ? THEN user_b_key ELSE user_a_key END AS friend_key
