@@ -1422,6 +1422,22 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
 .gift-letter-popup-primary { width: 100%; min-height: 50px; margin-top: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: white; background: linear-gradient(135deg, #b47a30, #cc9a3f); border: 0; border-radius: 14px; font-weight: 900; cursor: pointer; }
 .gift-letter-popup-primary:disabled { opacity: .58; cursor: wait; }
 
+/* Center modal backdrops against the viewport, including the scrollbar gutter. */
+.gift-arrival-backdrop,
+.continuous-player-backdrop,
+.friend-detail-backdrop,
+.friend-block-confirm-backdrop,
+.friend-blocked-backdrop,
+.friend-remove-confirm-backdrop,
+.friend-picker-backdrop,
+.gift-dialog-backdrop,
+.completion-modal-backdrop,
+.headphone-modal-backdrop,
+.word-card-modal-backdrop,
+.confirm-retake-backdrop {
+  width: 100vw;
+}
+
 /* Center every modal explicitly: native dialog inset plus margin: 0 shifts it left. */
 .gift-arrival-modal,
 .continuous-player-modal,

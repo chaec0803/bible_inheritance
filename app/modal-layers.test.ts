@@ -140,6 +140,24 @@ describe('차단 모달 레이어와 모바일 안전 영역', () => {
 });
 
 describe('모든 중앙 모달 정렬', () => {
+  it('스크롤바가 있어도 배경 레이어가 실제 viewport 전체 폭을 사용한다', () => {
+    const viewportRule = css.match(/\/\* Center modal backdrops[^]*?([^{}]+)\s*\{\s*width:\s*100vw;/)?.[1] ?? '';
+    for (const selector of [
+      '.gift-arrival-backdrop',
+      '.continuous-player-backdrop',
+      '.friend-detail-backdrop',
+      '.friend-block-confirm-backdrop',
+      '.friend-blocked-backdrop',
+      '.friend-remove-confirm-backdrop',
+      '.friend-picker-backdrop',
+      '.gift-dialog-backdrop',
+      '.completion-modal-backdrop',
+      '.headphone-modal-backdrop',
+      '.word-card-modal-backdrop',
+      '.confirm-retake-backdrop',
+    ]) expect(viewportRule).toContain(selector);
+  });
+
   it('native dialog의 기본 inset에 밀리지 않도록 양쪽 자동 여백을 강제한다', () => {
     const centeredRule = css.match(/\/\* Center every modal[^]*?([^{}]+)\s*\{\s*margin:\s*auto;/)?.[1] ?? '';
     for (const selector of [
