@@ -75,14 +75,14 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(page).toContain('여정을 완료하시겠습니까?');
   });
 
-  it('선물 탭에서 받은 선물을 이어듣고 MP4로 다운로드하고 삭제한다', () => {
+  it('선물 탭에서 받은 선물을 이어듣고 MP3로 다운로드하고 삭제한다', () => {
     expect(page).toContain("navigateTo('gifts')");
     expect(page).toContain("appTab === 'gifts' && (");
     expect(page).toContain('<GiftsPanel');
     expect(panel).toContain('들어보기');
     expect(panel).toContain('다운로드');
-    expect(panel).toContain('createGiftMp4');
-    expect(panel).toContain('MP4 만드는 중');
+    expect(panel).toContain('createGiftMp3');
+    expect(panel).toContain('MP3 만드는 중');
     expect(panel).not.toContain('/download`} download');
     expect(panel).toContain("method: 'DELETE'");
   });
@@ -161,9 +161,9 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).not.toContain('이어듣기');
   });
 
-  it('오래 걸리는 MP4 생성 뒤에는 사용자가 직접 저장하고 모바일 공유 저장도 선택할 수 있다', () => {
+  it('오래 걸리는 MP3 생성 뒤에는 사용자가 직접 저장하고 모바일 공유 저장도 선택할 수 있다', () => {
     expect(panel).toContain('downloadReady');
-    expect(panel).toContain('MP4 파일 저장');
+    expect(panel).toContain('MP3 파일 저장');
     expect(panel).toContain('download={downloadReady.filename}');
     expect(panel).not.toContain('target="_blank"');
     expect(panel).not.toContain('link.click()');

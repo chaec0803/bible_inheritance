@@ -1,4 +1,4 @@
-const MP4_AUDIO_BITRATE = 160_000;
+const MP4_AUDIO_BITRATE = 256_000;
 
 function sliceAudioBuffer(buffer: AudioBuffer, startMs: number, endMs: number) {
   const startFrame = Math.max(0, Math.floor((startMs / 1_000) * buffer.sampleRate));

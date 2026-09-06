@@ -73,11 +73,26 @@ describe('녹음·저장·수정 회귀', () => {
     expect(styles).toContain('.continuous-record-actions { position: sticky; bottom: 82px; z-index: 20;');
   });
 
-  it('녹음은 무압축 WAV가 아니라 고음질 MP4로 압축해 저장한다', () => {
-    expect(page).toContain('encodeAudioBufferSegmentAsMp4');
-    expect(page).toContain("{ type: 'audio/mp4' }");
-    expect(page).toContain('.mp4`');
+  it('절별 녹음은 재인코딩하지 않고 브라우저 원본 음성을 저장한다', () => {
+    const saveHandler = functionBody('const saveVerse', 'const chooseBibleBook');
+    expect(saveHandler).toContain('currentTake.blob');
+    expect(saveHandler).toContain('currentTake.mimeType');
+    expect(saveHandler).not.toContain('decodeAudioData');
+    expect(saveHandler).not.toContain('encodeAudioBufferSegmentAsMp4');
+  });
+
+  it('절 분리가 필요한 이어 녹음만 고음질 MP4로 압축해 저장한다', () => {
+    const saveHandler = functionBody('const saveCompletedContinuousVerses', 'const startRecording');
+    expect(saveHandler).toContain('encodeAudioBufferSegmentAsMp4');
+    expect(saveHandler).toContain("{ type: 'audio/mp4' }");
+    expect(saveHandler).toContain('.mp4`');
     expect(page).not.toContain('encodeAudioBufferAsWav(decoded');
+  });
+
+  it('원음 보존을 위해 브라우저의 자동 음성 보정을 강제하지 않는다', () => {
+    expect(page).toContain('autoGainControl: false');
+    expect(page).toContain('echoCancellation: false');
+    expect(page).toContain('noiseSuppression: false');
   });
 
   it('저장·마이크 요청 중에는 녹음 버튼을 다시 누를 수 없다', () => {

@@ -15,7 +15,7 @@ export function getGiftMixDuration(durations: number[]) {
 
 export function getGiftDownloadName(title: string) {
   const safeTitle = title.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80) || '말씀선물';
-  return `${safeTitle}-말씀선물.mp4`;
+  return `${safeTitle}-말씀선물.mp3`;
 }
 
 async function fetchAndDecode(context: BaseAudioContext, url: string) {
@@ -29,7 +29,7 @@ async function renderGiftMix(voiceUrls: string[], bgmUrl: string | null, bgmVolu
   try {
     const voiceBuffers: AudioBuffer[] = [];
     for (const url of voiceUrls) voiceBuffers.push(await fetchAndDecode(decodeContext, url));
-    if (!voiceBuffers.length) throw new Error('MP4로 만들 녹음이 없어요.');
+    if (!voiceBuffers.length) throw new Error('MP3로 만들 녹음이 없어요.');
     const bgmBuffer = bgmUrl ? await fetchAndDecode(decodeContext, bgmUrl) : null;
     const duration = getGiftMixDuration(voiceBuffers.map((buffer) => buffer.duration));
     const offline = new OfflineAudioContext(2, Math.max(1, Math.ceil(duration * OUTPUT_SAMPLE_RATE)), OUTPUT_SAMPLE_RATE);
@@ -60,7 +60,7 @@ async function renderGiftMix(voiceUrls: string[], bgmUrl: string | null, bgmVolu
   }
 }
 
-export async function createGiftMp4(options: GiftMp3Options) {
+export async function createGiftMp3(options: GiftMp3Options) {
   const renderedAudio = await renderGiftMix(options.voiceUrls, options.bgmUrl, options.bgmVolume);
   const [media, mp3] = await Promise.all([import('mediabunny'), import('@mediabunny/mp3-encoder')]);
   const quality = new media.Quality({ bitrate: 192_000, bitrateMode: 'constant' });
@@ -68,7 +68,7 @@ export async function createGiftMp4(options: GiftMp3Options) {
     mp3.registerMp3Encoder();
 
   const target = new media.BufferTarget();
-  const output = new media.Output({ format: new media.Mp4OutputFormat(), target });
+  const output = new media.Output({ format: new media.Mp3OutputFormat(), target });
   const source = new media.AudioBufferSource({
     codec: 'mp3',
     quality,
@@ -78,9 +78,9 @@ export async function createGiftMp4(options: GiftMp3Options) {
   await source.add(renderedAudio);
   source.close();
   await output.finalize();
-  if (!target.buffer) throw new Error('MP4 파일을 완성하지 못했어요.');
+  if (!target.buffer) throw new Error('MP3 파일을 완성하지 못했어요.');
   return {
-    blob: new Blob([target.buffer], { type: 'audio/mp4' }),
+    blob: new Blob([target.buffer], { type: 'audio/mpeg' }),
     filename: getGiftDownloadName(options.title),
   };
 }

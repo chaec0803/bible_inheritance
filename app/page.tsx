@@ -2194,7 +2194,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       const mimeType = getSupportedMimeType();
       const targetVerseIndex = verseIndex;
       const session = await createRecordingSession({
-        constraints: { audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
+        constraints: { audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
         mimeType,
         audioBitsPerSecond: 256_000,
         timeslice: 250,
@@ -2328,12 +2328,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const completesPassage = !wasReplacement && passageVerses.every((_, index) => index === verseIndex || saved[index]);
     setSavingLibrary(true);
     try {
-      const decodeContext = new AudioContext();
-      const decoded = await decodeContext.decodeAudioData(await currentTake.blob.arrayBuffer());
-      const uploadAudio = await encodeAudioBufferSegmentAsMp4(decoded, 0, decoded.duration * 1_000);
-      await decodeContext.close();
+      const uploadAudio = currentTake.blob;
+      const uploadMimeType = currentTake.mimeType || uploadAudio.type || 'audio/webm';
+      const uploadExtension = uploadMimeType.includes('mp4') ? 'mp4' : uploadMimeType.includes('ogg') ? 'ogg' : 'webm';
       const formData = new FormData();
-      formData.append('audio', new File([uploadAudio], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.mp4`, { type: 'audio/mp4' }));
+      formData.append('audio', new File([uploadAudio], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${uploadExtension}`, { type: uploadMimeType }));
       formData.append('book', passageBook.name);
       formData.append('chapter', String(passageChapter));
       formData.append('verse', String(currentVerseNumber));
