@@ -29,8 +29,9 @@ import { ContinuousPlaybackView } from './continuous-playback-view';
 import { BibleRangePicker } from './bible-range-picker';
 import type { GiftDraftScope } from '@/lib/gift-draft';
 import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
-import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
-import { encodeAudioBufferSegmentAsMp4 } from '@/lib/audio-mp4';
+import { createRecordingSession, type CapturedRecording, type RecordingSession } from '@/lib/recording-session';
+import { createSegmentedRecordingSession, type SegmentedRecordingSession } from '@/lib/segmented-recording-session';
+import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
 import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
 export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
@@ -535,12 +536,6 @@ type RecordingTake = {
   duration: number;
 };
 
-type ContinuousVerseBoundary = {
-  verseIndex: number;
-  startMs: number;
-  endMs: number;
-  transitionSource: 'manual' | 'stop';
-};
 
 type SavedRecording = {
   id: string;
@@ -730,10 +725,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [bibleLoading, setBibleLoading] = useState(false);
 
   const recordingSessionRef = useRef<RecordingSession | null>(null);
+  const segmentedRecordingSessionRef = useRef<SegmentedRecordingSession | null>(null);
   const recordingStartedAtRef = useRef(0);
-  const continuousVerseStartedAtRef = useRef(0);
   const continuousVerseIndexRef = useRef(0);
-  const continuousBoundariesRef = useRef<ContinuousVerseBoundary[]>([]);
+  const continuousCapturedVerseIndexesRef = useRef<number[]>([]);
+  const pendingContinuousCapturesRef = useRef(new Set<Promise<void>>());
   const continuousRecordingGroupIdRef = useRef<string | null>(null);
   const objectUrlsRef = useRef(new Set<string>());
   const restartBgmOnNextPlayRef = useRef(false);
@@ -762,6 +758,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, []);
 
   const currentTake = takes[verseIndex];
+  const recordingUploadQueue = useMemo(() => getBrowserRecordingUploadQueue(userId), [userId]);
   const currentVerseNumber = passageStartVerse + verseIndex;
   const hasTake = Boolean(currentTake);
   const finishProjectDay = activeProject ? (viewedProjectDay ?? getProjectDay(activeProject, kstToday)) : 1;
@@ -773,61 +770,104 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     book: passageBook.name,
     chapter: passageChapter,
   });
+  const persistContinuousCapture = useCallback(
+    async (capture: CapturedRecording, targetVerseIndex: number) => {
+      if (!capture.blob.size) throw new Error('녹음된 음성이 없어요.');
+      const verseNumber = passageStartVerse + targetVerseIndex;
+      const extension = capture.mimeType.includes('mp4') ? 'mp4' : capture.mimeType.includes('ogg') ? 'ogg' : 'webm';
+      const queued = await recordingUploadQueue.enqueue({
+        id: `recording:${userId}:${relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording'}:${passageBook.name}:${passageChapter}:${verseNumber}`,
+        ownerKey: userId,
+        url: '/api/recordings',
+        method: 'POST',
+        blob: capture.blob,
+        filename: `${passageBook.name}${passageChapter}장_${verseNumber}절.${extension}`,
+        fields: {
+          book: passageBook.name,
+          chapter: String(passageChapter),
+          verse: String(verseNumber),
+          verseText: passageVerses[targetVerseIndex] ?? '',
+          projectId: relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording',
+          projectTitle: relayRecording?.projectTitle ?? activeProject?.title ?? '자유 녹음',
+          recordingGroupId: continuousRecordingGroupIdRef.current ?? '',
+          recordingMode: 'continuous',
+          bgmId: bgm,
+          durationSeconds: String(Math.max(1, Math.round(capture.durationMs / 1_000))),
+          clientRecordingId: crypto.randomUUID(),
+        },
+        createdAt: Date.now(),
+      });
+      setSaved((current) => current.map((value, index) => index === targetVerseIndex ? true : value));
+      void queued.done.catch(() => undefined);
+    },
+    [activeProject?.id, activeProject?.title, bgm, passageBook.name, passageChapter, passageStartVerse, passageVerses, recordingUploadQueue, relayRecording?.contextProjectId, relayRecording?.projectTitle, userId],
+  );
+
+  const trackContinuousCapture = useCallback((capture: Promise<CapturedRecording>, targetVerseIndex: number) => {
+    const pending = capture.then((value) => persistContinuousCapture(value, targetVerseIndex));
+    pendingContinuousCapturesRef.current.add(pending);
+    void pending.finally(() => pendingContinuousCapturesRef.current.delete(pending)).catch(() => undefined);
+    return pending;
+  }, [persistContinuousCapture]);
+
   const moveContinuousVerse = useCallback(
-    (nextIndex: number, source: 'manual') => {
+    (nextIndex: number, _source: 'manual') => {
       const safeIndex = Math.max(0, Math.min(nextIndex, passageVerses.length - 1));
       if (safeIndex === verseIndex) return;
-      const now = performance.now();
-      const sessionStart = recordingStartedAtRef.current;
-      const boundary: ContinuousVerseBoundary = {
-        verseIndex,
-        startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - sessionStart)),
-        endMs: Math.max(0, Math.round(now - sessionStart)),
-        transitionSource: source,
-      };
-      continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-      continuousVerseStartedAtRef.current = now;
+      const session = segmentedRecordingSessionRef.current;
+      if (!session?.recording) return;
+      void trackContinuousCapture(session.rotate(), verseIndex);
+      continuousCapturedVerseIndexesRef.current.push(verseIndex);
       continuousVerseIndexRef.current = safeIndex;
       flushSync(() => setVerseIndex(safeIndex));
     },
-    [passageVerses.length, verseIndex],
+    [passageVerses.length, trackContinuousCapture, verseIndex],
   );
 
-  const completeContinuousVerse = useCallback(() => {
+  const finishContinuousRecording = async (finishedLastVerse: boolean) => {
+    const session = segmentedRecordingSessionRef.current;
+    if (!session?.recording) return;
+    const finalVerseIndex = continuousVerseIndexRef.current;
+    setRecording(false);
+    setSavingLibrary(true);
+    setNotice(finishedLastVerse ? '마지막 절까지 읽었어요. 남은 녹음을 저장하고 있어요.' : '현재 절까지 저장하고 있어요.');
+    try {
+      const finalCapture = await session.stop();
+      segmentedRecordingSessionRef.current = null;
+      if (finalCapture) await trackContinuousCapture(Promise.resolve(finalCapture), finalVerseIndex);
+      continuousCapturedVerseIndexesRef.current.push(finalVerseIndex);
+      await Promise.all(pendingContinuousCapturesRef.current);
+      await recordingUploadQueue.flush();
+      await refreshLibrary();
+      const verseNumbers = [...new Set(continuousCapturedVerseIndexesRef.current)].map((index) => passageStartVerse + index).sort((a, b) => a - b);
+      const firstVerse = verseNumbers[0];
+      const lastVerse = verseNumbers.at(-1);
+      setFullRetakeActive(false);
+      setCompletionModal({
+        title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
+        description: `${verseNumbers.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
+        showLibraryAction: finishedLastVerse,
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '녹음을 저장하지 못했어요. 로컬 원본은 다음 접속 때 다시 전송할게요.');
+    } finally {
+      setSavingLibrary(false);
+    }
+  };
+
+  const completeContinuousVerse = () => {
     if (!recording || recordingMode !== 'continuous') return;
     if (verseIndex < passageVerses.length - 1) {
       moveContinuousVerse(verseIndex + 1, 'manual');
       return;
     }
-    const now = performance.now();
-    const boundary: ContinuousVerseBoundary = {
-      verseIndex,
-      startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
-      endMs: Math.max(0, Math.round(now - recordingStartedAtRef.current)),
-      transitionSource: 'manual',
-    };
-    continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-    setRecording(false);
-    setSavingLibrary(true);
-    void recordingSessionRef.current?.stop();
-    setNotice('마지막 절까지 읽었어요. 완료한 절을 저장하고 있어요.');
-  }, [moveContinuousVerse, passageVerses.length, recording, recordingMode, verseIndex]);
+    void finishContinuousRecording(true);
+  };
 
-  const stopContinuousAndSaveCurrent = useCallback(() => {
-    if (!recording || recordingMode !== 'continuous' || recordingSessionRef.current?.phase !== 'recording') return;
-    const now = performance.now();
-    const boundary: ContinuousVerseBoundary = {
-      verseIndex,
-      startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
-      endMs: Math.max(0, Math.round(now - recordingStartedAtRef.current)),
-      transitionSource: 'manual',
-    };
-    continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
-    setRecording(false);
-    setSavingLibrary(true);
-    void recordingSessionRef.current.stop();
-    setNotice('현재 절까지 저장하고 있어요.');
-  }, [recording, recordingMode, verseIndex]);
+  const stopContinuousAndSaveCurrent = () => {
+    if (!recording || recordingMode !== 'continuous' || !segmentedRecordingSessionRef.current?.recording) return;
+    void finishContinuousRecording(false);
+  };
 
   useEffect(() => {
     if (!recording || recordingMode !== 'continuous') return;
@@ -1117,6 +1157,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     return () => {
       recordingSessionRef.current?.dispose();
       recordingSessionRef.current = null;
+      segmentedRecordingSessionRef.current?.dispose();
+      segmentedRecordingSessionRef.current = null;
       playbackBgmAudioRef.current?.pause();
       playbackBgmAudioRef.current = null;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -1408,6 +1450,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setSaved(passageVerses.map((_, index) => recordings.some((item) => (!relayRecording ? recordingBelongsToJourney(item, activeProject) : item.projectId === relayRecording.contextProjectId) && item.book === passageBook.name && item.chapter === passageChapter && item.verse === passageStartVerse + index)));
     return recordings;
   };
+  useEffect(() => {
+    void recordingUploadQueue.flush()
+      .catch(() => setNotice('아직 전송하지 못한 녹음이 있어요. 연결이 돌아오면 다시 저장할게요.'));
+  }, [recordingUploadQueue]);
 
   const awardDailyWordCard = useCallback(() => {
     if (!activeProject || activeProject.kind === 'free') return;
@@ -2119,57 +2165,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setSavedRecordingPlaying(false);
   };
 
-  const saveCompletedContinuousVerses = async (sourceBlob: Blob, boundaries: ContinuousVerseBoundary[]) => {
-    if (!boundaries.length) {
-      setNotice('완료한 절이 없어 저장하지 않았어요. 읽던 절부터 다시 시작할 수 있어요.');
-      return;
-    }
-    setSavingLibrary(true);
-    const decodeContext = new AudioContext();
-    try {
-      const decoded = await decodeContext.decodeAudioData(await sourceBlob.arrayBuffer());
-      await Promise.all(
-        boundaries.map(async (boundary) => {
-          const verseNumber = passageStartVerse + boundary.verseIndex;
-          const verseAudio = await encodeAudioBufferSegmentAsMp4(decoded, boundary.startMs, boundary.endMs);
-          const formData = new FormData();
-          formData.append('audio', new File([verseAudio], `${passageBook.name}${passageChapter}장_${verseNumber}절.mp4`, { type: 'audio/mp4' }));
-          formData.append('book', passageBook.name);
-          formData.append('chapter', String(passageChapter));
-          formData.append('verse', String(verseNumber));
-          formData.append('verseText', passageVerses[boundary.verseIndex] ?? '');
-          formData.append('projectId', relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording');
-          formData.append('projectTitle', relayRecording?.projectTitle ?? activeProject?.title ?? '자유 녹음');
-          formData.append('recordingGroupId', continuousRecordingGroupIdRef.current ?? '');
-          formData.append('recordingMode', 'continuous');
-          formData.append('bgmId', bgm);
-          formData.append('durationSeconds', String(Math.max(1, Math.round((boundary.endMs - boundary.startMs) / 1_000))));
-          const response = await fetch('/api/recordings', {
-            method: 'POST',
-            body: formData,
-          });
-          if (!response.ok) throw new Error(`${verseNumber}절을 저장하지 못했어요.`);
-        }),
-      );
-      await refreshLibrary();
-      setFullRetakeActive(false);
-      const verseNumbers = boundaries.map((boundary) => passageStartVerse + boundary.verseIndex);
-      const firstVerse = Math.min(...verseNumbers);
-      const lastVerse = Math.max(...verseNumbers);
-      const finishedCurrentPassage = lastVerse >= passageStartVerse + passageVerses.length - 1;
-      setCompletionModal({
-          title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
-          description: `${boundaries.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
-          showLibraryAction: finishedCurrentPassage,
-        });
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : '완료한 절을 저장하지 못했어요.');
-    } finally {
-      await decodeContext.close();
-      setSavingLibrary(false);
-    }
-  };
-
   const startRecording = async (skipHeadphoneWarning = false) => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setNotice('이 브라우저에서는 마이크 녹음을 지원하지 않아요. 최신 Safari나 Chrome을 사용해 주세요.');
@@ -2193,6 +2188,29 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     try {
       const mimeType = getSupportedMimeType();
       const targetVerseIndex = verseIndex;
+      if (recordingMode === 'continuous') {
+        const session = await createSegmentedRecordingSession({
+          constraints: { audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
+          mimeType,
+          audioBitsPerSecond: 256_000,
+          timeslice: 250,
+          now: () => performance.now(),
+        });
+        const startedAt = performance.now();
+        segmentedRecordingSessionRef.current = session;
+        recordingStartedAtRef.current = startedAt;
+        continuousVerseIndexRef.current = targetVerseIndex;
+        continuousRecordingGroupIdRef.current = crypto.randomUUID();
+        continuousCapturedVerseIndexesRef.current = [];
+        pendingContinuousCapturesRef.current.clear();
+        setVerseIndex(targetVerseIndex);
+        setSaved((current) => current.map((value, index) => index === targetVerseIndex ? false : value));
+        setSeconds(0);
+        session.start();
+        setRecording(true);
+        setNotice('원음 녹음을 시작했어요. 다음 절은 바로 넘어가고 저장은 백그라운드로 진행해요.');
+        return;
+      }
       const session = await createRecordingSession({
         constraints: { audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
         mimeType,
@@ -2207,37 +2225,21 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             return;
           }
 
-          let completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
-          if (recordingMode === 'continuous') {
-            const finalBoundary: ContinuousVerseBoundary = {
-              verseIndex: continuousVerseIndexRef.current,
-              startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
-              endMs: capture.durationMs,
-              transitionSource: 'stop',
-            };
-            continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== continuousVerseIndexRef.current), finalBoundary];
-            completedContinuousBoundaries = [...continuousBoundariesRef.current];
-          }
-
           const duration = Math.max(1, Math.round(capture.durationMs / 1_000));
-          if (recordingMode === 'continuous') {
-            void saveCompletedContinuousVerses(capture.blob, completedContinuousBoundaries);
-          } else {
-            const url = URL.createObjectURL(capture.blob);
-            objectUrlsRef.current.add(url);
-            setTakes((current) => {
-              const next = [...current];
-              const previousTake = next[targetVerseIndex];
-              if (previousTake) {
-                URL.revokeObjectURL(previousTake.url);
-                objectUrlsRef.current.delete(previousTake.url);
-              }
-              next[targetVerseIndex] = { url, blob: capture.blob, mimeType: capture.mimeType, duration };
-              return next;
-            });
-          }
+          const url = URL.createObjectURL(capture.blob);
+          objectUrlsRef.current.add(url);
+          setTakes((current) => {
+            const next = [...current];
+            const previousTake = next[targetVerseIndex];
+            if (previousTake) {
+              URL.revokeObjectURL(previousTake.url);
+              objectUrlsRef.current.delete(previousTake.url);
+            }
+            next[targetVerseIndex] = { url, blob: capture.blob, mimeType: capture.mimeType, duration };
+            return next;
+          });
           setSeconds(duration);
-          if (recordingMode !== 'continuous') setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
+          setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
         },
         onError: () => {
           setRecording(false);
@@ -2248,16 +2250,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       const startedAt = performance.now();
       recordingSessionRef.current = session;
       recordingStartedAtRef.current = startedAt;
-      if (recordingMode === 'continuous') {
-        continuousVerseStartedAtRef.current = startedAt;
-        continuousVerseIndexRef.current = targetVerseIndex;
-        continuousRecordingGroupIdRef.current = crypto.randomUUID();
-        continuousBoundariesRef.current = [];
-        setVerseIndex(targetVerseIndex);
-      }
-
-      if (recordingMode === 'verse')
-        setTakes((current) => {
+      setTakes((current) => {
           const next = [...current];
           const previousTake = next[targetVerseIndex];
           if (previousTake) {
@@ -2266,7 +2259,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           }
           next[targetVerseIndex] = null;
           return next;
-        });
+      });
       setSaved((current) => current.map((value, index) => (index === targetVerseIndex ? false : value)));
       setSeconds(0);
       session.start();
@@ -2275,6 +2268,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     } catch (error) {
       recordingSessionRef.current?.dispose();
       recordingSessionRef.current = null;
+      segmentedRecordingSessionRef.current?.dispose();
+      segmentedRecordingSessionRef.current = null;
       const denied = error instanceof DOMException && error.name === 'NotAllowedError';
       setNotice(denied ? '마이크 권한이 필요해요. 브라우저 주소창의 마이크 권한을 허용해 주세요.' : '마이크를 연결할 수 없어요. 연결 상태를 확인하고 다시 시도해 주세요.');
     } finally {
@@ -2305,6 +2300,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     if (recording) {
       recordingSessionRef.current?.dispose();
       recordingSessionRef.current = null;
+      segmentedRecordingSessionRef.current?.dispose();
+      segmentedRecordingSessionRef.current = null;
     }
     setRecording(false);
     setSeconds(0);
@@ -2331,30 +2328,28 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       const uploadAudio = currentTake.blob;
       const uploadMimeType = currentTake.mimeType || uploadAudio.type || 'audio/webm';
       const uploadExtension = uploadMimeType.includes('mp4') ? 'mp4' : uploadMimeType.includes('ogg') ? 'ogg' : 'webm';
-      const formData = new FormData();
-      formData.append('audio', new File([uploadAudio], `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${uploadExtension}`, { type: uploadMimeType }));
-      formData.append('book', passageBook.name);
-      formData.append('chapter', String(passageChapter));
-      formData.append('verse', String(currentVerseNumber));
-      formData.append('verseText', passageVerses[verseIndex]);
-      formData.append('projectId', relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording');
-      formData.append('projectTitle', relayRecording?.projectTitle ?? activeProject?.title ?? '자유 녹음');
-      formData.append('recordingMode', 'verse');
-      formData.append('bgmId', bgm);
-      formData.append('durationSeconds', String(currentTake.duration));
-
-      const response = await fetch('/api/recordings', {
+      const queued = await recordingUploadQueue.enqueue({
+        id: `recording:${userId}:${relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording'}:${passageBook.name}:${passageChapter}:${currentVerseNumber}`,
+        ownerKey: userId,
+        url: '/api/recordings',
         method: 'POST',
-        body: formData,
+        blob: uploadAudio,
+        filename: `${passageBook.name}${passageChapter}장_${currentVerseNumber}절.${uploadExtension}`,
+        fields: {
+          book: passageBook.name,
+          chapter: String(passageChapter),
+          verse: String(currentVerseNumber),
+          verseText: passageVerses[verseIndex],
+          projectId: relayRecording?.contextProjectId ?? activeProject?.id ?? 'free-recording',
+          projectTitle: relayRecording?.projectTitle ?? activeProject?.title ?? '자유 녹음',
+          recordingMode: 'verse',
+          bgmId: bgm,
+          durationSeconds: String(currentTake.duration),
+          clientRecordingId: crypto.randomUUID(),
+        },
+        createdAt: Date.now(),
       });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(payload?.error || '보관함에 저장하지 못했어요.');
-      }
-
-      await refreshLibrary();
+      void queued.done.then(refreshLibrary).catch(() => setNotice('기기에는 저장했어요. 연결이 돌아오면 클라우드에 다시 전송할게요.'));
       setReplacingRecording(null);
       setRecordingMode('continuous');
       setTakes((current) =>
@@ -2370,7 +2365,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setRecentlyUpdatedReference(wasReplacement ? reference : null);
       setCompletionModal({
           title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
-          description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 보관함에 안전하게 저장했어요.',
+          description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 기기에 보관했어요. 클라우드 저장은 백그라운드로 이어져요.',
           showLibraryAction: completesPassage,
         });
     } catch (error) {
@@ -2861,6 +2856,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             </div>
           ) : onboardingStep === 'giftStudio' ? (
             <GiftStudio
+              userId={userId}
               initialScope={giftStudioScope}
               initialFriend={giftStudioFriend}
               onBack={() => navigateTo('home')}

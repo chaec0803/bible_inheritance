@@ -752,6 +752,7 @@ h1, h2, p { margin-top: 0; }
 .round-button:disabled { opacity: .3; cursor: not-allowed; }
 .round-button.save { color: var(--action-ink); border-color: var(--action-bg); background: var(--action-bg); }
 .record-button { min-width: 176px; height: 58px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--action-ink); border: 0; border-radius: 19px; background: var(--action-bg); box-shadow: 0 10px 30px color-mix(in srgb, var(--action-bg) 28%, transparent); font-size: 14px; font-weight: 800; cursor: pointer; }
+.recording-save-loading { margin-inline: auto; justify-content: center; text-align: center; }
 .record-button span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: rgba(255,255,255,.13); }
 .record-button.recording { background: var(--coral); box-shadow: 0 10px 30px rgba(201, 93, 85, .25); }
 .record-button:disabled { opacity: .46; filter: saturate(.35); box-shadow: none; cursor: wait; pointer-events: none; }

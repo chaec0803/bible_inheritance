@@ -145,38 +145,36 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).not.toContain('<dialog open className="recording-manage-backdrop">');
   });
 
-  it('연속 녹음은 마지막 종료 때 절 경계대로 잘라 한 번에 저장한다', () => {
+  it('연속 녹음은 절마다 원본 blob을 로컬에 저장하고 백그라운드 업로드한다', () => {
     const start = block(studio, 'async function startRecording', 'const requestGiftRecording');
-    expect(start).toContain('recordingBoundariesRef.current');
-    expect(start).toContain('encodeAudioBufferSegmentAsMp4');
-    expect(start).toContain('await Promise.all(uploads.map');
-    expect(start).toContain('const uploadResponse = await fetch');
-    expect(start).toContain('const currentResponse = await fetch');
-    expect(start).toContain('const hydratedDraft = await hydrateVerseTexts(current.draft)');
-    expect(studio).toContain('if (!uploadResponse.ok)');
+    expect(start).toContain('createSegmentedRecordingSession({');
+    expect(studio).toContain('recordingUploadQueue.enqueue({');
+    expect(studio).toContain('blob: capture.blob');
+    expect(studio).toContain('void queued.done.catch');
+    expect(studio).not.toContain('encodeAudioBufferSegmentAsMp4');
     expect(studio).toContain('녹음을 저장하지 못했어요');
   });
 
-  it('저장 큐와 낙관적 초안 복제 없이 하나의 녹음 세션만 소유한다', () => {
+  it('마이크 세션은 하나만 소유하고 초안 상태는 기존 Draft에 만 낙관적으로 반영한다', () => {
     expect(studio).toContain('useRef<RecordingSession | null>(null)');
-    expect(studio).not.toContain('uploadQueueRef');
+    expect(studio).toContain('useRef<SegmentedRecordingSession | null>(null)');
     expect(studio).not.toContain('optimisticDraft');
     expect(studio).not.toContain('chunksRef');
     expect(studio).not.toContain('recorderRef');
   });
 
-  it('다음 절 버튼은 저장하거나 녹음을 끊지 않고 본문만 즉시 전환한다', () => {
+  it('다음 절 버튼은 원본 조각을 큐에 넘기고 네트워크를 기다리지 않은 채 본문을 즉시 전환한다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
-    expect(handler).toContain("recordingSessionRef.current?.phase !== 'recording'");
-    expect(handler).toContain('recordingBoundariesRef.current =');
+    expect(handler).toContain('segmentedRecordingSessionRef.current?.recording');
+    expect(handler).toContain('segmentedRecordingSessionRef.current.rotate()');
     expect(handler).toContain('recordingPositionRef.current = position + 1');
     expect(handler).toContain('flushSync(() => setSelectedGiftPosition(position + 1))');
-    const immediateTransition = handler.slice(handler.indexOf('const now = performance.now()'), handler.indexOf('const finishRecordingHere'));
+    const immediateTransition = handler.slice(0, handler.indexOf('const finishRecordingHere'));
     expect(immediateTransition).not.toContain('fetch(');
     expect(immediateTransition).not.toContain('setSavingRecording(true)');
-    expect(immediateTransition).not.toContain('recordingSessionRef.current.stop()');
+    expect(immediateTransition).not.toContain('await recordingUploadQueue.flush()');
     expect(handler).not.toContain('setDraft(');
   });
 
@@ -184,7 +182,8 @@ describe('말씀 골라 선물하기 흐름', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
-    expect(handler).toContain('setSavingRecording(true)');
+    expect(studio).toContain('const finishContinuousGiftRecording');
+    expect(studio).toContain('setSavingRecording(true)');
     expect(handler).not.toContain("setStep('preview')");
     expect(studio).toContain('녹음 저장 중');
     expect(studio).toContain('hydratedDraft.nextPosition == null ? hydratedDraft.items.length - 1 : null');
@@ -199,6 +198,13 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(recorder).toContain('현재 절 저장 중');
     expect(recorder).toContain('disabled={savingRecording}');
     expect(recorder).toContain('LoaderCircle className="spin"');
+  });
+
+  it('선물 녹음 저장 로딩 버튼은 렌더 경로와 무관하게 중앙 정렬한다', () => {
+    expect(studio.match(/className="record-button recording-save-loading"/g)).toHaveLength(2);
+    expect(styles).toMatch(/\.recording-save-loading\s*\{[\s\S]*?margin-inline:\s*auto;/);
+    expect(styles).toMatch(/\.recording-save-loading\s*\{[\s\S]*?justify-content:\s*center;/);
+    expect(styles).toMatch(/\.recording-save-loading\s*\{[\s\S]*?text-align:\s*center;/);
   });
 
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {

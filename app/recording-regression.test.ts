@@ -41,29 +41,27 @@ describe('녹음·저장·수정 회귀', () => {
     expect(page).toContain("if (!recording || recordingMode === 'continuous') return;");
   });
 
-  it('이어 녹음 종료 시 현재 절 경계를 포함해 절마다 저장한다', () => {
-    const stopHandler = functionBody('const stopContinuousAndSaveCurrent', 'useEffect(() => {');
-    expect(stopHandler).toContain('verseIndex');
-    expect(stopHandler).toContain('recordingSessionRef.current.stop()');
-
-    const saveHandler = functionBody('const saveCompletedContinuousVerses', 'const startRecording');
-    expect(saveHandler).toContain('boundaries.map');
-    expect(saveHandler).toContain("formData.append('recordingGroupId'");
-    expect(saveHandler).toContain("formData.append('recordingMode', 'continuous')");
-    expect(saveHandler).toContain("fetch('/api/recordings', { method: 'POST'");
+  it('이어 녹음은 절마다 원본 blob을 로컬에 먼저 보관하고 백그라운드로 저장한다', () => {
+    expect(page).toContain('createSegmentedRecordingSession({');
+    const persistHandler = functionBody('const persistContinuousCapture', 'const trackContinuousCapture');
+    expect(persistHandler).toContain('recordingUploadQueue.enqueue({');
+    expect(persistHandler).toContain("recordingMode: 'continuous'");
+    expect(persistHandler).toContain('blob: capture.blob');
+    expect(persistHandler).toContain('void queued.done.catch');
   });
 
   it('다음 절 이동은 불필요한 전체 화면 상태 갱신 없이 즉시 반영한다', () => {
     const moveHandler = functionBody('const moveContinuousVerse', 'const completeContinuousVerse');
+    expect(moveHandler).toContain('session.rotate()');
     expect(moveHandler).toContain('flushSync(() => setVerseIndex(safeIndex))');
     expect(moveHandler).not.toContain('setContinuousBoundaries');
   });
 
   it('여기까지 녹음은 저장 처리 전에 즉시 종료 상태를 보여준다', () => {
-    const stopHandler = functionBody('const stopContinuousAndSaveCurrent', 'useEffect(() => {');
+    const stopHandler = functionBody('const finishContinuousRecording', 'const completeContinuousVerse');
     expect(stopHandler).toContain('setRecording(false)');
     expect(stopHandler).toContain('setSavingLibrary(true)');
-    expect(stopHandler.indexOf('setRecording(false)')).toBeLessThan(stopHandler.indexOf('recordingSessionRef.current.stop()'));
+    expect(stopHandler.indexOf('setRecording(false)')).toBeLessThan(stopHandler.indexOf('session.stop()'));
   });
 
   it('이어 녹음 종료 조작은 타이머 아래에 있고 모바일 화면에서 항상 보인다', () => {
@@ -81,12 +79,10 @@ describe('녹음·저장·수정 회귀', () => {
     expect(saveHandler).not.toContain('encodeAudioBufferSegmentAsMp4');
   });
 
-  it('절 분리가 필요한 이어 녹음만 고음질 MP4로 압축해 저장한다', () => {
-    const saveHandler = functionBody('const saveCompletedContinuousVerses', 'const startRecording');
-    expect(saveHandler).toContain('encodeAudioBufferSegmentAsMp4');
-    expect(saveHandler).toContain("{ type: 'audio/mp4' }");
-    expect(saveHandler).toContain('.mp4`');
-    expect(page).not.toContain('encodeAudioBufferAsWav(decoded');
+  it('이어 녹음도 전체 파일을 재인코딩하지 않고 브라우저 원본 음질을 유지한다', () => {
+    expect(page).not.toContain('encodeAudioBufferSegmentAsMp4');
+    expect(page).not.toContain('decodeAudioData(await sourceBlob.arrayBuffer())');
+    expect(page).toContain('audioBitsPerSecond: 256_000');
   });
 
   it('원음 보존을 위해 브라우저의 자동 음성 보정을 강제하지 않는다', () => {

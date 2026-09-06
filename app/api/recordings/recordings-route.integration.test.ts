@@ -32,7 +32,7 @@ vi.mock('@/db', () => ({
 
 import { POST } from './route';
 
-function validRequest(projectId = 'free-시') {
+function validRequest(projectId = 'free-시', clientRecordingId?: string) {
   const form = new FormData();
   form.append('audio', new File([new Uint8Array([1, 2, 3, 4])], 'verse.wav', { type: 'audio/wav' }));
   form.append('book', '시편');
@@ -46,6 +46,7 @@ function validRequest(projectId = 'free-시') {
   form.append('bgmId', 'peaceful-morning');
   form.append('reverb', '원음');
   form.append('durationSeconds', '4');
+  if (clientRecordingId) form.append('clientRecordingId', clientRecordingId);
   return new Request('https://example.test/api/recordings', { method: 'POST', body: form });
 }
 
@@ -88,6 +89,19 @@ describe('녹음 저장 API 통합 회귀', () => {
     expect(response.status).toBe(201);
     expect(mocks.deletedWhere).toHaveBeenCalledOnce();
     expect(mocks.r2Delete).toHaveBeenCalledWith('user-1/old-id');
+  });
+
+  it('서버 저장 후 ACK를 받지 못해 같은 client recording을 재시도해도 중복 저장하지 않는다', async () => {
+    const clientRecordingId = '0198f4c4-5fe6-7d10-a99b-12b436910101';
+    mocks.existing = [{ id: clientRecordingId, objectKey: `user-1/${clientRecordingId}` }];
+
+    const response = await POST(validRequest('free-시', clientRecordingId));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: clientRecordingId, alreadySaved: true });
+    expect(mocks.r2Put).not.toHaveBeenCalled();
+    expect(mocks.inserted).toHaveLength(0);
+    expect(mocks.deletedWhere).not.toHaveBeenCalled();
   });
 
   it('D1 저장이 실패하면 방금 업로드한 R2 파일을 정리하고 이전 파일은 유지한다', async () => {

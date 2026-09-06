@@ -70,12 +70,16 @@ export async function POST(request: Request) {
   const bgmId = formText(formData, 'bgmId', 80) || 'none';
   const reverb = formText(formData, 'reverb', 40) || '원음';
   const durationSeconds = Math.max(1, Number(formText(formData, 'durationSeconds', 8)) || 1);
+  const requestedRecordingId = formText(formData, 'clientRecordingId', 64);
+  const clientRecordingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedRecordingId)
+    ? requestedRecordingId
+    : null;
 
   if (!Number.isInteger(chapter) || chapter < 1 || !Number.isInteger(verse) || verse < 1 || !verseText) {
     return Response.json({ error: '구절 정보가 올바르지 않습니다.' }, { status: 400 });
   }
 
-  const id = crypto.randomUUID();
+  const id = clientRecordingId ?? crypto.randomUUID();
   const objectKey = `${ownerKey}/${id}`;
   const mimeType = audio.type || 'audio/webm';
   const createdAt = Date.now();
@@ -83,6 +87,10 @@ export async function POST(request: Request) {
     .select({ id: recordings.id, objectKey: recordings.objectKey })
     .from(recordings)
     .where(and(eq(recordings.ownerKey, ownerKey), eq(recordings.dataVersion, CURRENT_DATA_VERSION), eq(recordings.projectId, projectId), eq(recordings.book, book), eq(recordings.chapter, chapter), eq(recordings.verse, verse)));
+
+  if (clientRecordingId && existing.some((item) => item.id === clientRecordingId)) {
+    return Response.json({ id: clientRecordingId, alreadySaved: true }, { status: 200 });
+  }
 
   if (await isRecordingMutationLocked(ownerKey, { projectId, book, chapter, verse })) {
     return Response.json({ error: '완료된 말씀은 더 이상 수정할 수 없어요.' }, { status: 409 });
