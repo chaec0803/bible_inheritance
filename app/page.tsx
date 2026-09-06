@@ -850,7 +850,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         title: `${firstVerse}절부터 ${lastVerse}절 녹음 완료`,
         description: `${verseNumbers.length}개 절을 저장했어요. 마지막으로 읽던 절까지 보관함에 담았어요.`,
         showLibraryAction: finishedLastVerse,
-        relayProjectId: finishedLastVerse ? relayRecording?.projectId : undefined,
+        relayProjectId: relayRecording?.projectId,
       });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '녹음을 저장하지 못했어요. 로컬 원본은 다음 접속 때 다시 전송할게요.');
@@ -870,7 +870,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const stopContinuousAndSaveCurrent = () => {
     if (!recording || recordingMode !== 'continuous' || !segmentedRecordingSessionRef.current?.recording) return;
-    void finishContinuousRecording(false);
+    void finishContinuousRecording(verseIndex === passageVerses.length - 1);
   };
 
   useEffect(() => {
@@ -2394,7 +2394,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           title: wasReplacement ? `${currentVerseNumber}절 수정 완료` : `${currentVerseNumber}절 녹음 완료`,
           description: wasReplacement ? '기존 녹음을 새 녹음으로 교체했어요.' : '녹음을 기기에 보관했어요. 클라우드 저장은 백그라운드로 이어져요.',
           showLibraryAction: completesPassage,
-          relayProjectId: completesPassage ? relayRecording?.projectId : undefined,
+          relayProjectId: relayRecording?.projectId,
         });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '보관함 저장 중 문제가 생겼어요.');
@@ -4311,7 +4311,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               )}
               {completionModal.relayProjectId && (
                 <button className="primary" type="button" onClick={openRelayProjectFromCompletion}>
-                  <Users size={17} /> 이어읽기에서 완료하기
+                  <Users size={17} /> 이어읽기로 돌아가기
                 </button>
               )}
             </div>

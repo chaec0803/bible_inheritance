@@ -12,11 +12,15 @@ describe('완료 피드백과 재생 제어', () => {
   });
 
   it('이어읽기 분량 저장 완료 후 해당 프로젝트에서 바로 차례 완료할 수 있다', () => {
-    expect(page).toContain('relayProjectId: finishedLastVerse ? relayRecording?.projectId : undefined');
-    expect(page).toContain('이어읽기에서 완료하기');
+    expect(page).toContain('relayProjectId: relayRecording?.projectId');
+    expect(page).toContain('이어읽기로 돌아가기');
     expect(page).toContain('onClick={openRelayProjectFromCompletion}');
     expect(page).toContain('initialProjectId={relayRecording?.projectId}');
     expect(page).toContain('completionModal.showLibraryAction && !completionModal.relayProjectId');
+  });
+
+  it('하단 완료 버튼도 현재 절이 범위의 마지막인지 전달한다', () => {
+    expect(page).toContain('finishContinuousRecording(verseIndex === passageVerses.length - 1)');
   });
 
   it('새 여정을 여는 순간 이전 본문의 저장 상태로 1일차 완료 처리하지 않는다', () => {
