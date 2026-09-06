@@ -5,7 +5,6 @@ const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replac
 const studioUrl = new URL('./gift-studio.tsx', import.meta.url);
 const studio = existsSync(studioUrl) ? readFileSync(studioUrl, 'utf8') : '';
 const styles = readFileSync(new URL('./globals.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
-const inProgressGifts = readFileSync(new URL('./in-progress-gifts.tsx', import.meta.url), 'utf8');
 const draftDetailRoute = readFileSync(new URL('./api/gift-drafts/[id]/route.ts', import.meta.url), 'utf8');
 const draftsRoute = readFileSync(new URL('./api/gift-drafts/route.ts', import.meta.url), 'utf8');
 const recordingAudioUrl = new URL('../lib/recording-audio.ts', import.meta.url);
@@ -382,16 +381,14 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('window.clearTimeout(timeout)');
   });
 
-  it('초안을 이어서 만들거나 버릴 수 있다', () => {
-    expect(studio).toContain('<InProgressGifts');
-    expect(inProgressGifts).toContain('진행 중인 선물');
-    expect(inProgressGifts).toContain('이어서 만들기');
-    expect(inProgressGifts).toContain('진행 중인 선물 삭제');
-    expect(inProgressGifts).toContain('title="진행 중인 선물 삭제"');
-    expect(studio).toContain('confirmDiscardDraft');
-    expect(studio).toContain('초안을 삭제할까요?');
-    expect(studio).toContain('삭제하면 녹음도 함께 사라지고 복구할 수 없어요.');
-    expect(studio).toContain("method: 'DELETE'");
+  it('첫 진입에서 진행 중 초안을 모달로 안내하고 새 선물 준비도 허용한다', () => {
+    expect(studio).not.toContain('<InProgressGifts');
+    expect(studio).toContain('draftResumePromptDismissed');
+    expect(studio).toContain('진행 중인 선물 초안들이 있습니다');
+    expect(studio).toContain('이어하시겠습니까?');
+    expect(studio).toContain('새 선물 준비하기');
+    expect(studio).toContain('이어서 만들기');
+    expect(studio).toContain('gift-draft-resume-dialog');
   });
 
   it('절 녹음 후 상세과 진행 중 카드의 친구·진행률을 함께 갱신한다', () => {

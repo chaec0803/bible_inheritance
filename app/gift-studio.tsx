@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { bibleBooks } from './bible-metadata';
 import { BibleRangePicker } from './bible-range-picker';
-import { InProgressGifts, type InProgressGift } from './in-progress-gifts';
 import { FriendPickerModal, type FriendPickerPerson } from './friend-picker-modal';
 import { GiftLetterComposer } from './gift-letter-composer';
 import type { BibleRange } from '@/lib/bible-scope';
@@ -155,7 +154,9 @@ export function GiftStudio({
   const [seconds, setSeconds] = useState(0);
   const [recordingManageOpen, setRecordingManageOpen] = useState(false);
   const [confirmResetRecordings, setConfirmResetRecordings] = useState(false);
-  const [confirmDiscardDraft, setConfirmDiscardDraft] = useState<InProgressGift | null>(null);
+  const [confirmDiscardDraft, setConfirmDiscardDraft] = useState<Draft | null>(null);
+  const [draftResumePromptDismissed, setDraftResumePromptDismissed] = useState(false);
+  const [resumingDraftId, setResumingDraftId] = useState<string | null>(null);
   const [recordingMode, setRecordingMode] = useState<'verse' | 'continuous'>(
     'continuous',
   );
@@ -265,6 +266,28 @@ export function GiftStudio({
           '',
       })),
     };
+  };
+  const resumeDraft = async (target: Draft) => {
+    if (resumingDraftId) return;
+    setResumingDraftId(target.id);
+    try {
+      const [hydratedDraft, friendsPayload] = await Promise.all([
+        hydrateVerseTexts(target),
+        fetch('/api/friends').then((response) => response.json() as Promise<{ friends?: FriendPickerPerson[] }>),
+      ]);
+      const ids = target.recipientUserIds ?? (target.recipientUserId ? [target.recipientUserId] : []);
+      const restoredFriends = ids.map((id) => friendsPayload.friends?.find((friend) => friend.userId === id)).filter((friend): friend is FriendPickerPerson => Boolean(friend));
+      setSelectedFriends(restoredFriends);
+      setSelectedFriend(restoredFriends[0] ?? null);
+      setDraft(hydratedDraft);
+      setRecordingMode('continuous');
+      setDraftResumePromptDismissed(true);
+      setStep('record');
+    } catch {
+      setMessage('진행 중인 선물을 불러오지 못했어요. 다시 시도해 주세요.');
+    } finally {
+      setResumingDraftId(null);
+    }
   };
 
   const makeScope = (): GiftDraftScope =>
@@ -1676,22 +1699,23 @@ export function GiftStudio({
           </dl>
         </aside>
       </div>
-      <InProgressGifts gifts={drafts as InProgressGift[]} activeGiftId={draft?.id ?? null} onDelete={setConfirmDiscardDraft} onResume={(item) => {
-        const target = drafts.find((candidate) => candidate.id === item.id);
-        if (!target) return;
-        void Promise.all([
-          hydrateVerseTexts(target),
-          fetch('/api/friends').then((response) => response.json() as Promise<{ friends?: FriendPickerPerson[] }>),
-        ]).then(([hydratedDraft, friendsPayload]) => {
-          const ids = target.recipientUserIds ?? (target.recipientUserId ? [target.recipientUserId] : []);
-          const restoredFriends = ids.map((id) => friendsPayload.friends?.find((friend) => friend.userId === id)).filter((friend): friend is FriendPickerPerson => Boolean(friend));
-          setSelectedFriends(restoredFriends);
-          setSelectedFriend(restoredFriends[0] ?? null);
-          setDraft(hydratedDraft);
-          setRecordingMode('continuous');
-          setStep('record');
-        });
-      }} />
+      {!loading && drafts.length > 0 && !draft && step === 'friend' && !draftResumePromptDismissed && (
+        <div className="gift-dialog-backdrop gift-draft-resume-backdrop" role="presentation">
+          <dialog className="gift-draft-resume-dialog" open aria-labelledby="gift-draft-resume-title">
+            <span className="gift-dialog-icon"><Gift size={26} /></span>
+            <p className="eyebrow">CONTINUE YOUR GIFT</p>
+            <h2 id="gift-draft-resume-title">진행 중인 선물 초안들이 있습니다</h2>
+            <p>이어하시겠습니까?</p>
+            <div className="gift-draft-resume-list">
+              {drafts.map((item) => {
+                const recorded = item.items.filter((draftItem) => draftItem.recorded).length;
+                return <article key={item.id}><button type="button" disabled={Boolean(resumingDraftId)} onClick={() => void resumeDraft(item)}><span><Play size={16} /></span><div><strong>{item.title}</strong><small>{item.recipientNickname ? `${item.recipientNickname}님에게 · ` : ''}{recorded}/{item.items.length}절 녹음 · 이어서 만들기</small></div>{resumingDraftId === item.id && <LoaderCircle className="spin" size={18} />}</button><button className="draft-delete" type="button" disabled={Boolean(resumingDraftId)} aria-label={`${item.title} 진행 중인 선물 삭제`} onClick={() => setConfirmDiscardDraft(item)}><Trash2 size={16} /></button></article>;
+              })}
+            </div>
+            <button className="gift-draft-new-button" type="button" disabled={Boolean(resumingDraftId)} onClick={() => setDraftResumePromptDismissed(true)}>새 선물 준비하기</button>
+          </dialog>
+        </div>
+      )}
       {message && (
         <output className="gift-studio-message" aria-live="polite">
           {message}

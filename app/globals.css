@@ -78,21 +78,17 @@
 .gift-send-error-actions button.primary { color: white; background: var(--sage); border-color: var(--sage); }
 .gift-send-success-actions { grid-template-columns: 1fr; justify-items: center; }
 .gift-send-success-actions button { width: min(220px, 100%); }
-.in-progress-gifts { width: min(1180px, 100%); margin: 18px auto 0; padding: 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 12px 34px rgba(37,60,51,.08); }
-.in-progress-gifts-heading { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; }
-.in-progress-gifts-heading > span { width: 40px; height: 40px; display: grid; place-items: center; color: var(--sage); background: var(--sage-soft); border-radius: 12px; }
-.in-progress-gifts-heading p, .in-progress-gifts-heading h2 { margin: 0; }
-.in-progress-gifts-heading h2 { margin-top: 2px; font-size: 18px; }
-.in-progress-gifts-heading > strong { min-width: 28px; height: 28px; display: grid; place-items: center; color: white; background: var(--sage); border-radius: 50%; font-size: 10px; }
-.in-progress-gift-list { margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 9px; }
-.in-progress-gift-list article { display: grid; grid-template-columns: 1fr auto; align-items: center; overflow: hidden; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 14px; }
-.in-progress-gift-list article.active { background: var(--sage-soft); border-color: var(--sage); }
-.in-progress-gift-list article > button:first-child { min-width: 0; padding: 12px; display: flex; align-items: center; gap: 10px; color: var(--ink); background: transparent; border: 0; text-align: left; }
-.in-progress-gift-list article > button:first-child > span { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; color: white; background: var(--sage); border-radius: 9px; }
-.in-progress-gift-list article > button:first-child div { min-width: 0; }
-.in-progress-gift-list article strong, .in-progress-gift-list article small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.in-progress-gift-list article small { margin-top: 3px; color: var(--muted); font-size: 9px; }
-.in-progress-gift-list .draft-delete { width: 40px; height: 40px; display: grid; place-items: center; color: var(--coral); background: transparent; border: 0; }
+.gift-draft-resume-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(720px, calc(100dvh - 32px)); overflow: auto; padding: 34px; border: 1px solid var(--line); border-radius: 28px; background: var(--paper); color: var(--ink); text-align: center; }
+.gift-draft-resume-dialog > h2 { margin: 12px 0 8px; font-size: clamp(24px, 4vw, 32px); }
+.gift-draft-resume-dialog > p { margin: 0; color: var(--muted); }
+.gift-draft-resume-list { display: grid; gap: 10px; margin: 24px 0 18px; text-align: left; }
+.gift-draft-resume-list article { display: grid; grid-template-columns: 1fr auto; align-items: stretch; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.gift-draft-resume-list article > button:first-child { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; min-width: 0; padding: 15px; border: 0; background: transparent; color: inherit; text-align: left; }
+.gift-draft-resume-list article > button:first-child > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--sage-soft); color: var(--sage); }
+.gift-draft-resume-list article strong, .gift-draft-resume-list article small { display: block; }
+.gift-draft-resume-list article small { margin-top: 4px; color: var(--muted); }
+.gift-draft-resume-list .draft-delete { width: 48px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); }
+.gift-draft-new-button { width: 100%; min-height: 52px; border: 1px solid var(--sage); border-radius: 16px; background: var(--sage); color: white; font-weight: 800; }
 
 /* Gift Studio responsive overrides stay last so desktop studio rules cannot override them. */
 @media (max-width: 760px) {
