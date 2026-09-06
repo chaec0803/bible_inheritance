@@ -40,6 +40,17 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(letterComposer).toContain('<audio controls');
   });
 
+  it('음성 편지도 공용 녹음 세션만 사용하고 종료 시 자원을 정리한다', () => {
+    expect(letterComposer).toContain('createRecordingSession({');
+    expect(letterComposer).toContain('useRef<RecordingSession | null>(null)');
+    expect(letterComposer).toContain('recordingSessionRef.current?.dispose()');
+    expect(letterComposer).toContain('capture.durationMs');
+    expect(letterComposer).not.toContain('new MediaRecorder');
+    expect(letterComposer).not.toContain('createRecordingAudioGraph');
+    expect(letterComposer).not.toContain('streamRef');
+    expect(letterComposer).not.toContain('chunksRef');
+  });
+
   it('전송 완료 안내에는 사용자가 입력한 선물 이름을 표시한다', () => {
     expect(dialog).toContain('onSent(selectedFriends.length === 1');
     expect(page).toContain('onSent={(nickname, sentTitle) =>');

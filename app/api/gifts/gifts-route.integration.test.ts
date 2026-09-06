@@ -103,6 +103,17 @@ describe('말씀 선물 API 통합 회귀', () => {
     expect(statements).toHaveLength(3);
     expect(mocks.r2Put).not.toHaveBeenCalled();
     expect(await response.json()).toMatchObject({ gift: { title: '엄마에게 드리는 말씀' } });
+    const giftInsert = (mocks.batch.mock.calls[0][0] as Array<{ sql: string }>).find((statement) => statement.sql.includes('INSERT INTO gifts'))!;
+    expect(giftInsert.sql).not.toContain('recording_count');
+    expect(giftInsert.sql).not.toContain('total_size_bytes');
+  });
+
+  it('선물 개수와 크기는 gift_recordings에서 계산한다', async () => {
+    await GET(new Request('https://example.test/api/gifts'));
+    const giftQueries = mocks.statements.filter((statement) => statement.sql.includes('FROM gifts'));
+    expect(giftQueries.some((statement) => statement.sql.includes('COUNT(*) FROM gift_recordings'))).toBe(true);
+    expect(giftQueries.some((statement) => statement.sql.includes('SUM(size_bytes)'))).toBe(true);
+    expect(giftQueries.every((statement) => !statement.sql.includes('gifts.recording_count'))).toBe(true);
   });
 
   it('텍스트 편지는 선물과 함께 저장하고 음성 편지는 R2에 원본 바이트로 저장한다', async () => {

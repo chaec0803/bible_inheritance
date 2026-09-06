@@ -132,7 +132,7 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain("'continuous',");
     expect(studio).toContain('이어 녹음');
     expect(studio).toContain('다음 절로');
-    expect(studio).toContain('continuousBoundariesRef');
+    expect(studio).toContain('createRecordingSession({');
     expect(studio).toContain(
       '녹음이 끝난 뒤 원하는 절만 다시 녹음할 수 있어요',
     );
@@ -145,38 +145,43 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).not.toContain('<dialog open className="recording-manage-backdrop">');
   });
 
-  it('다음 절로 넘어갈 때 업로드를 기다리지 않고 같은 마이크 세션으로 즉시 녹음한다', () => {
-    expect(studio).toContain('existingSession');
-    expect(studio).toContain('startRecording(optimisticDraft, { sourceStream, graph })');
-    expect(studio.indexOf('startRecording(optimisticDraft, { sourceStream, graph })')).toBeLessThan(studio.indexOf('const uploadResponse = await fetch'));
-    expect(studio).toContain('if (!continuing)');
+  it('현재 절이 서버에 저장된 뒤 권위 있는 초안 상태로 다음 절 녹음을 시작한다', () => {
+    const start = block(studio, 'async function startRecording', 'const requestGiftRecording');
+    expect(start).toContain('const uploadResponse = await fetch');
+    expect(start).toContain('const currentResponse = await fetch');
+    expect(start).toContain('const hydratedDraft = await hydrateVerseTexts(current.draft)');
+    expect(start).toContain('void startRecording(hydratedDraft)');
+    expect(start.indexOf('const uploadResponse = await fetch')).toBeLessThan(start.indexOf('void startRecording(hydratedDraft)'));
     expect(studio).toContain('if (!uploadResponse.ok)');
     expect(studio).toContain('녹음을 저장하지 못했어요');
   });
 
-  it('빠르게 넘긴 여러 절의 저장 요청은 순서대로 처리한다', () => {
-    expect(studio).toContain('uploadQueueRef');
-    expect(studio).toContain('uploadQueueRef.current.then');
-    expect(studio).toContain('uploadQueueRef.current = uploadTask.catch');
+  it('저장 큐와 낙관적 초안 복제 없이 하나의 녹음 세션만 소유한다', () => {
+    expect(studio).toContain('useRef<RecordingSession | null>(null)');
+    expect(studio).not.toContain('uploadQueueRef');
+    expect(studio).not.toContain('optimisticDraft');
+    expect(studio).not.toContain('chunksRef');
+    expect(studio).not.toContain('recorderRef');
   });
 
-  it('다음 절 버튼을 누르는 즉시 본문을 먼저 바꾸고 중복 탭을 막는다', () => {
+  it('다음 절 버튼은 녹음 세션을 한 번만 정지시키고 저장 상태를 표시한다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
-    expect(handler).toContain('advancingRef.current = true');
-    expect(handler).toContain('setDraft(optimisticDraft)');
-    expect(handler.indexOf('setDraft(optimisticDraft)')).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
+    expect(handler).toContain("recordingSessionRef.current?.phase !== 'recording'");
+    expect(handler).toContain('setSavingRecording(true)');
+    expect(handler).toContain('void recordingSessionRef.current.stop()');
+    expect(handler).not.toContain('setDraft(');
   });
 
   it('마지막 절 완료는 저장 후 검토 화면에 남고 사용자가 직접 쪽지 단계로 이동한다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
-    expect(handler).toContain('if (!hasNext) setSavingRecording(true)');
+    expect(handler).toContain('setSavingRecording(true)');
     expect(handler).not.toContain("setStep('preview')");
     expect(studio).toContain('녹음 저장 중');
-    expect(studio).toContain("setSelectedGiftPosition(hydratedDraft.items.length - 1)");
+    expect(studio).toContain('hydratedDraft.nextPosition == null ? hydratedDraft.items.length - 1 : null');
     expect(studio).toContain('녹음 검토 화면에서 전체 미리듣기와 절별 수정을 할 수 있어요.');
     expect(studio).toContain('onClick={() => setStep(\'letter\')}');
   });
@@ -207,7 +212,7 @@ describe('말씀 골라 선물하기 흐름', () => {
   });
 
   it('방금 녹음한 선물은 서버 메타데이터를 기다리지 않고 즉시 들을 수 있다', () => {
-    expect(studio).toContain('URL.createObjectURL(recordingBlob)');
+    expect(studio).toContain('URL.createObjectURL(capture.blob)');
     expect(studio).toContain('localPreviewUrls[item.position]');
     expect(studio).toContain('toggleDraftItemPlayback(item)');
     expect(studio).not.toContain('controls\n                        src={`/api/gift-drafts/');
@@ -217,7 +222,7 @@ describe('말씀 골라 선물하기 흐름', () => {
     const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
     expect(recorder).toContain("recording && recordingMode === 'verse'");
     expect(recorder).toContain('이 절 저장');
-    expect(recorder).toContain('recorderRef.current?.stop()');
+    expect(recorder).toContain('onClick={finishRecordingHere}');
   });
 
   it('녹음하는 동안 현재 말씀과 다음 말씀 본문을 보여준다', () => {
@@ -260,7 +265,7 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain("recordingMode === 'continuous' && recording &&");
     expect(studio).not.toContain("!viewingRecordedItem && recordingMode === 'continuous' && recording");
     expect(studio).toContain('recordingSessionRef.current');
-    expect(studio).toContain('recorder.onstop = null');
+    expect(studio).toContain('recordingSessionRef.current?.dispose()');
   });
 
   it('선물 녹음도 종료 조작을 타이머 아래 같은 위치에 표시한다', () => {

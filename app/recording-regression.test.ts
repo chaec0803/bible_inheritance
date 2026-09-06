@@ -11,6 +11,15 @@ function functionBody(startMarker: string, endMarker: string) {
 }
 
 describe('녹음·저장·수정 회귀', () => {
+  it('일반 녹음은 공통 세션 하나가 recorder, stream, AudioContext를 소유한다', () => {
+    expect(page).toContain('createRecordingSession({');
+    expect(page).toContain('recordingSessionRef');
+    expect(page).not.toContain('mediaRecorderRef');
+    expect(page).not.toContain('recordingAudioContextRef');
+    expect(page).not.toContain('streamRef');
+    expect(page).not.toContain('discardRecordingRef');
+  });
+
   it('리버브 선택과 효과 처리를 제공하지 않고 원음으로 녹음한다', () => {
     expect(page).not.toContain("const reverbOptions =");
     expect(page).not.toContain("const [reverb, setReverb]");
@@ -35,7 +44,7 @@ describe('녹음·저장·수정 회귀', () => {
   it('이어 녹음 종료 시 현재 절 경계를 포함해 절마다 저장한다', () => {
     const stopHandler = functionBody('const stopContinuousAndSaveCurrent', 'useEffect(() => {');
     expect(stopHandler).toContain('verseIndex');
-    expect(stopHandler).toContain('mediaRecorderRef.current.stop()');
+    expect(stopHandler).toContain('recordingSessionRef.current.stop()');
 
     const saveHandler = functionBody('const saveCompletedContinuousVerses', 'const startRecording');
     expect(saveHandler).toContain('boundaries.map');
@@ -54,7 +63,7 @@ describe('녹음·저장·수정 회귀', () => {
     const stopHandler = functionBody('const stopContinuousAndSaveCurrent', 'useEffect(() => {');
     expect(stopHandler).toContain('setRecording(false)');
     expect(stopHandler).toContain('setSavingLibrary(true)');
-    expect(stopHandler.indexOf('setRecording(false)')).toBeLessThan(stopHandler.indexOf('mediaRecorderRef.current.stop()'));
+    expect(stopHandler.indexOf('setRecording(false)')).toBeLessThan(stopHandler.indexOf('recordingSessionRef.current.stop()'));
   });
 
   it('이어 녹음 종료 조작은 타이머 아래에 있고 모바일 화면에서 항상 보인다', () => {
@@ -79,8 +88,8 @@ describe('녹음·저장·수정 회귀', () => {
 
   it('취소/다시 녹음은 임시 녹음을 버리고 저장 상태를 해제한다', () => {
     const resetHandler = functionBody('const resetTake', 'const saveVerse');
-    expect(resetHandler).toContain('discardRecordingRef.current = true');
-    expect(resetHandler).toContain('mediaRecorderRef.current?.stop()');
+    expect(resetHandler).toContain('recordingSessionRef.current?.dispose()');
+    expect(resetHandler).toContain('recordingSessionRef.current = null');
     expect(resetHandler).toContain('next[verseIndex] = null');
     expect(resetHandler).toContain('index === verseIndex ? false : value');
   });

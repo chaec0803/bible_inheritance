@@ -66,7 +66,9 @@ export async function GET(request: Request) {
     await ensureUserProfile(user);
     const giftResult = await getD1().prepare(`SELECT
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
-      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
+      (SELECT COUNT(*) FROM gift_recordings WHERE gift_recordings.gift_id = gifts.id) AS recording_count,
+      (SELECT COALESCE(SUM(size_bytes), 0) FROM gift_recordings WHERE gift_recordings.gift_id = gifts.id) AS total_size_bytes,
+      gifts.created_at, gifts.opened_at,
       gifts.thank_you_note, gifts.thanked_at,
       gifts.letter_type, gifts.letter_text, gifts.letter_mime_type,
       gifts.letter_size_bytes, gifts.letter_duration_seconds, gifts.letter_opened_at,
@@ -81,7 +83,9 @@ export async function GET(request: Request) {
 
     const sentGiftResult = await getD1().prepare(`SELECT
       gifts.id, gifts.title, gifts.bgm_id, gifts.bgm_volume,
-      gifts.recording_count, gifts.total_size_bytes, gifts.created_at, gifts.opened_at,
+      (SELECT COUNT(*) FROM gift_recordings WHERE gift_recordings.gift_id = gifts.id) AS recording_count,
+      (SELECT COALESCE(SUM(size_bytes), 0) FROM gift_recordings WHERE gift_recordings.gift_id = gifts.id) AS total_size_bytes,
+      gifts.created_at, gifts.opened_at,
       gifts.thank_you_note, gifts.thanked_at,
       gifts.letter_type, NULL AS letter_text, gifts.letter_mime_type,
       gifts.letter_size_bytes, gifts.letter_duration_seconds, gifts.letter_opened_at,
@@ -201,8 +205,6 @@ export async function POST(request: Request) {
   if (!selection.eligible) return Response.json({ error: selection.reason }, { status: selection.reason.includes('찾을 수 없') ? 404 : 409 });
   const sourceById = new Map(sourceResult.results.map((recording) => [recording.id, recording]));
   const recordings = selection.orderedRecordingIds.map((id) => sourceById.get(id)!).filter(Boolean);
-  const totalSizeBytes = recordings.reduce((sum, recording) => sum + recording.size_bytes, 0);
-
   const giftIds = giftRequest.recipientUserIds.map(() => crypto.randomUUID());
   const now = Date.now();
   const letterBytes = giftRequest.letter.type === 'voice' ? decodeGiftLetterAudio(giftRequest.letter) : null;
@@ -219,10 +221,10 @@ export async function POST(request: Request) {
       return [
       d1.prepare(`INSERT INTO gifts (
         id, sender_key, recipient_key, title, bgm_id, bgm_volume,
-        recording_count, total_size_bytes, created_at, letter_type, letter_text,
+        created_at, letter_type, letter_text,
         letter_object_key, letter_mime_type, letter_size_bytes, letter_duration_seconds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(giftId, user.id, recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, recordings.length, totalSizeBytes, now,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(giftId, user.id, recipientUserId, giftRequest.title, giftRequest.bgmId, giftRequest.bgmVolume, now,
           giftRequest.letter.type === 'none' ? null : giftRequest.letter.type,
           giftRequest.letter.type === 'text' ? giftRequest.letter.text : null,
           letterObjectKey,

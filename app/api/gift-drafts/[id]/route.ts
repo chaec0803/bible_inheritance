@@ -25,7 +25,7 @@ async function ownedDraft(
     .prepare(
       `SELECT gift_drafts.*, user_profiles.nickname AS recipient_nickname
        FROM gift_drafts
-       JOIN user_profiles ON user_profiles.owner_key = gift_drafts.recipient_key
+       JOIN user_profiles ON user_profiles.owner_key = json_extract(gift_drafts.recipient_keys_json, '$[0]')
        WHERE gift_drafts.id = ? AND gift_drafts.owner_key = ? AND gift_drafts.sent_gift_id IS NULL`,
     )
     .bind(id, user.id)

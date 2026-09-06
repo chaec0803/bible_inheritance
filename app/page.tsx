@@ -27,7 +27,7 @@ import { GiftArrivalModal } from './gift-arrival-modal';
 import { BibleRangePicker } from './bible-range-picker';
 import type { GiftDraftScope } from '@/lib/gift-draft';
 import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
-import { createRecordingAudioGraph as createRawRecordingAudioGraph } from '@/lib/recording-audio';
+import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
 import { encodeAudioBufferSegmentAsMp4 } from '@/lib/audio-mp4';
 import { toAudibleBgmGain } from '@/lib/audio-volume';
 import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
@@ -722,11 +722,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [readingBibleRange, setReadingBibleRange] = useState<BibleRange>(() => ({ start: { bookCode: bibleBooks[0].code, chapter: 1, verse: 1 }, end: { bookCode: bibleBooks[0].code, chapter: 1, verse: bibleBooks[0].chapters[0] } }));
   const [bibleLoading, setBibleLoading] = useState(false);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordingAudioContextRef = useRef<AudioContext | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const discardRecordingRef = useRef(false);
+  const recordingSessionRef = useRef<RecordingSession | null>(null);
   const recordingStartedAtRef = useRef(0);
   const continuousVerseStartedAtRef = useRef(0);
   const continuousVerseIndexRef = useRef(0);
@@ -806,12 +802,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
     setRecording(false);
     setSavingLibrary(true);
-    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+    void recordingSessionRef.current?.stop();
     setNotice('마지막 절까지 읽었어요. 완료한 절을 저장하고 있어요.');
   }, [moveContinuousVerse, passageVerses.length, recording, recordingMode, verseIndex]);
 
   const stopContinuousAndSaveCurrent = useCallback(() => {
-    if (!recording || recordingMode !== 'continuous' || mediaRecorderRef.current?.state !== 'recording') return;
+    if (!recording || recordingMode !== 'continuous' || recordingSessionRef.current?.phase !== 'recording') return;
     const now = performance.now();
     const boundary: ContinuousVerseBoundary = {
       verseIndex,
@@ -822,7 +818,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== verseIndex), boundary];
     setRecording(false);
     setSavingLibrary(true);
-    mediaRecorderRef.current.stop();
+    void recordingSessionRef.current.stop();
     setNotice('현재 절까지 저장하고 있어요.');
   }, [recording, recordingMode, verseIndex]);
 
@@ -1112,10 +1108,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
     return () => {
-      discardRecordingRef.current = true;
-      if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      void recordingAudioContextRef.current?.close();
+      recordingSessionRef.current?.dispose();
+      recordingSessionRef.current = null;
       playbackBgmAudioRef.current?.pause();
       playbackBgmAudioRef.current = null;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -2157,109 +2151,70 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setActiveLibraryId(null);
     setRequestingMic(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          autoGainControl: true,
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: { ideal: 1 },
-          sampleRate: { ideal: 48_000 },
-          sampleSize: { ideal: 16 },
+      const mimeType = getSupportedMimeType();
+      const targetVerseIndex = verseIndex;
+      const session = await createRecordingSession({
+        constraints: { audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 }, sampleRate: { ideal: 48_000 }, sampleSize: { ideal: 16 } } },
+        mimeType,
+        audioBitsPerSecond: 256_000,
+        timeslice: 250,
+        now: () => performance.now(),
+        onCaptured: (capture) => {
+          if (recordingSessionRef.current === session) recordingSessionRef.current = null;
+          setRecording(false);
+          if (!capture || capture.blob.size === 0) {
+            setSavingLibrary(false);
+            return;
+          }
+
+          let completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
+          if (recordingMode === 'continuous') {
+            const finalBoundary: ContinuousVerseBoundary = {
+              verseIndex: continuousVerseIndexRef.current,
+              startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
+              endMs: capture.durationMs,
+              transitionSource: 'stop',
+            };
+            continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== continuousVerseIndexRef.current), finalBoundary];
+            completedContinuousBoundaries = [...continuousBoundariesRef.current];
+          }
+
+          const duration = Math.max(1, Math.round(capture.durationMs / 1_000));
+          if (recordingMode === 'continuous') {
+            void saveCompletedContinuousVerses(capture.blob, completedContinuousBoundaries);
+          } else {
+            const url = URL.createObjectURL(capture.blob);
+            objectUrlsRef.current.add(url);
+            setTakes((current) => {
+              const next = [...current];
+              const previousTake = next[targetVerseIndex];
+              if (previousTake) {
+                URL.revokeObjectURL(previousTake.url);
+                objectUrlsRef.current.delete(previousTake.url);
+              }
+              next[targetVerseIndex] = { url, blob: capture.blob, mimeType: capture.mimeType, duration };
+              return next;
+            });
+          }
+          setSeconds(duration);
+          if (recordingMode !== 'continuous') setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
+        },
+        onError: () => {
+          setRecording(false);
+          setSavingLibrary(false);
+          setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
         },
       });
-      const audioGraph = createRawRecordingAudioGraph(stream);
-      const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(audioGraph.stream, {
-        ...(mimeType ? { mimeType } : {}),
-        audioBitsPerSecond: 256_000,
-      });
-      const targetVerseIndex = verseIndex;
-
-      streamRef.current = stream;
-      recordingAudioContextRef.current = audioGraph.context;
-      mediaRecorderRef.current = recorder;
-      chunksRef.current = [];
-      discardRecordingRef.current = false;
-      recordingStartedAtRef.current = 0;
-
-      recorder.onstart = (event) => {
-        recordingStartedAtRef.current = event.timeStamp;
-        if (recordingMode === 'continuous') {
-          continuousVerseStartedAtRef.current = event.timeStamp;
-          continuousVerseIndexRef.current = targetVerseIndex;
-          continuousRecordingGroupIdRef.current = crypto.randomUUID();
-          continuousBoundariesRef.current = [];
-          setVerseIndex(targetVerseIndex);
-        }
-      };
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-
-      recorder.onstop = (event) => {
-        const chunks = [...chunksRef.current];
-        chunksRef.current = [];
-        stream.getTracks().forEach((track) => track.stop());
-        void audioGraph.context?.close();
-        streamRef.current = null;
-        recordingAudioContextRef.current = null;
-        mediaRecorderRef.current = null;
-        setRecording(false);
-
-        if (discardRecordingRef.current || chunks.length === 0) {
-          setSavingLibrary(false);
-          return;
-        }
-
-        let completedContinuousBoundaries = recordingMode === 'continuous' ? [...continuousBoundariesRef.current] : [];
-        if (recordingMode === 'continuous') {
-          const finalBoundary: ContinuousVerseBoundary = {
-            verseIndex: continuousVerseIndexRef.current,
-            startMs: Math.max(0, Math.round(continuousVerseStartedAtRef.current - recordingStartedAtRef.current)),
-            endMs: Math.max(0, Math.round(event.timeStamp - recordingStartedAtRef.current)),
-            transitionSource: 'stop',
-          };
-          continuousBoundariesRef.current = [...continuousBoundariesRef.current.filter((item) => item.verseIndex !== continuousVerseIndexRef.current), finalBoundary];
-          completedContinuousBoundaries = [...continuousBoundariesRef.current];
-        }
-
-        const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
-        const blob = new Blob(chunks, { type: finalMimeType });
-        const duration = Math.max(1, Math.round((event.timeStamp - recordingStartedAtRef.current) / 1000));
-
-        if (recordingMode === 'continuous') {
-          void saveCompletedContinuousVerses(blob, completedContinuousBoundaries);
-        } else {
-          const url = URL.createObjectURL(blob);
-          objectUrlsRef.current.add(url);
-          setTakes((current) => {
-            const next = [...current];
-            const previousTake = next[targetVerseIndex];
-            if (previousTake) {
-              URL.revokeObjectURL(previousTake.url);
-              objectUrlsRef.current.delete(previousTake.url);
-            }
-            next[targetVerseIndex] = {
-              url,
-              blob,
-              mimeType: finalMimeType,
-              duration,
-            };
-            return next;
-          });
-        }
-        setSeconds(duration);
-        if (recordingMode !== 'continuous') setNotice('녹음이 끝났어요. 체크 버튼을 누르면 바로 보관함에 저장돼요.');
-      };
-
-      recorder.onerror = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        void audioGraph.context?.close();
-        recordingAudioContextRef.current = null;
-        setRecording(false);
-        setNotice('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
-      };
+      const startedAt = performance.now();
+      recordingSessionRef.current = session;
+      recordingStartedAtRef.current = startedAt;
+      if (recordingMode === 'continuous') {
+        continuousVerseStartedAtRef.current = startedAt;
+        continuousVerseIndexRef.current = targetVerseIndex;
+        continuousRecordingGroupIdRef.current = crypto.randomUUID();
+        continuousBoundariesRef.current = [];
+        setVerseIndex(targetVerseIndex);
+      }
 
       if (recordingMode === 'verse')
         setTakes((current) => {
@@ -2274,10 +2229,12 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         });
       setSaved((current) => current.map((value, index) => (index === targetVerseIndex ? false : value)));
       setSeconds(0);
-      recorder.start(250);
+      session.start();
       setRecording(true);
       setNotice('원음 녹음을 시작했어요.');
     } catch (error) {
+      recordingSessionRef.current?.dispose();
+      recordingSessionRef.current = null;
       const denied = error instanceof DOMException && error.name === 'NotAllowedError';
       setNotice(denied ? '마이크 권한이 필요해요. 브라우저 주소창의 마이크 권한을 허용해 주세요.' : '마이크를 연결할 수 없어요. 연결 상태를 확인하고 다시 시도해 주세요.');
     } finally {
@@ -2292,7 +2249,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         stopContinuousAndSaveCurrent();
         return;
       }
-      if (mediaRecorderRef.current?.state !== 'inactive') mediaRecorderRef.current?.stop();
+      void recordingSessionRef.current?.stop();
       setRecording(false);
       setNotice('녹음을 마무리하고 있어요. 잠시만 기다려 주세요.');
       return;
@@ -2305,9 +2262,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const resetTake = () => {
-    if (recording && mediaRecorderRef.current?.state !== 'inactive') {
-      discardRecordingRef.current = true;
-      mediaRecorderRef.current?.stop();
+    if (recording) {
+      recordingSessionRef.current?.dispose();
+      recordingSessionRef.current = null;
     }
     setRecording(false);
     setSeconds(0);

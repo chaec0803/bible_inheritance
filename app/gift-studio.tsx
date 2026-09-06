@@ -1,7 +1,6 @@
 'use client';
 /* oxlint-disable jsx-a11y/media-has-caption -- verse text is displayed beside each spoken recording */
 import { useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import {
   ArrowRight,
   BookHeart,
@@ -40,9 +39,9 @@ import {
   type GiftDraftScope,
 } from '@/lib/gift-draft';
 import {
-  createRecordingAudioGraph,
   getSupportedMimeType,
 } from '@/lib/recording-audio';
+import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
 
 export const GIFT_STUDIO_STEPS = [
   'friend',
@@ -169,13 +168,7 @@ export function GiftStudio({
   const [localPreviewUrls, setLocalPreviewUrls] = useState<Record<number, string>>({});
   const [playingDraftPosition, setPlayingDraftPosition] = useState<number | null>(null);
   const [selectedGiftPosition, setSelectedGiftPosition] = useState<number | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const recordingSessionRef = useRef<{
-    recorder: MediaRecorder;
-    sourceStream: MediaStream;
-    graph: ReturnType<typeof createRecordingAudioGraph>;
-  } | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const recordingSessionRef = useRef<RecordingSession | null>(null);
   const startedRef = useRef(0);
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const bgmPreviewRef = useRef<HTMLAudioElement | null>(null);
@@ -184,10 +177,7 @@ export function GiftStudio({
   const fullPreviewRunRef = useRef(0);
   const fullPreviewIndexRef = useRef(0);
   const autoContinueRef = useRef(false);
-  const advancingRef = useRef(false);
-  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const musicSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const continuousBoundariesRef = useRef<number[]>([]);
   const localPreviewUrlsRef = useRef<Record<number, string>>({});
 
   const refresh = () =>
@@ -216,16 +206,8 @@ export function GiftStudio({
     return () => window.clearTimeout(timeout);
   }, [message]);
   useEffect(() => () => {
-    const session = recordingSessionRef.current;
-    if (session) {
-      session.recorder.onstop = null;
-      session.recorder.ondataavailable = null;
-      if (session.recorder.state !== 'inactive') session.recorder.stop();
-      session.graph.close();
-      session.sourceStream.getTracks().forEach((track) => track.stop());
-      recordingSessionRef.current = null;
-      recorderRef.current = null;
-    }
+    recordingSessionRef.current?.dispose();
+    recordingSessionRef.current = null;
     bgmPreviewRef.current?.pause();
     previewRef.current?.pause();
     Object.values(localPreviewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
@@ -358,116 +340,89 @@ export function GiftStudio({
     }
     setStep('record');
   };
-  async function startRecording(
-    targetDraft = draft,
-    existingSession?: {
-      sourceStream: MediaStream;
-      graph: ReturnType<typeof createRecordingAudioGraph>;
-    },
-  ) {
-    if (!targetDraft || targetDraft.nextPosition == null) return;
-    const sourceStream = existingSession?.sourceStream ?? await navigator.mediaDevices.getUserMedia({ audio: true });
-    const graph = existingSession?.graph ?? createRecordingAudioGraph(sourceStream);
-    const recorder = new MediaRecorder(graph.stream, {
-      mimeType: getSupportedMimeType() || undefined,
-    });
-    chunksRef.current = [];
-    recorder.ondataavailable = (event) => chunksRef.current.push(event.data);
-    recorder.onstop = async () => {
-      const shouldContinue = autoContinueRef.current && recordingMode === 'continuous';
-      let continuing = false;
-      autoContinueRef.current = false;
-      const position = targetDraft.nextPosition!;
-      const item = targetDraft.items[position];
-      const recordingBlob = new Blob(chunksRef.current, { type: recorder.mimeType });
-      const previewUrl = URL.createObjectURL(recordingBlob);
-      setLocalPreviewUrls((current) => {
-        if (current[position]) URL.revokeObjectURL(current[position]);
-        const next = { ...current, [position]: previewUrl };
-        localPreviewUrlsRef.current = next;
-        return next;
-      });
-      const form = new FormData();
-      form.append(
-        'audio',
-        recordingBlob,
-        'verse.webm',
-      );
-      form.append(
-        'verseText',
-        item.verseText || `${item.book} ${item.chapter}:${item.verse}`,
-      );
-      form.append(
-        'durationSeconds',
-        String(
-          Math.max(1, Math.round((Date.now() - startedRef.current) / 1000)),
-        ),
-      );
-      if (shouldContinue && position < targetDraft.items.length - 1) {
-        const optimisticDraft: Draft = {
-          ...targetDraft,
-          nextPosition: position + 1,
-          items: targetDraft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
-        };
-        continuing = true;
-        setSelectedGiftPosition(null);
-        setDraft(optimisticDraft);
-        window.setTimeout(() => void startRecording(optimisticDraft, { sourceStream, graph }), 0);
-      }
-      try {
-        const uploadTask = uploadQueueRef.current.then(async () => {
-          const uploadResponse = await fetch(
-            `/api/gift-drafts/${targetDraft.id}/items/${position}/audio`,
-            { method: 'PUT', body: form },
-          );
-          if (!uploadResponse.ok) {
-            const payload = await readPayload(uploadResponse);
-            throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
+  async function startRecording(targetDraft = draft) {
+    if (!targetDraft || targetDraft.nextPosition == null || recordingSessionRef.current) return;
+    const position = targetDraft.nextPosition;
+    const item = targetDraft.items[position];
+    try {
+      const session = await createRecordingSession({
+        constraints: { audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 } } },
+        mimeType: getSupportedMimeType(),
+        timeslice: 250,
+        now: Date.now,
+        onCaptured: async (capture) => {
+          if (recordingSessionRef.current === session) recordingSessionRef.current = null;
+          const shouldContinue = autoContinueRef.current && recordingMode === 'continuous' && position < targetDraft.items.length - 1;
+          autoContinueRef.current = false;
+          setRecording(false);
+          setSavingRecording(true);
+          if (!capture || capture.blob.size === 0) {
+            setSavingRecording(false);
+            setMessage('녹음된 음성이 없어요. 다시 시도해 주세요.');
+            return;
           }
-        });
-        uploadQueueRef.current = uploadTask.catch(() => undefined);
-        await uploadTask;
-        if (continuing) return;
-        const currentResponse = await fetch(`/api/gift-drafts/${targetDraft.id}`);
-        if (!currentResponse.ok) throw new Error('다음 말씀을 불러오지 못했어요.');
-        const current = await readPayload(currentResponse);
-        if (!current.draft) throw new Error('다음 말씀을 불러오지 못했어요.');
-        const hydratedDraft = await hydrateVerseTexts(current.draft);
-        setDraft(hydratedDraft);
-        setDrafts((currentDrafts) => currentDrafts.map((candidate) => candidate.id === hydratedDraft.id ? hydratedDraft : candidate));
-        setRecording(false);
-        if (hydratedDraft.nextPosition == null) {
-          setSelectedGiftPosition(hydratedDraft.items.length - 1);
-          setRecordingMode('continuous');
-          setStep('record');
-          setMessage('녹음 검토 화면에서 전체 미리듣기와 절별 수정을 할 수 있어요.');
-        } else {
-          setSelectedGiftPosition(null);
-          setRecordingMode('continuous');
-          setStep('record');
-          setMessage(`${hydratedDraft.items[hydratedDraft.nextPosition].verse}절부터 이어 녹음할 수 있어요.`);
-        }
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : '녹음을 저장하지 못했어요.');
-        advancingRef.current = false;
-      } finally {
-        if (!continuing) {
+
+          const previewUrl = URL.createObjectURL(capture.blob);
+          setLocalPreviewUrls((current) => {
+            if (current[position]) URL.revokeObjectURL(current[position]);
+            const next = { ...current, [position]: previewUrl };
+            localPreviewUrlsRef.current = next;
+            return next;
+          });
+          const form = new FormData();
+          form.append('audio', capture.blob, 'verse.webm');
+          form.append('verseText', item.verseText || `${item.book} ${item.chapter}:${item.verse}`);
+          form.append('durationSeconds', String(Math.max(1, Math.round(capture.durationMs / 1_000))));
+
+          try {
+            const uploadResponse = await fetch(`/api/gift-drafts/${targetDraft.id}/items/${position}/audio`, { method: 'PUT', body: form });
+            if (!uploadResponse.ok) {
+              const payload = await readPayload(uploadResponse);
+              throw new Error(payload.error ?? '녹음을 저장하지 못했어요.');
+            }
+            const currentResponse = await fetch(`/api/gift-drafts/${targetDraft.id}`);
+            if (!currentResponse.ok) throw new Error('저장한 말씀을 다시 불러오지 못했어요.');
+            const current = await readPayload(currentResponse);
+            if (!current.draft) throw new Error('저장한 말씀을 다시 불러오지 못했어요.');
+            const hydratedDraft = await hydrateVerseTexts(current.draft);
+            setDraft(hydratedDraft);
+            setDrafts((currentDrafts) => currentDrafts.map((candidate) => candidate.id === hydratedDraft.id ? hydratedDraft : candidate));
+            setSelectedGiftPosition(hydratedDraft.nextPosition == null ? hydratedDraft.items.length - 1 : null);
+            setRecordingMode('continuous');
+            setStep('record');
+            if (shouldContinue && hydratedDraft.nextPosition != null) {
+              setSavingRecording(false);
+              void startRecording(hydratedDraft);
+              return;
+            }
+            setMessage(hydratedDraft.nextPosition == null
+              ? '녹음 검토 화면에서 전체 미리듣기와 절별 수정을 할 수 있어요.'
+              : `${hydratedDraft.items[hydratedDraft.nextPosition].verse}절부터 이어 녹음할 수 있어요.`);
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : '녹음을 저장하지 못했어요.');
+          } finally {
+            setSavingRecording(false);
+          }
+        },
+        onError: () => {
+          setRecording(false);
           setSavingRecording(false);
-          graph.close();
-          sourceStream.getTracks().forEach((track) => track.stop());
-          if (recorderRef.current === recorder) recorderRef.current = null;
-          if (recordingSessionRef.current?.recorder === recorder) recordingSessionRef.current = null;
-        }
-      }
+          setMessage('녹음 중 문제가 생겼어요. 마이크 연결을 확인하고 다시 시도해 주세요.');
+        },
+      });
+      recordingSessionRef.current = session;
+      startedRef.current = Date.now();
+      setSeconds(0);
+      session.start();
+      setRecording(true);
+    } catch (error) {
+      recordingSessionRef.current?.dispose();
+      recordingSessionRef.current = null;
       setRecording(false);
-    };
-    recorderRef.current = recorder;
-    recordingSessionRef.current = { recorder, sourceStream, graph };
-    startedRef.current = Date.now();
-    setSeconds(0);
-    recorder.start();
-    advancingRef.current = false;
-    setRecording(true);
+      setSavingRecording(false);
+      const denied = error instanceof DOMException && error.name === 'NotAllowedError';
+      setMessage(denied ? '마이크 권한을 허용해 주세요.' : '마이크를 연결할 수 없어요. 다시 시도해 주세요.');
+    }
   }
   const requestGiftRecording = () => {
     if (!draft) return;
@@ -478,28 +433,20 @@ export function GiftStudio({
     void startRecording();
   };
   const finishCurrentVerseAndContinue = () => {
-    if (advancingRef.current || !draft || draft.nextPosition == null) return;
+    if (!draft || draft.nextPosition == null || recordingSessionRef.current?.phase !== 'recording') return;
     const position = draft.nextPosition;
     const hasNext = position < draft.items.length - 1;
-    continuousBoundariesRef.current.push(Date.now());
     autoContinueRef.current = hasNext;
-    advancingRef.current = true;
-    if (hasNext) {
-      const optimisticDraft: Draft = {
-        ...draft,
-        nextPosition: position + 1,
-        items: draft.items.map((candidate, index) => index === position ? { ...candidate, recorded: true } : candidate),
-      };
-      flushSync(() => setDraft(optimisticDraft));
-    }
-    if (!hasNext) setSavingRecording(true);
-    recorderRef.current?.stop();
+    setRecording(false);
+    setSavingRecording(true);
+    void recordingSessionRef.current.stop();
   };
   const finishRecordingHere = () => {
-    if (savingRecording || !recorderRef.current) return;
+    if (savingRecording || recordingSessionRef.current?.phase !== 'recording') return;
     autoContinueRef.current = false;
+    setRecording(false);
     setSavingRecording(true);
-    recorderRef.current.stop();
+    void recordingSessionRef.current.stop();
   };
   const bgmSrc = (id: string) =>
     id === 'still-waters'
@@ -823,7 +770,7 @@ export function GiftStudio({
             <div className="timer"><span>{formatTime(seconds)}</span><small>{savingRecording ? '녹음을 안전하게 저장하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : viewingRecordedItem ? '아래에서 녹음을 확인해 주세요' : '버튼을 누르면 마이크 권한을 요청해요'}</small></div>
             {recordingMode === 'continuous' && recording && <div className="continuous-record-actions" aria-label="이어 녹음 진행"><button className="next" type="button" disabled={savingRecording} onClick={finishCurrentVerseAndContinue}>{draft.nextPosition === draft.items.length - 1 ? '마지막 절 완료' : '다음 절'} <ChevronRight size={18} /></button><button className="finish" type="button" disabled={savingRecording} onClick={finishRecordingHere}>{savingRecording ? <LoaderCircle className="spin" size={18} /> : <CircleStop size={18} />}{savingRecording ? '현재 절 저장 중…' : '현재 절까지 저장'}</button></div>}
             <div className={`record-controls ${viewingRecordedItem ? 'saved-recording-actions' : ''}`}>
-              {savingRecording ? <button className="record-button" type="button" disabled><span><LoaderCircle className="spin" size={27} /></span>녹음 저장 중</button> : viewingRecordedItem ? <><button className="record-complete-button saved-listen" type="button" onClick={() => void toggleDraftItemPlayback(activeGiftItem)}>{playingDraftPosition === activeGiftItem.position ? <Pause size={22} /> : <Play size={22} />}<span>{playingDraftPosition === activeGiftItem.position ? '듣기 멈춤' : '이 절 듣기'}</span></button><button className="record-complete-button restart" type="button" onClick={() => void editDraftItem(activeGiftItem)}><RotateCcw size={21} /><span>이 절 수정</span></button></> : recording && recordingMode === 'verse' ? <button className="record-button stop" type="button" onClick={() => recorderRef.current?.stop()}><span><CircleStop size={27} /></span>이 절 저장</button> : recording ? null : <button className="record-button" type="button" onClick={requestGiftRecording}><span><Mic size={29} /></span>{activeGiftItem.verse}절부터 이어 녹음</button>}
+              {savingRecording ? <button className="record-button" type="button" disabled><span><LoaderCircle className="spin" size={27} /></span>녹음 저장 중</button> : viewingRecordedItem ? <><button className="record-complete-button saved-listen" type="button" onClick={() => void toggleDraftItemPlayback(activeGiftItem)}>{playingDraftPosition === activeGiftItem.position ? <Pause size={22} /> : <Play size={22} />}<span>{playingDraftPosition === activeGiftItem.position ? '듣기 멈춤' : '이 절 듣기'}</span></button><button className="record-complete-button restart" type="button" onClick={() => void editDraftItem(activeGiftItem)}><RotateCcw size={21} /><span>이 절 수정</span></button></> : recording && recordingMode === 'verse' ? <button className="record-button stop" type="button" onClick={finishRecordingHere}><span><CircleStop size={27} /></span>이 절 저장</button> : recording ? null : <button className="record-button" type="button" onClick={requestGiftRecording}><span><Mic size={29} /></span>{activeGiftItem.verse}절부터 이어 녹음</button>}
             </div>
             <div className="verse-navigation"><button type="button" disabled={activeGiftPosition === 0 || recording} onClick={() => setSelectedGiftPosition(activeGiftPosition - 1)}><ChevronLeft size={18} /> 이전 구절</button><span>{activeGiftItem.verse}절 · {activeGiftPosition + 1} / {draft.items.length}</span><button type="button" disabled={activeGiftPosition === draft.items.length - 1 || recording} onClick={() => setSelectedGiftPosition(activeGiftPosition + 1)}>다음 구절 <ChevronRight size={18} /></button></div>
             {(progress?.recorded ?? 0) > 0 && (
@@ -1380,10 +1327,7 @@ export function GiftStudio({
                     <button
                       className="finish"
                       type="button"
-                      onClick={() => {
-                        autoContinueRef.current = false;
-                        recorderRef.current?.stop();
-                      }}
+                      onClick={finishRecordingHere}
                     >
                       <Pause size={18} /> 현재 절까지 저장
                     </button>
@@ -1393,7 +1337,7 @@ export function GiftStudio({
                   <button
                     className="record-button recording"
                     type="button"
-                    onClick={() => recorderRef.current?.stop()}
+                    onClick={finishRecordingHere}
                   >
                     <span><Pause size={18} /></span> 이 절 저장
                   </button>

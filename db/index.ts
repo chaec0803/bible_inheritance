@@ -63,8 +63,6 @@ export function ensureDbSchema() {
       title TEXT NOT NULL,
       bgm_id TEXT NOT NULL,
       bgm_volume INTEGER NOT NULL DEFAULT 12,
-      recording_count INTEGER NOT NULL,
-      total_size_bytes INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
       arrival_seen_at INTEGER,
       opened_at INTEGER,
@@ -95,7 +93,7 @@ export function ensureDbSchema() {
       duration_seconds INTEGER NOT NULL
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS gift_drafts (
-      id TEXT PRIMARY KEY NOT NULL, owner_key TEXT NOT NULL, recipient_key TEXT NOT NULL,
+      id TEXT PRIMARY KEY NOT NULL, owner_key TEXT NOT NULL,
       title TEXT NOT NULL, bgm_id TEXT NOT NULL DEFAULT 'none', bgm_volume INTEGER NOT NULL DEFAULT 12, recipient_keys_json TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, sent_gift_id TEXT
     )`),
@@ -116,6 +114,11 @@ export function ensureDbSchema() {
     if (!names.has('recording_mode')) additions.push(env.DB.prepare("ALTER TABLE recordings ADD COLUMN recording_mode TEXT NOT NULL DEFAULT 'verse'"));
     if (additions.length) await env.DB.batch(additions);
     const giftColumns = await env.DB.prepare('PRAGMA table_info(gifts)').all<{ name: string }>();
+    for (const derivedColumn of ['recording_count', 'total_size_bytes']) {
+      if (giftColumns.results.some((column) => column.name === derivedColumn)) {
+        await env.DB.prepare(`ALTER TABLE gifts DROP COLUMN ${derivedColumn}`).run();
+      }
+    }
     if (!giftColumns.results.some((column) => column.name === 'opened_at')) {
       await env.DB.prepare('ALTER TABLE gifts ADD COLUMN opened_at INTEGER').run();
     }
@@ -136,6 +139,12 @@ export function ensureDbSchema() {
     }
     const draftColumns = await env.DB.prepare('PRAGMA table_info(gift_drafts)').all<{ name: string }>();
     if (!draftColumns.results.some((column) => column.name === 'recipient_keys_json')) await env.DB.prepare("ALTER TABLE gift_drafts ADD COLUMN recipient_keys_json TEXT NOT NULL DEFAULT '[]'").run();
+    if (draftColumns.results.some((column) => column.name === 'recipient_key')) {
+      await env.DB.prepare(`UPDATE gift_drafts
+        SET recipient_keys_json = json_array(recipient_key)
+        WHERE NOT json_valid(recipient_keys_json) OR json_array_length(recipient_keys_json) = 0`).run();
+      await env.DB.prepare('ALTER TABLE gift_drafts DROP COLUMN recipient_key').run();
+    }
     for (const [name, definition] of [
       ['letter_type', 'TEXT'], ['letter_text', 'TEXT'], ['letter_object_key', 'TEXT'],
       ['letter_mime_type', 'TEXT'], ['letter_size_bytes', 'INTEGER'],

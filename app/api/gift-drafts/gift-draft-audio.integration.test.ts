@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   authenticate: vi.fn(),
   ensureSchema: vi.fn(),
-  draft: { id: 'draft-1', recipient_key: 'friend-2', title: '시편 23편', bgm_id: 'none', bgm_volume: 12, created_at: 1, updated_at: 2, sent_gift_id: null } as Record<string, unknown> | null,
+  draft: { id: 'draft-1', recipient_keys_json: '["friend-2"]', title: '시편 23편', bgm_id: 'none', bgm_volume: 12, created_at: 1, updated_at: 2, sent_gift_id: null } as Record<string, unknown> | null,
   item: { id: 'item-1', object_key: null as string | null } as Record<string, unknown> | null,
   audioTarget: { object_key: 'sender-1/gift-drafts/draft-1/item-1', mime_type: 'audio/wav' } as Record<string, unknown> | null,
   itemRows: [] as Array<Record<string, unknown>>,
@@ -68,7 +68,7 @@ describe('선물 초안 절별 녹음 API 통합 회귀', () => {
   beforeEach(() => {
     mocks.authenticate.mockReset().mockResolvedValue({ id: 'sender-1', email: 'sender@example.com' });
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
-    mocks.draft = { id: 'draft-1', recipient_key: 'friend-2', title: '시편 23편', bgm_id: 'none', bgm_volume: 12, created_at: 1, updated_at: 2, sent_gift_id: null };
+    mocks.draft = { id: 'draft-1', recipient_keys_json: '["friend-2"]', title: '시편 23편', bgm_id: 'none', bgm_volume: 12, created_at: 1, updated_at: 2, sent_gift_id: null };
     mocks.item = { id: 'item-1', object_key: null };
     mocks.audioTarget = { object_key: 'sender-1/gift-drafts/draft-1/item-1', mime_type: 'audio/wav' };
     mocks.itemRows = [];

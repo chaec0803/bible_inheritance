@@ -94,8 +94,6 @@ export const gifts = sqliteTable(
     title: text('title').notNull(),
     bgmId: text('bgm_id').notNull(),
     bgmVolume: integer('bgm_volume').notNull().default(12),
-    recordingCount: integer('recording_count').notNull(),
-    totalSizeBytes: integer('total_size_bytes').notNull(),
     createdAt: integer('created_at').notNull(),
     arrivalSeenAt: integer('arrival_seen_at'),
     openedAt: integer('opened_at'),
@@ -144,7 +142,7 @@ export const giftRecordings = sqliteTable(
 export const giftDrafts = sqliteTable(
   'gift_drafts',
   {
-    id: text('id').primaryKey(), ownerKey: text('owner_key').notNull(), recipientKey: text('recipient_key').notNull(),
+    id: text('id').primaryKey(), ownerKey: text('owner_key').notNull(),
     title: text('title').notNull(), bgmId: text('bgm_id').notNull().default('none'), bgmVolume: integer('bgm_volume').notNull().default(12),
     recipientKeysJson: text('recipient_keys_json').notNull().default('[]'),
     createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(), sentGiftId: text('sent_gift_id'),

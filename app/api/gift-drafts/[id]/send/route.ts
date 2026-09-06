@@ -4,19 +4,8 @@ import { ensureUserProfile } from '@/lib/friend-server';
 import { canonicalFriendPair } from '@/lib/friend-policy';
 import { isGiftDraftSendable } from '@/lib/gift-draft';
 import { authenticateRequest } from '@/lib/supabase-auth';
-import type { DraftItemRow } from '../../shared';
+import { parseDraftRecipientIds, type DraftItemRow } from '../../shared';
 import { decodeGiftLetterAudio, normalizeGiftLetter } from '@/lib/gift-letter';
-
-function draftRecipients(draft: Record<string, unknown>) {
-  try {
-    const parsed = JSON.parse(typeof draft.recipient_keys_json === 'string' ? draft.recipient_keys_json : '[]');
-    if (Array.isArray(parsed)) {
-      const ids = [...new Set(parsed.filter((id): id is string => typeof id === 'string' && Boolean(id)))];
-      if (ids.length) return ids;
-    }
-  } catch { /* 이전 초안은 대표 수신자로 복구합니다. */ }
-  return [String(draft.recipient_key)];
-}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await authenticateRequest(request); if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -26,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params; await ensureDbSchema(); await ensureUserProfile(user); const db = getD1();
   const draft = await db.prepare('SELECT * FROM gift_drafts WHERE id = ? AND owner_key = ? AND sent_gift_id IS NULL').bind(id, user.id).first<Record<string, unknown>>();
   if (!draft) return Response.json({ error: '초안을 찾을 수 없습니다.' }, { status: 404 });
-  const recipients = draftRecipients(draft);
+  const recipients = parseDraftRecipientIds(draft);
   if (!recipients.length || recipients.length > 30) return Response.json({ error: '받을 친구는 최대 30명까지 선택할 수 있어요.' }, { status: 400 });
   const items = (await db.prepare('SELECT * FROM gift_draft_items WHERE draft_id = ? ORDER BY position').bind(id).all<DraftItemRow>()).results;
   if (!isGiftDraftSendable(items.map((item) => ({ objectKey: item.object_key, sourceRecordingId: item.source_recording_id })))) return Response.json({ error: '모든 절을 녹음한 뒤 선물할 수 있어요.' }, { status: 409 });
@@ -41,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const giftIds = recipients.map(() => crypto.randomUUID());
-  const total = items.reduce((sum, item) => sum + item.size_bytes, 0); const now = Date.now();
+  const now = Date.now();
   const voiceBytes = letter.type === 'voice' ? decodeGiftLetterAudio(letter) : null;
   if (letter.type === 'voice' && !voiceBytes) return Response.json({ error: '음성 편지 파일을 다시 확인해 주세요.' }, { status: 400 });
   const copiedKeys: string[] = [];
@@ -66,7 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const giftId = giftIds[giftIndex];
       const letterObjectKey = letter.type === 'voice' ? `${user.id}/gift-letters/${giftId}` : null;
       return [
-        db.prepare('INSERT INTO gifts (id, sender_key, recipient_key, title, bgm_id, bgm_volume, recording_count, total_size_bytes, created_at, letter_type, letter_text, letter_object_key, letter_mime_type, letter_size_bytes, letter_duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(giftId, user.id, recipient, draft.title, draft.bgm_id, draft.bgm_volume, items.length, total, now, letter.type === 'none' ? null : letter.type, letter.type === 'text' ? letter.text : null, letterObjectKey, letter.type === 'voice' ? letter.mimeType : null, letter.type === 'voice' ? letter.sizeBytes : null, letter.type === 'voice' ? letter.durationSeconds : null),
+        db.prepare('INSERT INTO gifts (id, sender_key, recipient_key, title, bgm_id, bgm_volume, created_at, letter_type, letter_text, letter_object_key, letter_mime_type, letter_size_bytes, letter_duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(giftId, user.id, recipient, draft.title, draft.bgm_id, draft.bgm_volume, now, letter.type === 'none' ? null : letter.type, letter.type === 'text' ? letter.text : null, letterObjectKey, letter.type === 'voice' ? letter.mimeType : null, letter.type === 'voice' ? letter.sizeBytes : null, letter.type === 'voice' ? letter.durationSeconds : null),
         ...items.map((item) => db.prepare('INSERT INTO gift_recordings (id, gift_id, position, book, chapter, verse, verse_text, source_recording_id, object_key, mime_type, size_bytes, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), giftId, item.position, item.book, item.chapter, item.verse, item.verse_text, item.source_recording_id, item.object_key ? `${user.id}/gifts/${giftId}/${item.position}` : null, item.mime_type, item.size_bytes, item.duration_seconds)),
       ];
     });

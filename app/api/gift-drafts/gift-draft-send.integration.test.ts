@@ -66,7 +66,7 @@ describe('선물 초안 바로 보내기 API 통합 회귀', () => {
     mocks.authenticate.mockReset().mockResolvedValue({ id: 'sender-1', email: 'sender@example.com' });
     mocks.ensureSchema.mockReset().mockResolvedValue(undefined);
     mocks.ensureProfile.mockReset().mockResolvedValue(undefined);
-    mocks.draft = { id: 'draft-1', recipient_key: 'friend-2', title: '시편 23편 1–2절', bgm_id: 'still-waters', bgm_volume: 22 };
+    mocks.draft = { id: 'draft-1', recipient_keys_json: '["friend-2"]', title: '시편 23편 1–2절', bgm_id: 'still-waters', bgm_volume: 22 };
     mocks.itemRows = [
       { id: 'item-1', position: 0, book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', source_recording_id: null, object_key: 'sender-1/gift-drafts/draft-1/item-1', mime_type: 'audio/wav', size_bytes: 10, duration_seconds: 3 },
       { id: 'item-2', position: 1, book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', source_recording_id: 'r-9', object_key: null, mime_type: 'audio/wav', size_bytes: 20, duration_seconds: 4 },
@@ -89,6 +89,8 @@ describe('선물 초안 바로 보내기 API 통합 회귀', () => {
 
     const statements = batchedStatements();
     const gift = statements.find((statement) => statement.sql.includes('INSERT INTO gifts'));
+    expect(gift?.sql).not.toContain('recording_count');
+    expect(gift?.sql).not.toContain('total_size_bytes');
     expect(gift?.values).toContain('still-waters');
     expect(gift?.values).toContain(22);
     expect(gift?.values).toContain('friend-2');

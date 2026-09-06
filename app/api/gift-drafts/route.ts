@@ -9,15 +9,17 @@ import { presentDraft, type DraftItemRow } from './shared';
 export async function GET(request: Request) {
   const user = await authenticateRequest(request); if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   await ensureDbSchema(); await ensureUserProfile(user); const db = getD1();
-  const drafts = await db.prepare(`SELECT gift_drafts.*, user_profiles.nickname AS recipient_nickname FROM gift_drafts JOIN user_profiles ON user_profiles.owner_key = gift_drafts.recipient_key WHERE gift_drafts.owner_key = ? AND gift_drafts.sent_gift_id IS NULL ORDER BY gift_drafts.updated_at DESC`).bind(user.id).all<Record<string, unknown>>();
+  const drafts = await db.prepare(`SELECT gift_drafts.*, user_profiles.nickname AS recipient_nickname FROM gift_drafts JOIN user_profiles ON user_profiles.owner_key = json_extract(gift_drafts.recipient_keys_json, '$[0]') WHERE gift_drafts.owner_key = ? AND gift_drafts.sent_gift_id IS NULL ORDER BY gift_drafts.updated_at DESC`).bind(user.id).all<Record<string, unknown>>();
   const items = await db.prepare(`SELECT gift_draft_items.* FROM gift_draft_items JOIN gift_drafts ON gift_drafts.id = gift_draft_items.draft_id WHERE gift_drafts.owner_key = ? AND gift_drafts.sent_gift_id IS NULL ORDER BY gift_draft_items.draft_id, gift_draft_items.position`).bind(user.id).all<DraftItemRow>();
   return Response.json({ drafts: drafts.results.map((draft) => presentDraft(draft, items.results.filter((item) => item.draft_id === draft.id))) });
 }
 
 export async function POST(request: Request) {
   const user = await authenticateRequest(request); if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null; const recipient = typeof body?.recipientUserId === 'string' ? body.recipientUserId : '';
-  const recipientUserIds = Array.isArray(body?.recipientUserIds) ? [...new Set(body.recipientUserIds.filter((value): value is string => typeof value === 'string' && Boolean(value)))] : [recipient];
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const singleRecipient = typeof body?.recipientUserId === 'string' ? body.recipientUserId : '';
+  const recipientUserIds = Array.isArray(body?.recipientUserIds) ? [...new Set(body.recipientUserIds.filter((value): value is string => typeof value === 'string' && Boolean(value)))] : singleRecipient ? [singleRecipient] : [];
+  const recipient = recipientUserIds[0] ?? '';
   const scope = normalizeGiftDraftScope(body?.scope); if (!recipient || !scope) return Response.json({ error: '선물 정보를 다시 확인해 주세요.' }, { status: 400 });
   if (!recipientUserIds.length || recipientUserIds.length > 30) return Response.json({ error: '받을 친구는 최대 30명까지 선택할 수 있어요.' }, { status: 400 });
   if (recipientUserIds.includes(user.id)) return Response.json({ error: '나 자신에게는 선물할 수 없습니다.' }, { status: 400 });
@@ -42,6 +44,6 @@ export async function POST(request: Request) {
   const requestedTitle = typeof body?.title === 'string' ? body.title.trim().slice(0, 100) : '';
   const title = requestedTitle || plan.title;
   const id = crypto.randomUUID(); const now = Date.now();
-  const statements = [db.prepare(`INSERT INTO gift_drafts (id, owner_key, recipient_key, recipient_keys_json, title, bgm_id, bgm_volume, created_at, updated_at, sent_gift_id) VALUES (?, ?, ?, ?, ?, 'none', 12, ?, ?, NULL)`).bind(id, user.id, recipient, JSON.stringify(recipientUserIds), title, now, now), ...plan.items.map((item) => db.prepare(`INSERT INTO gift_draft_items (id, draft_id, position, book, chapter, verse, verse_text, source_recording_id, object_key, mime_type, size_bytes, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`).bind(crypto.randomUUID(), id, item.position, item.book, item.chapter, item.verse, item.verseText, item.sourceRecordingId, item.mimeType, item.sizeBytes, item.durationSeconds))];
+  const statements = [db.prepare(`INSERT INTO gift_drafts (id, owner_key, recipient_keys_json, title, bgm_id, bgm_volume, created_at, updated_at, sent_gift_id) VALUES (?, ?, ?, ?, 'none', 12, ?, ?, NULL)`).bind(id, user.id, JSON.stringify(recipientUserIds), title, now, now), ...plan.items.map((item) => db.prepare(`INSERT INTO gift_draft_items (id, draft_id, position, book, chapter, verse, verse_text, source_recording_id, object_key, mime_type, size_bytes, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`).bind(crypto.randomUUID(), id, item.position, item.book, item.chapter, item.verse, item.verseText, item.sourceRecordingId, item.mimeType, item.sizeBytes, item.durationSeconds))];
   await db.batch(statements); return Response.json({ draft: { id, recipientUserId: recipient, recipientUserIds, recipientCount: recipientUserIds.length, title, total: plan.items.length, recorded: plan.items.filter((item) => item.sourceRecordingId).length, items: plan.items.map((item) => ({ ...item, recorded: Boolean(item.sourceRecordingId) })) } }, { status: 201 });
 }

@@ -6,9 +6,18 @@ export function presentItems(rows: DraftItemRow[]) {
   return rows.map((row) => ({ id: row.id, position: row.position, book: row.book, chapter: row.chapter, verse: row.verse, verseText: row.verse_text, sourceRecordingId: row.source_recording_id, mimeType: row.mime_type, sizeBytes: row.size_bytes, durationSeconds: row.duration_seconds, recorded: Boolean(row.object_key || row.source_recording_id) }));
 }
 
+export function parseDraftRecipientIds(row: Record<string, unknown>) {
+  try {
+    const parsed = JSON.parse(typeof row.recipient_keys_json === 'string' ? row.recipient_keys_json : '[]');
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed.filter((id): id is string => typeof id === 'string' && Boolean(id)))];
+  } catch {
+    return [];
+  }
+}
+
 export function presentDraft(row: Record<string, unknown>, rows: DraftItemRow[]) {
   const progressItems = rows.map((item) => ({ objectKey: item.object_key, sourceRecordingId: item.source_recording_id }));
-  let recipientUserIds = [String(row.recipient_key)];
-  try { const parsed = JSON.parse(typeof row.recipient_keys_json === 'string' ? row.recipient_keys_json : '[]'); if (Array.isArray(parsed) && parsed.length) recipientUserIds = parsed.filter((id): id is string => typeof id === 'string'); } catch { /* 이전 초안은 대표 수신자를 사용합니다. */ }
-  return { id: row.id, recipientUserId: row.recipient_key, recipientUserIds, recipientCount: recipientUserIds.length, recipientNickname: row.recipient_nickname, title: row.title, bgmId: row.bgm_id, bgmVolume: row.bgm_volume, createdAt: row.created_at, updatedAt: row.updated_at, ...getGiftDraftProgress(progressItems), sendable: isGiftDraftSendable(progressItems), items: presentItems(rows) };
+  const recipientUserIds = parseDraftRecipientIds(row);
+  return { id: row.id, recipientUserId: recipientUserIds[0] ?? '', recipientUserIds, recipientCount: recipientUserIds.length, recipientNickname: row.recipient_nickname, title: row.title, bgmId: row.bgm_id, bgmVolume: row.bgm_volume, createdAt: row.created_at, updatedAt: row.updated_at, ...getGiftDraftProgress(progressItems), sendable: isGiftDraftSendable(progressItems), items: presentItems(rows) };
 }

@@ -167,7 +167,7 @@ describe('선물 초안 만들기 API 통합 회귀', () => {
   });
 
   it('내가 만든 전송 전 초안만 이어서 만들 수 있게 돌려준다', async () => {
-    mocks.draftRows = [{ id: 'draft-1', recipient_key: 'friend-2', recipient_nickname: '받는친구', title: '시편 23편', bgm_id: 'still-waters', bgm_volume: 20, created_at: 10, updated_at: 20 }];
+    mocks.draftRows = [{ id: 'draft-1', recipient_keys_json: '["friend-2"]', recipient_nickname: '받는친구', title: '시편 23편', bgm_id: 'still-waters', bgm_volume: 20, created_at: 10, updated_at: 20 }];
     mocks.draftItemRows = [
       { id: 'item-1', draft_id: 'draft-1', position: 0, book: '시편', chapter: 23, verse: 1, verse_text: '첫 절', source_recording_id: null, object_key: 'sender-1/gift-drafts/draft-1/item-1', mime_type: 'audio/wav', size_bytes: 10, duration_seconds: 3 },
       { id: 'item-2', draft_id: 'draft-1', position: 1, book: '시편', chapter: 23, verse: 2, verse_text: '둘째 절', source_recording_id: null, object_key: null, mime_type: '', size_bytes: 0, duration_seconds: 0 },
