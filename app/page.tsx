@@ -1707,7 +1707,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const openRelayTab = () => {
-    setRelayRecording(null);
     setRelayStartCreating(false);
     navigateTo('relay');
   };

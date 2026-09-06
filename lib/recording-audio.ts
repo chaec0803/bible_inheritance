@@ -5,12 +5,11 @@ export function getSupportedMimeType() {
 export function getVoiceRecordingConstraints(): MediaStreamConstraints {
   return {
     audio: {
-      // iPhone microphones can expose a conservative input level to the web.
-      // Prefer the device's clipping-aware speech gain while keeping denoise
-      // and echo processing off so the original voice character is preserved.
-      autoGainControl: { ideal: true },
-      echoCancellation: { ideal: false },
-      noiseSuppression: { ideal: false },
+      // Keep the browser's speech-processing pipeline off. In particular,
+      // iOS auto gain can make sustained narration sound compressed or muffled.
+      autoGainControl: false,
+      echoCancellation: false,
+      noiseSuppression: false,
       channelCount: { ideal: 1 },
       sampleRate: { ideal: 48_000 },
       sampleSize: { ideal: 16 },

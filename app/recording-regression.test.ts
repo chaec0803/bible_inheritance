@@ -86,11 +86,11 @@ describe('녹음·저장·수정 회귀', () => {
     expect(page).toContain('audioBitsPerSecond: 256_000');
   });
 
-  it('아이폰의 작은 마이크 입력은 기기 AGC를 선호하되 음색을 바꾸는 보정은 강제하지 않는다', () => {
+  it('아이폰에서도 AGC와 음성 보정을 끄고 원음으로 녹음한다', () => {
     expect(page).toContain('getVoiceRecordingConstraints()');
-    expect(recordingAudio).toContain('autoGainControl: { ideal: true }');
-    expect(recordingAudio).toContain('echoCancellation: { ideal: false }');
-    expect(recordingAudio).toContain('noiseSuppression: { ideal: false }');
+    expect(recordingAudio).toContain('autoGainControl: false');
+    expect(recordingAudio).toContain('echoCancellation: false');
+    expect(recordingAudio).toContain('noiseSuppression: false');
   });
 
   it('저장·마이크 요청 중에는 녹음 버튼을 다시 누를 수 없다', () => {

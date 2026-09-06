@@ -18,12 +18,12 @@ describe('녹음 AudioContext 정리', () => {
 });
 
 describe('모바일 음성 입력 설정', () => {
-  it('작은 iPhone 마이크 입력에는 기기의 clipping-aware 자동 gain을 요청한다', () => {
+  it('iPhone에서도 자동 음성 보정을 끄고 원음 입력을 요청한다', () => {
     expect(getVoiceRecordingConstraints()).toEqual({
       audio: {
-        autoGainControl: { ideal: true },
-        echoCancellation: { ideal: false },
-        noiseSuppression: { ideal: false },
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false,
         channelCount: { ideal: 1 },
         sampleRate: { ideal: 48_000 },
         sampleSize: { ideal: 16 },
