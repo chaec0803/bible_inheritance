@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 const studioUrl = new URL('./gift-studio.tsx', import.meta.url);
 const studio = existsSync(studioUrl) ? readFileSync(studioUrl, 'utf8') : '';
+const styles = readFileSync(new URL('./globals.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 const inProgressGifts = readFileSync(new URL('./in-progress-gifts.tsx', import.meta.url), 'utf8');
 const draftDetailRoute = readFileSync(new URL('./api/gift-drafts/[id]/route.ts', import.meta.url), 'utf8');
 const draftsRoute = readFileSync(new URL('./api/gift-drafts/route.ts', import.meta.url), 'utf8');
@@ -65,10 +66,13 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('className="gift-studio-summary"');
   });
 
-  it('친구 → 말씀 → 녹음 → 미리 듣기 → BGM 순서로 진행한다', () => {
+  it('친구 → 말씀 → 녹음 → 쪽지와 전송 순서로 진행한다', () => {
     expect(studio).toContain('GIFT_STUDIO_STEPS');
     expect(studio).toContain("useState<GiftStudioStep>('friend')");
     expect(studio).toContain('어떤 말씀을 선물할까요?');
+    expect(studio).toContain("'letter'");
+    expect(studio).not.toContain("'preview',");
+    expect(studio).not.toContain("'music',");
   });
 
   it('전송 성공 확인 후 방금 보낸 선물을 펼친 보낸 선물함으로 이동한다', () => {
@@ -166,13 +170,14 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(handler.indexOf('setDraft(optimisticDraft)')).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
   });
 
-  it('마지막 절 완료는 녹음 화면에서 저장 로딩을 보여준 뒤 성공해야 미리보기로 이동한다', () => {
+  it('마지막 절 완료는 녹음 화면에서 저장 로딩을 보여준 뒤 쪽지 단계로 이동한다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
     expect(handler).toContain('if (!hasNext) setSavingRecording(true)');
     expect(handler).not.toContain("setStep('preview')");
     expect(studio).toContain('녹음 저장 중');
+    expect(studio).toContain("setStep('letter')");
   });
 
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {
@@ -206,7 +211,7 @@ describe('말씀 골라 선물하기 흐름', () => {
   });
 
   it('BGM과 음량을 고르고 초안에 저장한다', () => {
-    expect(studio).toContain('선물에 넣을 음악');
+    expect(studio).toContain('aria-label="선물 녹음 음향 설정"');
     expect(studio).toContain('bgmVolume');
     expect(studio).toContain("method: 'PATCH'");
     expect(studio).toContain('GIFT_BGM_CATALOG');
@@ -217,18 +222,46 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('BGM을 재생할 수 없어요');
   });
 
-  it('선물 배경음악 단계는 일반 녹음과 같은 곡 카드·재생·일시정지·정지 UX를 제공한다', () => {
-    const musicStepStart = studio.indexOf("step === 'music'");
-    const musicStepEnd = studio.indexOf('<GiftLetterComposer', musicStepStart);
-    const musicStep = studio.slice(musicStepStart, musicStepEnd);
-    expect(musicStep).toContain('className="music-list"');
-    expect(musicStep).toContain('className={`music-option');
-    expect(musicStep).toContain('className="music-select"');
-    expect(musicStep).toContain('className="bgm-transport"');
-    expect(musicStep).toContain('배경음악 재생');
-    expect(musicStep).toContain('배경음악 일시정지');
-    expect(musicStep).toContain('배경음악 정지');
-    expect(musicStep).toContain('track.description');
+  it('배경음악은 녹음 단계에 하나만 놓고 설정 저장을 순서대로 처리한다', () => {
+    expect(studio.match(/className="sound-panel gift-sound-panel"/g)).toHaveLength(1);
+    expect(studio).toContain('musicSaveQueueRef.current.then');
+    expect(studio).toContain('musicSaveQueueRef.current = saveTask.catch');
+    expect(studio).toContain('onInput={(event) => updateGiftBgmVolume');
+    const saveMusic = block(studio, 'const saveMusic', 'const saveTitle');
+    expect(saveMusic.indexOf('setDraft')).toBeLessThan(saveMusic.indexOf("fetch(`/api/gift-drafts/"));
+  });
+
+  it('녹음을 중간에 끝내도 저장된 다음 절부터 이어 녹음한다', () => {
+    expect(studio).toContain("setRecordingMode('continuous')");
+    expect(studio).toContain("setStep('record')");
+    expect(studio).toContain('절부터 이어 녹음할 수 있어요');
+  });
+
+  it('녹음 중 절 선택으로 저장 조작이 사라지거나 녹음이 고아 상태가 되지 않는다', () => {
+    expect(studio).toContain('(recording || savingRecording) ? draft.nextPosition');
+    expect(studio).toContain('disabled={recording || savingRecording}');
+    expect(studio).toContain("recordingMode === 'continuous' && recording &&");
+    expect(studio).not.toContain("!viewingRecordedItem && recordingMode === 'continuous' && recording");
+    expect(studio).toContain('recordingSessionRef.current');
+    expect(studio).toContain('recorder.onstop = null');
+  });
+
+  it('선물 녹음도 종료 조작을 타이머 아래 같은 위치에 표시한다', () => {
+    const recorder = block(studio, 'if (draft && step === \'record\'', '<audio ref={previewRef}');
+    expect(recorder.indexOf('className="timer"')).toBeLessThan(recorder.indexOf('aria-label="이어 녹음 진행"'));
+  });
+
+  it('선물 녹음의 시작 버튼과 BGM 선택 표시를 카드 기준으로 정렬한다', () => {
+    expect(styles).toContain('.record-controls .record-button { margin-inline: auto; }');
+    expect(styles).toContain('.music-select { width: 100%;');
+    expect(styles).toContain('grid-template-columns: 34px minmax(0, 1fr) 14px');
+  });
+
+  it('새 선물 녹음 화면에는 녹음 대기 상세 목록을 다시 노출하지 않는다', () => {
+    const recorder = block(studio, 'if (draft && step === \'record\'', '<audio ref={previewRef}');
+    expect(recorder).not.toContain('gift-verse-list');
+    expect(recorder).not.toContain('녹음 대기');
+    expect(studio).toContain("{step === 'record' && (");
   });
 
   it('음악 선택 뒤 선택적인 편지를 덧붙여 함께 전송한다', () => {

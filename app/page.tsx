@@ -3558,17 +3558,6 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               )}
             </article>
 
-            {recordingMode === 'continuous' && recording && (
-              <div className="continuous-record-actions" aria-label="이어 녹음 진행">
-                <button className="next" type="button" onClick={completeContinuousVerse} disabled={verseIndex === passageVerses.length - 1}>
-                  다음 절 <ChevronRight size={18} />
-                </button>
-                <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}>
-                  <CircleStop size={18} /> {recordingFinishLabel}
-                </button>
-              </div>
-            )}
-
             <div className={`waveform ${recording ? 'recording' : ''}`} aria-label={recording ? '녹음 중인 음성 파형' : '대기 중인 음성 파형'}>
               {Array.from({ length: 34 }).map((_, index) => (
                 <span
@@ -3585,6 +3574,17 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               <span>{formatTime(seconds)}</span>
               <small>{requestingMic ? '마이크 연결을 요청하고 있어요' : recording ? '실제 마이크 음성을 녹음하고 있어요' : hasTake ? '아래에서 녹음을 확인해 주세요' : currentVerseSaved ? '보관함에 저장된 녹음이에요' : '버튼을 누르면 마이크 권한을 요청해요'}</small>
             </div>
+
+            {recordingMode === 'continuous' && recording && (
+              <div className="continuous-record-actions" aria-label="이어 녹음 진행">
+                <button className="next" type="button" onClick={completeContinuousVerse} disabled={verseIndex === passageVerses.length - 1}>
+                  다음 절 <ChevronRight size={18} />
+                </button>
+                <button className="finish" type="button" onClick={stopContinuousAndSaveCurrent}>
+                  <CircleStop size={18} /> {recordingFinishLabel}
+                </button>
+              </div>
+            )}
 
             <div className={`record-controls ${hasTake && !recording ? 'record-complete-actions' : ''} ${currentVerseSaved && !replacingRecording && !fullRetakeActive ? 'saved-recording-actions' : ''}`}>
               {currentUnitLocked && !recording ? (

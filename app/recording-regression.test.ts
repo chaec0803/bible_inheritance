@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 const recordingsRoute = readFileSync(new URL('./api/recordings/route.ts', import.meta.url), 'utf8');
 const audioRoute = readFileSync(new URL('./api/recordings/[id]/audio/route.ts', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('./globals.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
 
 function functionBody(startMarker: string, endMarker: string) {
   return page.slice(page.indexOf(startMarker), page.indexOf(endMarker));
@@ -54,6 +55,13 @@ describe('녹음·저장·수정 회귀', () => {
     expect(stopHandler).toContain('setRecording(false)');
     expect(stopHandler).toContain('setSavingLibrary(true)');
     expect(stopHandler.indexOf('setRecording(false)')).toBeLessThan(stopHandler.indexOf('mediaRecorderRef.current.stop()'));
+  });
+
+  it('이어 녹음 종료 조작은 타이머 아래에 있고 모바일 화면에서 항상 보인다', () => {
+    const recorder = functionBody('<section className="recording-card"', '<aside className="sound-panel"');
+    expect(recorder.indexOf('className="timer"')).toBeLessThan(recorder.indexOf('aria-label="이어 녹음 진행"'));
+    expect(styles).toContain('@media (max-width: 720px)');
+    expect(styles).toContain('.continuous-record-actions { position: sticky; bottom: 82px; z-index: 20;');
   });
 
   it('녹음은 무압축 WAV가 아니라 고음질 MP4로 압축해 저장한다', () => {
