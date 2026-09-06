@@ -50,7 +50,7 @@ vi.mock('@/db', () => ({
   }),
 }));
 
-import { GET as GET_AUDIO, PUT } from './[id]/items/[position]/audio/route';
+import { DELETE as DELETE_AUDIO, GET as GET_AUDIO, PUT } from './[id]/items/[position]/audio/route';
 import { DELETE as DELETE_DRAFT, GET as GET_DRAFT, PATCH } from './[id]/route';
 
 const context = { params: Promise.resolve({ id: 'draft-1', position: '1' }) };
@@ -96,6 +96,14 @@ describe('선물 초안 절별 녹음 API 통합 회귀', () => {
     const response = await PUT(audioRequest(), context);
     expect(response.status).toBe(200);
     expect(mocks.r2Delete).toHaveBeenCalledWith('sender-1/gift-drafts/draft-1/item-1-old');
+  });
+
+  it('이 절 수정은 저장된 음원과 완료 상태를 즉시 지운다', async () => {
+    mocks.item = { id: 'item-1', object_key: 'sender-1/gift-drafts/draft-1/item-1-old' };
+    const response = await DELETE_AUDIO(new Request('https://example.test/api/gift-drafts/draft-1/items/1/audio', { method: 'DELETE' }), context);
+    expect(response.status).toBe(200);
+    expect(mocks.r2Delete).toHaveBeenCalledWith('sender-1/gift-drafts/draft-1/item-1-old');
+    expect(mocks.statements.some((statement) => statement.sql.includes('source_recording_id = NULL'))).toBe(true);
   });
 
   it('남의 초안이나 이미 보낸 초안에는 녹음할 수 없다', async () => {

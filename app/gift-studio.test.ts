@@ -170,14 +170,16 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(handler.indexOf('setDraft(optimisticDraft)')).toBeLessThan(handler.indexOf('recorderRef.current?.stop()'));
   });
 
-  it('마지막 절 완료는 녹음 화면에서 저장 로딩을 보여준 뒤 쪽지 단계로 이동한다', () => {
+  it('마지막 절 완료는 저장 후 검토 화면에 남고 사용자가 직접 쪽지 단계로 이동한다', () => {
     const handlerStart = studio.indexOf('const finishCurrentVerseAndContinue');
     const handlerEnd = studio.indexOf('const bgmSrc', handlerStart);
     const handler = studio.slice(handlerStart, handlerEnd);
     expect(handler).toContain('if (!hasNext) setSavingRecording(true)');
     expect(handler).not.toContain("setStep('preview')");
     expect(studio).toContain('녹음 저장 중');
-    expect(studio).toContain("setStep('letter')");
+    expect(studio).toContain("setSelectedGiftPosition(hydratedDraft.items.length - 1)");
+    expect(studio).toContain('녹음 검토 화면에서 전체 미리듣기와 절별 수정을 할 수 있어요.');
+    expect(studio).toContain('onClick={() => setStep(\'letter\')}');
   });
 
   it('전체 미리 듣기와 구절별 재녹음을 제공한다', () => {
@@ -190,6 +192,12 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('녹음은 그대로 유지돼요');
   });
 
+  it('이 절 수정 시 서버와 왼쪽 완료 목록을 즉시 동기화한다', () => {
+    expect(studio).toContain("method: 'DELETE'");
+    expect(studio).toContain('recorded: false');
+    expect(studio).toContain('sourceRecordingId: null');
+  });
+
   it('방금 녹음한 선물은 서버 메타데이터를 기다리지 않고 즉시 들을 수 있다', () => {
     expect(studio).toContain('URL.createObjectURL(recordingBlob)');
     expect(studio).toContain('localPreviewUrls[item.position]');
@@ -198,9 +206,10 @@ describe('말씀 골라 선물하기 흐름', () => {
   });
 
   it('절별 재녹음 중에는 새 음성을 저장하며 녹음을 끝낼 수 있다', () => {
-    expect(studio).toContain("recording && recordingMode === 'verse'");
-    expect(studio).toContain('이 절 저장');
-    expect(studio).toContain('recorderRef.current?.stop()');
+    const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
+    expect(recorder).toContain("recording && recordingMode === 'verse'");
+    expect(recorder).toContain('이 절 저장');
+    expect(recorder).toContain('recorderRef.current?.stop()');
   });
 
   it('녹음하는 동안 현재 말씀과 다음 말씀 본문을 보여준다', () => {
@@ -247,7 +256,7 @@ describe('말씀 골라 선물하기 흐름', () => {
   });
 
   it('선물 녹음도 종료 조작을 타이머 아래 같은 위치에 표시한다', () => {
-    const recorder = block(studio, 'if (draft && step === \'record\'', '<audio ref={previewRef}');
+    const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
     expect(recorder.indexOf('className="timer"')).toBeLessThan(recorder.indexOf('aria-label="이어 녹음 진행"'));
   });
 
@@ -262,6 +271,60 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(recorder).not.toContain('gift-verse-list');
     expect(recorder).not.toContain('녹음 대기');
     expect(studio).toContain("{step === 'record' && (");
+  });
+
+  it('BGM을 선택한 선물 녹음 시작 전 이어폰 안내와 BGM 끄기 선택을 제공한다', () => {
+    expect(studio).toContain('giftHeadphoneWarningOpen');
+    expect(studio).toContain('이어폰이 연결되어 있나요?');
+    expect(studio).toContain('이어폰 연결했어요');
+    expect(studio).toContain('BGM 끄고 녹음');
+    expect(studio).toContain("selectGiftBgm('none')");
+    expect(studio).toContain('requestGiftRecording');
+  });
+
+  it('저장된 선물 녹음은 새 녹음 화면에서도 처음부터 다시 녹음할 수 있다', () => {
+    const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
+    expect(recorder).toContain('recording-manage-trigger');
+    expect(recorder).toContain('녹음 관리');
+    expect(recorder).toContain('처음부터 다시 녹음');
+    expect(recorder).toContain('setConfirmResetRecordings(true)');
+    expect(recorder).toContain('모두 지우고 다시 녹음');
+    expect(recorder).toContain('resetAllRecordings');
+  });
+
+  it('전체 미리듣기 중에도 완료한 절을 선택해 수정할 수 있다', () => {
+    const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
+    expect(recorder).toContain('전체 미리 듣기');
+    expect(recorder).toContain('fullPreviewVoiceRef');
+    expect(recorder).toContain('fullPreviewBgmRef');
+    expect(recorder).toContain("draft.nextPosition == null");
+    expect(studio).toContain("setStep('record')");
+    expect(studio).toContain("setStep('record');");
+    expect(studio).not.toContain("setStep(hydratedDraft.nextPosition == null ? 'letter' : 'record')");
+  });
+
+  it('전체 미리듣기의 정상 종료를 재생 시작 실패로 안내하지 않는다', () => {
+    expect(studio).toContain('fullPreviewRunRef');
+    expect(studio).toContain('fullPreviewIndexRef');
+    expect(studio).toContain('if (runId !== fullPreviewRunRef.current) return;');
+    expect(studio).toContain("error instanceof DOMException && error.name === 'AbortError'");
+  });
+
+  it('쪽지 단계 버튼은 녹음 검토 카드 맨 아래 중앙의 다음 버튼으로 표시한다', () => {
+    const recorder = block(studio, 'if (draft && step === \'record\'', 'if (!draft)');
+    expect(recorder).toContain('gift-studio-next-letter');
+    expect(recorder).toContain('다음 · 쪽지 덧붙이기');
+    expect(recorder.indexOf('aria-label="음향 설정"')).toBeLessThan(recorder.indexOf('gift-recording-next-step'));
+    expect(styles).toContain('.gift-recording-next-step { display: flex; justify-content: center;');
+    expect(styles).toContain('.gift-studio-next-letter { width: min(390px, 100%); margin: 0 auto;');
+  });
+
+  it('쪽지 단계에서 상단 목소리 녹음 단계를 눌러 안전하게 뒤로 이동한다', () => {
+    expect(studio).toContain("item === 'record' && step === 'letter' && draft");
+    expect(studio).toContain("aria-label=\"목소리 녹음 단계로 돌아가기\"");
+    expect(studio).toContain("onClick={() => setStep('record')}");
+    expect(styles).toContain('grid-template-columns: repeat(4, 1fr)');
+    expect(styles).toContain('.gift-step-back');
   });
 
   it('음악 선택 뒤 선택적인 편지를 덧붙여 함께 전송한다', () => {

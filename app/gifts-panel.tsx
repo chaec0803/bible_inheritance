@@ -95,7 +95,8 @@ export function GiftsPanel({
   const [deletingGiftId, setDeletingGiftId] = useState<string | null>(null);
   const [openingGiftId, setOpeningGiftId] = useState<string | null>(null);
   const [downloadingGiftId, setDownloadingGiftId] = useState<string | null>(null);
-  const [downloadReady, setDownloadReady] = useState<{ url: string; filename: string } | null>(null);
+  const [downloadReady, setDownloadReady] = useState<{ url: string; filename: string; blob: Blob } | null>(null);
+  const [sharingDownload, setSharingDownload] = useState(false);
   const [giftVolumes, setGiftVolumes] = useState<Record<string, number>>({});
   const [thankYouGift, setThankYouGift] = useState<ReceivedGift | null>(null);
   const [thankYouNote, setThankYouNote] = useState('');
@@ -363,14 +364,8 @@ export function GiftsPanel({
         bgmVolume: giftVolumes[gift.id] ?? gift.bgmVolume,
       });
       const url = URL.createObjectURL(result.blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = result.filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setDownloadReady({ url, filename: result.filename });
-      setMessage('MP4가 준비됐어요. 다운로드 창에서 파일 저장을 눌러 주세요.');
+      setDownloadReady({ url, filename: result.filename, blob: result.blob });
+      setMessage('MP4가 준비됐어요. 파일 저장을 눌러 기기에 보관해 주세요.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'MP4 파일을 만들지 못했어요.');
     } finally {
@@ -381,6 +376,24 @@ export function GiftsPanel({
   const closeDownloadReady = () => {
     if (downloadReady) URL.revokeObjectURL(downloadReady.url);
     setDownloadReady(null);
+  };
+
+  const shareDownload = async () => {
+    if (!downloadReady || sharingDownload) return;
+    const file = new File([downloadReady.blob], downloadReady.filename, { type: downloadReady.blob.type || 'audio/mp4' });
+    if (!navigator.canShare?.({ files: [file] }) || !navigator.share) {
+      setMessage('이 브라우저는 파일 공유를 지원하지 않아요. MP4 파일 저장을 눌러 주세요.');
+      return;
+    }
+    setSharingDownload(true);
+    try {
+      await navigator.share({ files: [file], title: downloadReady.filename });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError'))
+        setMessage('공유 창을 열지 못했어요. MP4 파일 저장을 눌러 주세요.');
+    } finally {
+      setSharingDownload(false);
+    }
   };
 
   const sendThankYou = async () => {
@@ -558,8 +571,8 @@ export function GiftsPanel({
         <span className="gift-send-error-icon"><Download size={27} /></span>
         <p className="eyebrow">DOWNLOAD READY</p>
         <h2 id="gift-download-title">말씀 선물 MP4가 준비됐어요</h2>
-        <p>자동 다운로드가 보이지 않으면 아래 버튼을 직접 눌러 저장해 주세요.</p>
-        <div className="gift-send-error-actions gift-download-actions"><a className="primary" href={downloadReady.url} download={downloadReady.filename} target="_blank" rel="noreferrer">MP4 파일 저장</a></div>
+        <p>아래 버튼을 직접 눌러 기기에 저장해 주세요. 모바일에서는 공유 메뉴의 파일 저장도 이용할 수 있어요.</p>
+        <div className="gift-send-error-actions gift-download-actions"><a className="primary" href={downloadReady.url} download={downloadReady.filename}>MP4 파일 저장</a>{typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && typeof navigator.share === 'function' && <button type="button" onClick={() => void shareDownload()} disabled={sharingDownload}>{sharingDownload ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}{sharingDownload ? '공유 준비 중' : '공유해서 저장'}</button>}</div>
       </dialog></div>}
 
       {confirmDeleteGift && <div className="gift-dialog-backdrop" role="presentation"><dialog className="gift-delete-dialog" open aria-labelledby="gift-delete-title"><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)} aria-label="삭제 확인 닫기"><X size={20} /></button><span><Trash2 size={25} /></span><h2 id="gift-delete-title">‘{confirmDeleteGift.title}’ 선물을 삭제할까요?</h2><p>삭제하면 선물함과 다운로드 파일에서 모두 사라지고 복구할 수 없어요.</p><div><button type="button" onClick={() => setConfirmDeleteGift(null)} disabled={Boolean(deletingGiftId)}>돌아가기</button><button className="delete" type="button" onClick={() => void deleteGift()} disabled={Boolean(deletingGiftId)}>{deletingGiftId ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{deletingGiftId ? '삭제 중' : '선물 삭제'}</button></div></dialog></div>}

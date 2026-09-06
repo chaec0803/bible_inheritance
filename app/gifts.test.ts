@@ -150,11 +150,15 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).not.toContain('이어듣기');
   });
 
-  it('자동 다운로드가 막힌 브라우저에서도 직접 누를 MP4 저장 링크를 제공한다', () => {
+  it('오래 걸리는 MP4 생성 뒤에는 사용자가 직접 저장하고 모바일 공유 저장도 선택할 수 있다', () => {
     expect(panel).toContain('downloadReady');
     expect(panel).toContain('MP4 파일 저장');
     expect(panel).toContain('download={downloadReady.filename}');
-    expect(panel).toContain('target="_blank"');
+    expect(panel).not.toContain('target="_blank"');
+    expect(panel).not.toContain('link.click()');
+    expect(panel).toContain('navigator.canShare');
+    expect(panel).toContain('navigator.share');
+    expect(panel).toContain('공유해서 저장');
   });
 
   it('재생 시작 직후 일시정지로 발생한 AbortError가 플레이어를 종료하지 않는다', () => {

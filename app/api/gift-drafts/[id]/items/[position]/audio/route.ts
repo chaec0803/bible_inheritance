@@ -33,3 +33,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (range) headers.set('Content-Range', `bytes ${range.start}-${range.end}/${metadata.size}`);
   return new Response(object.body, { headers, status: range ? 206 : 200 });
 }
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string; position: string }> }) {
+  const user = await authenticateRequest(request);
+  if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  const { id, position } = await params;
+  await ensureDbSchema();
+  const db = getD1();
+  const item = await db.prepare(`SELECT gift_draft_items.id, gift_draft_items.object_key FROM gift_draft_items JOIN gift_drafts ON gift_drafts.id = gift_draft_items.draft_id WHERE gift_drafts.id = ? AND gift_drafts.owner_key = ? AND gift_drafts.sent_gift_id IS NULL AND gift_draft_items.position = ?`).bind(id, user.id, Number(position)).first<{ id: string; object_key: string | null }>();
+  if (!item) return Response.json({ error: '초안 구절을 찾을 수 없습니다.' }, { status: 404 });
+  await db.prepare("UPDATE gift_draft_items SET source_recording_id = NULL, object_key = NULL, mime_type = '', size_bytes = 0, duration_seconds = 0 WHERE id = ?").bind(item.id).run();
+  await db.prepare('UPDATE gift_drafts SET updated_at = ? WHERE id = ?').bind(Date.now(), id).run();
+  if (item.object_key) await env.FILES.delete(item.object_key);
+  return Response.json({ recorded: false });
+}

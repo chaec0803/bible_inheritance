@@ -97,6 +97,13 @@ describe('토스트 색상', () => {
     expect(toastRule).not.toContain('border-left: 5px solid #4f7b69');
     expect(toastRule).toContain('border: 1px solid #d7ad55');
   });
+
+  it('일반 토스트와 선물 토스트에 그림자를 사용하지 않는다', () => {
+    const toastRule = css.match(/\.toast\s*\{([^}]*)\}/)?.[1] ?? '';
+    const giftToastRule = css.match(/\.gift-studio-message\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(toastRule).toContain('box-shadow: none');
+    expect(giftToastRule).toContain('box-shadow: none');
+  });
 });
 
 describe('친구 모달 레이어', () => {
