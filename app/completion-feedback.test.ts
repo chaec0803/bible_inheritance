@@ -15,12 +15,14 @@ describe('완료 피드백과 재생 제어', () => {
     expect(page).toContain('relayProjectId: relayRecording?.projectId');
     expect(page).toContain('이어읽기로 돌아가기');
     expect(page).toContain('onClick={openRelayProjectFromCompletion}');
-    expect(page).toContain('initialProjectId={relayRecording?.projectId}');
+    expect(page).toContain('initialProjectId={relayProjectToOpenId ?? relayRecording?.projectId}');
     expect(page).toContain('completionModal.showLibraryAction && !completionModal.relayProjectId');
     const returnHandler = page.slice(page.indexOf('const openRelayTab'), page.indexOf('const openRelayProjectFromCompletion'));
     expect(returnHandler).not.toContain('setRelayRecording(null)');
     expect(page).toContain('completionModal?.relayProjectId ?? relayRecording?.projectId');
     expect(page).toContain('completionModal.relayProjectId ?? relayRecording?.projectId');
+    expect(page).toContain('setRelayProjectToOpenId(projectId)');
+    expect(page).toContain('initialProjectId={relayProjectToOpenId ?? relayRecording?.projectId}');
   });
 
   it('하단 완료 버튼도 현재 절이 범위의 마지막인지 전달한다', () => {

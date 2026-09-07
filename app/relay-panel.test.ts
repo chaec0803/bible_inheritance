@@ -62,7 +62,7 @@ describe('이어읽기 UI 회귀', () => {
   it('녹음 완료 CTA로 돌아오면 목록이 아니라 해당 이어읽기 상세를 바로 연다', () => {
     expect(panel).toContain('initialProjectId?: string');
     expect(panel).toContain('openProject(initialProjectId)');
-    expect(page).toContain('initialProjectId={relayRecording?.projectId}');
+    expect(page).toContain('initialProjectId={relayProjectToOpenId ?? relayRecording?.projectId}');
   });
 
   it('초대 상세에 그룹 이름을 표시한다', () => {

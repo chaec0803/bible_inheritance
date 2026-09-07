@@ -19,10 +19,10 @@ describe('iOS BGM gain controller', () => {
     controller.connect(audio, 12);
     expect(audio.volume).toBe(1);
     expect(source.connect).toHaveBeenCalledWith(gain);
-    expect(gain.gain.value).toBeCloseTo(0.12);
+    expect(gain.gain.value).toBeCloseTo(0.0144);
 
     controller.setVolume(2);
-    expect(gain.gain.value).toBeCloseTo(0.02);
+    expect(gain.gain.value).toBeCloseTo(0.0004);
   });
 
   it('같은 audio를 다시 연결하지 않고 기존 gain만 갱신한다', () => {
@@ -41,7 +41,7 @@ describe('iOS BGM gain controller', () => {
     controller.connect(audio, 10);
     controller.connect(audio, 30);
     expect(context.createMediaElementSource).toHaveBeenCalledTimes(1);
-    expect(gain.gain.value).toBeCloseTo(0.3);
+    expect(gain.gain.value).toBeCloseTo(0.09);
   });
 
   it('iOS 사용자 동작 안에서 AudioContext를 미리 활성화할 수 있다', async () => {

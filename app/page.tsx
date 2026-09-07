@@ -679,6 +679,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     projectId: string; projectTitle: string; turnIndex: number; contextProjectId: string;
     passages: ProjectPassage[]; activePassageIndex: number;
   } | null>(null);
+  const [relayProjectToOpenId, setRelayProjectToOpenId] = useState<string | null>(null);
   const [giftSendOpen, setGiftSendOpen] = useState(false);
   const [giftChapterKeys, setGiftChapterKeys] = useState<string[]>([]);
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
@@ -1715,7 +1716,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const openRelayProjectFromCompletion = () => {
-    if (!(completionModal?.relayProjectId ?? relayRecording?.projectId)) return;
+    const projectId = completionModal?.relayProjectId ?? relayRecording?.projectId;
+    if (!projectId) return;
+    setRelayProjectToOpenId(projectId);
     setCompletionModal(null);
     setRelayStartCreating(false);
     navigateTo('relay');
@@ -1723,6 +1726,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const openRelayCreate = () => {
     setRelayRecording(null);
+    setRelayProjectToOpenId(null);
     setRelayStartCreating(true);
     navigateTo('relay');
   };
@@ -4213,7 +4217,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         />
       )}
       {appTab === 'friends' && <FriendsPanel onBack={() => window.history.back()} onNotice={setNotice} onGiftFriend={openGiftStudioWithFriend} />}
-      {appTab === 'relay' && <RelayPanel initialCreate={relayStartCreating} initialProjectId={relayRecording?.projectId} onBack={() => window.history.back()} onStartRecording={(project, turn) => void startRelayRecording(project, turn)} />}
+      {appTab === 'relay' && <RelayPanel initialCreate={relayStartCreating} initialProjectId={relayProjectToOpenId ?? relayRecording?.projectId} onBack={() => window.history.back()} onStartRecording={(project, turn) => void startRelayRecording(project, turn)} />}
 
       {completedJourneyModal && (
         <div className="continuous-player-backdrop" role="presentation">

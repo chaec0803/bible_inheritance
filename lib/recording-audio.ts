@@ -42,6 +42,7 @@ export function createRecordingAudioGraph(stream: MediaStream, createContext: ()
   gain.gain.value = VOICE_RECORDING_GAIN;
   source.connect(gain);
   gain.connect(destination);
+  void context.resume();
   return { context, source, gain, destination, stream: destination.stream, close: createAudioContextCloser(context) };
 }
 

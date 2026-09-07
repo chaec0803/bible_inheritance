@@ -1,3 +1,4 @@
 export function toAudibleBgmGain(percent: number) {
-  return Math.max(0, Math.min(100, percent)) / 100;
+  const normalized = Math.max(0, Math.min(100, percent)) / 100;
+  return normalized * normalized;
 }

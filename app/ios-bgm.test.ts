@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+const playback = readFileSync(new URL('./continuous-playback-view.tsx', import.meta.url), 'utf8');
 const bgmTracks = ['aeternum', 'unto-thee', 'the-kings-return'];
 
 describe('아이폰 이어듣기 BGM', () => {
@@ -15,6 +16,7 @@ describe('아이폰 이어듣기 BGM', () => {
     const previewHandler = page.slice(page.indexOf('const playSelectedBgm'), page.indexOf('const pauseSelectedBgm'));
     expect(previewHandler).toContain('startInternalChapterBgm(context, option.id)');
     expect(previewHandler).not.toContain('youtubePlayerRef.current.loadVideoById');
+    expect(playback).toContain('onInput={(event) => onVolumeChange(Number(event.currentTarget.value))}');
   });
 
   it.each(bgmTracks)('%s 음원을 Git 정적 파일이 아닌 R2 스트리밍 API로 요청한다', (track) => {

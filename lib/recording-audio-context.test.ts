@@ -35,11 +35,13 @@ describe('모바일 음성 입력 설정', () => {
     const source = { connect: vi.fn() };
     const gain = { gain: { value: 0 }, connect: vi.fn() };
     const destination = { stream: {} as MediaStream };
+    const resume = vi.fn().mockResolvedValue(undefined);
     const context = {
       state: 'running',
       createMediaStreamSource: vi.fn(() => source),
       createGain: vi.fn(() => gain),
       createMediaStreamDestination: vi.fn(() => destination),
+      resume,
       close: vi.fn().mockResolvedValue(undefined),
     } as unknown as AudioContext;
 
@@ -48,6 +50,7 @@ describe('모바일 음성 입력 설정', () => {
     expect(gain.gain.value).toBe(VOICE_RECORDING_GAIN);
     expect(source.connect).toHaveBeenCalledWith(gain);
     expect(gain.connect).toHaveBeenCalledWith(destination);
+    expect(resume).toHaveBeenCalledOnce();
     expect(graph.stream).toBe(destination.stream);
   });
 });
