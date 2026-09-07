@@ -674,12 +674,14 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const [chapterPaused, setChapterPaused] = useState(false);
   const [playbackListOpen, setPlaybackListOpen] = useState(false);
   const [appTab, setAppTab] = useState<'recording' | 'library' | 'gifts' | 'friends' | 'relay'>('recording');
+  const [navigationReady, setNavigationReady] = useState(false);
   const [relayStartCreating, setRelayStartCreating] = useState(false);
   const [relayRecording, setRelayRecording] = useState<{
     projectId: string; projectTitle: string; turnIndex: number; contextProjectId: string;
     passages: ProjectPassage[]; activePassageIndex: number;
   } | null>(null);
   const [relayProjectToOpenId, setRelayProjectToOpenId] = useState<string | null>(null);
+  const [relayRecordingLoading, setRelayRecordingLoading] = useState(false);
   const [giftSendOpen, setGiftSendOpen] = useState(false);
   const [giftChapterKeys, setGiftChapterKeys] = useState<string[]>([]);
   const [selectedLibraryChapter, setSelectedLibraryChapter] = useState<string | null>(null);
@@ -1665,7 +1667,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     if (window.location.hash !== hash) {
       window.history.pushState({ verseLegacyRoute: route }, '', hash);
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const openGiftStudioWithFriend = (friend: { userId: string; nickname: string; emailHint: string }) => {
@@ -1683,17 +1685,22 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   useEffect(() => {
     const initialRoute = parseNavigationRoute(window.location.hash);
     window.history.replaceState({ verseLegacyRoute: initialRoute }, '', getNavigationHash(initialRoute));
-    const initialRouteTimer = window.setTimeout(() => applyNavigationRoute(initialRoute), 0);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      applyNavigationRoute(initialRoute);
+      setNavigationReady(true);
+    });
     const handlePopState = (event: PopStateEvent) => {
       stopChapterPlaybackRef.current();
       const stateRoute = typeof event.state?.verseLegacyRoute === 'string' ? getNavigationHash(event.state.verseLegacyRoute as NavigationRoute) : window.location.hash;
       const route = parseNavigationRoute(stateRoute);
       applyNavigationRoute(route);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: 'auto' });
     };
     window.addEventListener('popstate', handlePopState);
     return () => {
-      window.clearTimeout(initialRouteTimer);
+      active = false;
       window.removeEventListener('popstate', handlePopState);
     };
   }, [applyNavigationRoute]);
@@ -1732,11 +1739,19 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const startRelayRecording = async (project: RelayProjectDetail, turn: RelayTurn) => {
+    setRelayRecording(null);
+    setRelayRecordingLoading(true);
+    navigateTo('recording');
     const contextProjectId = `relay:${project.id}:turn:${turn.turnIndex}`;
     const recorded = new Set(libraryRecordings.filter((item) => item.projectId === contextProjectId).map((item) => `${item.book}-${item.chapter}-${item.verse}`));
     const activePassageIndex = Math.max(0, turn.passages.findIndex((passage) => Array.from({ length: passage.endVerse - passage.startVerse + 1 }, (_, index) => `${passage.name}-${passage.chapter}-${passage.startVerse + index}`).some((reference) => !recorded.has(reference))));
     const passage = turn.passages[activePassageIndex];
-    if (!passage) { setNotice('배정된 말씀을 찾지 못했어요.'); return; }
+    if (!passage) {
+      setRelayRecordingLoading(false);
+      setNotice('배정된 말씀을 찾지 못했어요.');
+      navigateTo('relay');
+      return;
+    }
     try {
       const response = await fetch(`/data/bible/${encodeURIComponent(passage.code)}.json`);
       if (!response.ok) throw new Error();
@@ -1747,8 +1762,13 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       setRelayRecording({ projectId: project.id, projectTitle: project.title, turnIndex: turn.turnIndex, contextProjectId, passages: turn.passages, activePassageIndex });
       setPassageBook({ code: passage.code, name: passage.name }); setPassageChapter(passage.chapter); setPassageStartVerse(passage.startVerse); setPassageVerses(verses);
       setVerseIndex(0); setTakes(verses.map(() => null)); setSaved(verses.map((_, index) => recorded.has(`${passage.name}-${passage.chapter}-${passage.startVerse + index}`)));
-      setBgm(project.bgmId); setVolume(project.bgmVolume); setRecordingMode('continuous'); navigateTo('recording');
-    } catch { setNotice('배정된 말씀 본문을 불러오지 못했어요.'); }
+      setBgm(project.bgmId); setVolume(project.bgmVolume); setRecordingMode('continuous');
+      setRelayRecordingLoading(false);
+    } catch {
+      setRelayRecordingLoading(false);
+      setNotice('배정된 말씀 본문을 불러오지 못했어요.');
+      navigateTo('relay');
+    }
   };
 
 
@@ -2724,6 +2744,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     navigateTo('recording');
   };
 
+  if (!navigationReady) {
+    return <main className="app-shell route-loading-shell" aria-label="화면을 준비하는 중"><LoaderCircle className="spin" /><span>화면을 준비하고 있어요.</span></main>;
+  }
+
   return (
     <main className={`app-shell ${onboardingStep !== 'app' ? 'onboarding-open' : ''}`}>
       {onboardingStep !== 'app' && (
@@ -3451,10 +3475,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             <small>VERSE LEGACY</small>
           </span>
         </a>
-        <div className="project-progress" aria-label={relayRecording ? `${relayRecording.projectTitle} 이어읽기 녹음 중` : activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
+        <div className="project-progress" aria-label={relayRecordingLoading ? '이어읽기 녹음 화면 준비 중' : relayRecording ? `${relayRecording.projectTitle} 이어읽기 녹음 중` : activeProject ? `${activeProject.title} 진행 중` : `${passageBook.name} ${passageChapter}장 ${progress}% 완료`}>
           <div>
-            <span>{relayRecording?.projectTitle ?? activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span>
-            <strong>{relayRecording ? `${relayRecording.turnIndex + 1} turn` : activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong>
+            <span>{relayRecordingLoading ? '이어읽기 녹음 준비 중' : relayRecording?.projectTitle ?? activeProject?.title ?? `자유 녹음 · ${passageBook.name} ${passageChapter}장`}</span>
+            <strong>{relayRecordingLoading ? '잠시만요' : relayRecording ? `${relayRecording.turnIndex + 1} turn` : activeProject ? (activeProject.kind === 'free' ? '자유' : `${activeProject.duration}일`) : `${completedCount}/${passageVerses.length}절`}</strong>
           </div>
           <div className="progress-track">
             <span style={{ width: `${progress}%` }} />
@@ -3478,13 +3502,20 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         </div>
       </header>
 
-      {appTab === 'recording' && (
+      {appTab === 'recording' && !relayRecordingLoading && (
         <div className="prototype-note">
           <Cloud size={15} /> 보관함에 저장하면 나중에 다시 듣고, 선택한 BGM을 목소리 뒤에 함께 재생할 수 있어요.
         </div>
       )}
 
-      {appTab === 'recording' && (
+      {appTab === 'recording' && relayRecordingLoading && (
+        <section className="workspace route-target-loading" aria-label="이어읽기 녹음 화면을 준비하는 중">
+          <LoaderCircle className="spin" />
+          <strong>배정된 말씀을 준비하고 있어요.</strong>
+        </section>
+      )}
+
+      {appTab === 'recording' && !relayRecordingLoading && (
         <section className="workspace" id="recording">
           <aside className="chapter-panel" aria-label="말씀 여정 정보">
             <div>

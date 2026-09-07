@@ -171,7 +171,7 @@ describe('이어읽기 UI 회귀', () => {
     expect(panel).toContain("item.status === 'in_progress' && item.canRecord");
     expect(panel).toContain("item.status === 'in_progress' && !item.canRecord");
     expect(panel).toContain("item.status === 'completed'");
-    expect(panel).toContain('openProject(item.id)');
+    expect(panel).toContain('openProject(item.id, item)');
     expect(panel).toContain('className="journey-status-sections relay-journey-status-sections"');
     expect(panel).toContain('running-project-list');
   });

@@ -39,3 +39,7 @@ next-env.d.ts
 *.tsbuildinfo
 # Licensed BGM originals live in Cloudflare R2, never in Git.
 /public/bgm/*.mp3
+# BrowserStack/Playwright QA artifacts
+artifacts/browserstack/
+.browserstack/
+log/

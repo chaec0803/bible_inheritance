@@ -81,6 +81,7 @@ type RelayProjectSummary = {
   myInviteStatus: string;
   canRecord: boolean;
 };
+type OpeningRelayProject = Pick<RelayProjectSummary, 'id' | 'title' | 'groupName'>;
 
 function relayStatusLabel(status: string) {
   return status === 'pending_invites'
@@ -168,9 +169,14 @@ export function RelayPanel({
 }) {
   const [projects, setProjects] = useState<RelayProjectSummary[]>([]);
   const [project, setProject] = useState<RelayProjectDetail | null>(null);
+  const [openingProject, setOpeningProject] = useState<OpeningRelayProject | null>(() => initialProjectId ? {
+    id: initialProjectId,
+    title: '이어읽기',
+    groupName: '프로젝트 정보를 불러오는 중',
+  } : null);
   const [groups, setGroups] = useState<FriendGroup[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialProjectId);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [creating, setCreating] = useState(false);
@@ -190,6 +196,7 @@ export function RelayPanel({
     recordings: RelayPlaybackRecording[];
     index: number;
   } | null>(null);
+  const [playbackLoadingProject, setPlaybackLoadingProject] = useState<RelayProjectDetail | null>(null);
   const [recordingStatusModal, setRecordingStatusModal] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [playbackPaused, setPlaybackPaused] = useState(false);
@@ -242,19 +249,32 @@ export function RelayPanel({
     return payload.projects;
   }, []);
   const openProject = useCallback(
-    async (projectId: string) => {
-      const payload = await requestJson<{ project: RelayProjectDetail }>(
-        `/api/relay-projects/${projectId}`,
-      );
-      setProject(payload.project);
-      await refreshList();
-      return payload.project;
+    async (projectId: string, summary?: OpeningRelayProject) => {
+      if (summary) {
+        setOpeningProject(summary);
+        setProject(null);
+      }
+      try {
+        const payload = await requestJson<{ project: RelayProjectDetail }>(
+          `/api/relay-projects/${projectId}`,
+        );
+        setProject(payload.project);
+        setOpeningProject(null);
+        void refreshList().catch(() => undefined);
+        return payload.project;
+      } catch (error) {
+        setOpeningProject(null);
+        throw error;
+      }
     },
     [refreshList],
   );
 
   useEffect(() => {
     let active = true;
+    if (initialProjectId) {
+      return () => { active = false; };
+    }
     const timer = window.setTimeout(() => {
       void refreshList()
         .catch((error: Error) => active && setMessage(error.message))
@@ -264,12 +284,13 @@ export function RelayPanel({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [refreshList]);
+  }, [initialProjectId, refreshList]);
 
   useEffect(() => {
     if (!initialProjectId) return;
     const timer = window.setTimeout(() => {
-      void openProject(initialProjectId).catch((error: Error) => setMessage(error.message));
+      setOpeningProject({ id: initialProjectId, title: '이어읽기', groupName: '프로젝트 정보를 불러오는 중' });
+      void openProject(initialProjectId).catch((error: Error) => { setOpeningProject(null); setMessage(error.message); });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [initialProjectId, openProject]);
@@ -458,6 +479,7 @@ export function RelayPanel({
     relayProject: RelayProjectDetail,
   ) => {
     setBusy(true);
+    setPlaybackLoadingProject(relayProject);
     setMessage('');
     try {
       await playbackBgmGainController.activate();
@@ -482,8 +504,21 @@ export function RelayPanel({
       );
     } finally {
       setBusy(false);
+      setPlaybackLoadingProject(null);
     }
   };
+
+  if (openingProject)
+    return (
+      <section className="relay-screen relay-detail-loading" aria-label={`${openingProject.title} 상세 화면을 준비하는 중`}>
+        <header className="relay-detail-heading">
+          <p className="eyebrow">OUR WORD JOURNEY</p>
+          <h2>{openingProject.title}</h2>
+          <strong>{openingProject.groupName}</strong>
+        </header>
+        <div className="route-target-loading"><LoaderCircle className="spin" /><strong>이어읽기 정보를 불러오고 있어요.</strong></div>
+      </section>
+    );
 
   if (loading)
     return (
@@ -1030,6 +1065,14 @@ export function RelayPanel({
               />
           </ContinuousPlaybackView>
         )}
+        {playbackLoadingProject && !playback && (
+          <div className="continuous-player-backdrop" role="presentation">
+            <dialog className="continuous-player-modal route-target-loading" open aria-label="이어듣기를 준비하는 중">
+              <LoaderCircle className="spin" />
+              <strong>{playbackLoadingProject.title} 이어듣기를 준비하고 있어요.</strong>
+            </dialog>
+          </div>
+        )}
       </section>
     );
   }
@@ -1052,7 +1095,16 @@ export function RelayPanel({
   const renderProjectCards = (items: RelayProjectSummary[], completed = false) => (
     <div className={`running-project-list ${completed ? 'completed-project-list' : ''}`}>
       {items.map((item, index) => (
-        <button className={`project-color-${index % 5}`} type="button" onClick={() => void openProject(item.id)} key={item.id}>
+        <button
+          className={`project-color-${index % 5}`}
+          type="button"
+          onClick={() => {
+            void openProject(item.id, item).catch((error: Error) => {
+              setMessage(error.message);
+            });
+          }}
+          key={item.id}
+        >
           <span>{completed ? <Check size={20} /> : <Users size={20} />}</span>
           <div>
             <small>{relayStatusLabel(item.status)}</small>

@@ -1,0 +1,21 @@
+userName: ${BROWSERSTACK_USERNAME}
+accessKey: ${BROWSERSTACK_ACCESS_KEY}
+
+projectName: Verse Legacy
+buildName: v116 real iPhone Safari QA
+buildIdentifier: ${BUILD_NUMBER}
+
+platforms:
+  - browserName: safari
+    osVersion: "18"
+    deviceName: iPhone 16 Pro
+  - browserName: safari
+    osVersion: "17"
+    deviceName: iPhone 15 Pro
+
+parallelsPerPlatform: 1
+browserstackLocal: false
+debug: true
+networkLogs: true
+video: true
+consoleLogs: disable

@@ -1,0 +1,145 @@
+{
+  "config": {
+    "argv": [
+      "/Users/user/.local/share/nodejs/node-v22.23.2-darwin-arm64/bin/node",
+      "/Users/user/Documents/bible_inheritance/node_modules/.pnpm/@playwright+test@1.61.0/node_modules/@playwright/test/cli.js",
+      "test",
+      "-c",
+      "qa/browserstack/playwright.config.ts",
+      "--list"
+    ],
+    "configFile": "/Users/user/Documents/bible_inheritance/qa/browserstack/playwright.config.ts",
+    "rootDir": "/Users/user/Documents/bible_inheritance/qa/browserstack",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/user/Documents/bible_inheritance/qa/browserstack/artifacts/browserstack/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "safari@iPhone 16 Pro:18@browserstack-mobile",
+        "name": "safari@iPhone 16 Pro:18@browserstack-mobile",
+        "testDir": "/Users/user/Documents/bible_inheritance/qa/browserstack",
+        "testIgnore": [],
+        "testMatch": [
+          "/real-iphone\\.spec\\.ts/"
+        ],
+        "timeout": 180000
+      },
+      {
+        "outputDir": "/Users/user/Documents/bible_inheritance/qa/browserstack/artifacts/browserstack/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "safari@iPhone 15 Pro:17@browserstack-mobile",
+        "name": "safari@iPhone 15 Pro:17@browserstack-mobile",
+        "testDir": "/Users/user/Documents/bible_inheritance/qa/browserstack",
+        "testIgnore": [],
+        "testMatch": [
+          "/real-iphone\\.spec\\.ts/"
+        ],
+        "timeout": 180000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "artifacts/browserstack/report",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "artifacts/browserstack/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "real-iphone.spec.ts",
+      "file": "real-iphone.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "v116 production real iPhone Safari smoke and media workflow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "safari@iPhone 16 Pro:18@browserstack-mobile",
+              "projectName": "safari@iPhone 16 Pro:18@browserstack-mobile",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "7449d962b2a837a6e262-fbce91035d899b895e6c",
+          "file": "real-iphone.spec.ts",
+          "line": 52,
+          "column": 1
+        },
+        {
+          "title": "v116 production real iPhone Safari smoke and media workflow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "safari@iPhone 15 Pro:17@browserstack-mobile",
+              "projectName": "safari@iPhone 15 Pro:17@browserstack-mobile",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "7449d962b2a837a6e262-fa3af2bb00fe7a4cb81e",
+          "file": "real-iphone.spec.ts",
+          "line": 52,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-07T02:07:28.668Z",
+    "duration": 49.29000000000002,
+    "expected": 0,
+    "skipped": 2,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

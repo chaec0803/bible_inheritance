@@ -1514,3 +1514,20 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
 .relay-waiting-details p { padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--canvas); border: 1px solid var(--line); border-radius: 12px; }
 .relay-waiting-details small { color: var(--muted); }
 @media (max-width: 760px) { .relay-project-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.route-loading-shell,
+.route-target-loading {
+  display: grid;
+  place-content: center;
+  place-items: center;
+  gap: 12px;
+  min-height: 240px;
+  text-align: center;
+}
+
+.route-loading-shell {
+  min-height: 100dvh;
+}
+
+.relay-detail-loading .route-target-loading {
+  min-height: 320px;
+}
