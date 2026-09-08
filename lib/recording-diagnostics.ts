@@ -1,9 +1,10 @@
-export const recordingStages = ['microphone', 'audio-graph', 'recorder-create', 'recorder-start', 'recorder-runtime', 'capture-empty', 'local-save', 'local-read', 'local-delete', 'upload', 'library-load', 'audio-load', 'audio-play', 'bgm-play'] as const;
+export const recordingStages = ['microphone', 'audio-graph', 'recorder-create', 'recorder-start', 'recorder-runtime', 'capture-empty', 'local-save', 'local-read', 'local-delete', 'upload', 'library-load', 'audio-load', 'audio-play', 'bgm-play', 'bgm-download', 'bgm-decode', 'bgm-context', 'bgm-start', 'bgm-load-stalled'] as const;
 export type RecordingStage = typeof recordingStages[number];
-const errorNames = ['NotAllowedError', 'NotFoundError', 'NotReadableError', 'OverconstrainedError', 'SecurityError', 'NotSupportedError', 'InvalidStateError', 'QuotaExceededError', 'AbortError', 'DataError', 'UnknownError', 'TypeError', 'Error'];
+const errorNames = ['NotAllowedError', 'NotFoundError', 'NotReadableError', 'OverconstrainedError', 'SecurityError', 'NotSupportedError', 'InvalidStateError', 'QuotaExceededError', 'AbortError', 'DataError', 'EncodingError', 'UnknownError', 'TypeError', 'Error'];
 export type RecordingDiagnostic = {
   stage: RecordingStage; errorName?: string; status?: number; mediaCode?: number;
   readyState?: number; networkState?: number; sizeBytes?: number; requestId?: string;
+  track?: string; surface?: string; contextState?: string; elapsedMs?: number;
   online?: boolean; visibility?: string; browser?: string;
 };
 
@@ -14,13 +15,16 @@ export function sanitizeRecordingDiagnostic(input: unknown): RecordingDiagnostic
   if (!recordingStages.includes(value.stage as RecordingStage)) return null;
   const result: RecordingDiagnostic = { stage: value.stage as RecordingStage };
   if (typeof value.errorName === 'string' && errorNames.includes(value.errorName)) result.errorName = value.errorName;
-  for (const key of ['status', 'mediaCode', 'readyState', 'networkState', 'sizeBytes'] as const) {
+  for (const key of ['status', 'mediaCode', 'readyState', 'networkState', 'sizeBytes', 'elapsedMs'] as const) {
     if (typeof value[key] === 'number' && Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= 1_000_000_000) result[key] = value[key];
   }
   if (typeof value.requestId === 'string' && /^[a-f0-9-]{36}$/.test(value.requestId)) result.requestId = value.requestId;
   if (typeof value.online === 'boolean') result.online = value.online;
   if (value.visibility === 'visible' || value.visibility === 'hidden') result.visibility = value.visibility;
   if (typeof value.browser === 'string' && /^(Safari|Chrome|Firefox|Edge|iOS|Other)(\/\d{1,3}(\.\d{1,3}){0,2})?$/.test(value.browser)) result.browser = value.browser;
+  if (['aeternum', 'unto-thee', 'the-kings-return'].includes(String(value.track))) result.track = String(value.track);
+  if (['library', 'received-gift', 'gift-preview', 'bgm-preview'].includes(String(value.surface))) result.surface = String(value.surface);
+  if (['running', 'suspended', 'interrupted', 'closed'].includes(String(value.contextState))) result.contextState = String(value.contextState);
   return result;
 }
 

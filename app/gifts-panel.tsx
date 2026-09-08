@@ -110,7 +110,7 @@ export function GiftsPanel({
   const [letterPopupStage, setLetterPopupStage] = useState<'notice' | 'content'>('notice');
   const voiceRef = useRef<HTMLAudioElement | null>(null);
   const playbackCloseTimerRef = useRef<number | null>(null);
-  const bgmGainController = useMemo(() => createGiftPlaybackAudio(), []);
+  const bgmGainController = useMemo(() => createGiftPlaybackAudio('received-gift'), []);
   const sentGiftsRef = useRef<SentGift[]>([]);
 
   const refresh = async () => {

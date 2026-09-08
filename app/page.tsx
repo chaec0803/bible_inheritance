@@ -1580,7 +1580,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     playbackBgmAudioRef.current = null;
     const option = bgmOptions.find((item) => item.id === bgmId);
     if (!option?.audioSrc || bgmVolume <= 0) return true;
-    const bgmAudio = createBufferBgmPlayer(context, () => loadArrayBufferOnce(option.audioSrc!, bgmArrayBufferPromisesRef.current), bgmVolume);
+    const bgmAudio = createBufferBgmPlayer(context, () => loadArrayBufferOnce(option.audioSrc!, bgmArrayBufferPromisesRef.current), bgmVolume, { surface: 'library', track: option.audioSrc.split('/').pop()?.split('?')[0] });
     playbackBgmAudioRef.current = bgmAudio;
     try {
       // Invoke play during the tap, before waiting for any asynchronous work.

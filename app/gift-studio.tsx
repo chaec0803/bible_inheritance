@@ -187,8 +187,8 @@ export function GiftStudio({
   const recordingBoundariesRef = useRef<GiftVerseBoundary[]>([]);
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewVoiceRef = useRef<HTMLAudioElement | null>(null);
-  const fullPreviewBgmRef = useMemo(() => createGiftPlaybackAudio(), []);
-  const bgmGainController = useMemo(() => createGiftPlaybackAudio(), []);
+  const fullPreviewBgmRef = useMemo(() => createGiftPlaybackAudio('gift-preview'), []);
+  const bgmGainController = useMemo(() => createGiftPlaybackAudio('bgm-preview'), []);
   const fullPreviewRunRef = useRef(0);
   const fullPreviewIndexRef = useRef(0);
   const musicSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
