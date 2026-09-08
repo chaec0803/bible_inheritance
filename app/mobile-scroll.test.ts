@@ -12,8 +12,9 @@ describe('아이폰 모달과 스크롤', () => {
     expect(block).toContain('-webkit-overflow-scrolling: touch');
   });
 
-  it('모바일 구절 탭은 손가락으로 가로 스크롤할 수 있다', () => {
-    expect(css).toContain('touch-action: pan-x');
+  it('모바일 구절 탭은 가로 스크롤과 페이지 세로 스크롤을 모두 허용한다', () => {
+    expect(css).not.toContain('touch-action: pan-x');
+    expect(css).toContain('touch-action: auto');
     expect(css).toContain('overscroll-behavior-inline: contain');
   });
 });

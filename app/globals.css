@@ -189,14 +189,16 @@ html[data-theme='dark'] {
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: auto; background: var(--canvas); }
 body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif; word-break: keep-all; overflow-wrap: break-word; line-break: strict; transition: background-color .22s ease, color .22s ease; }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
 
-.onboarding-overlay { position: fixed; inset: 0; z-index: 100; min-height: 100dvh; padding: 28px clamp(18px, 4vw, 56px) 44px; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; background: radial-gradient(circle at 15% 10%, var(--sage-soft), transparent 34%), var(--canvas); }
-.app-shell.onboarding-open > :not(.onboarding-overlay):not(.floating-route-actions):not(.continuous-player-backdrop):not(.word-card-modal-backdrop):not(.completion-modal-backdrop):not(.gift-dialog-backdrop):not(.confirm-retake-backdrop):not(.gift-arrival-backdrop) { pointer-events: none; }
+.onboarding-overlay { position: relative; z-index: 100; min-height: 100dvh; padding: 28px clamp(18px, 4vw, 56px) 44px; background: radial-gradient(circle at 15% 10%, var(--sage-soft), transparent 34%), var(--canvas); }
+.app-shell.onboarding-open > :not(.onboarding-overlay):not(.floating-route-actions):not(.continuous-player-backdrop):not(.word-card-modal-backdrop):not(.completion-modal-backdrop):not(.gift-dialog-backdrop):not(.confirm-retake-backdrop):not(.gift-arrival-backdrop):not(.toast) { pointer-events: none; display: none; }
+/* Full-page routes share the document scroll; no hidden page remains underneath. */
+.app-shell.onboarding-open { padding-bottom: 0; }
 
 .gift-arrival-backdrop { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 20px; overflow-y: auto; background: rgba(31, 43, 38, .62); backdrop-filter: blur(10px); }
 .gift-arrival-modal { position: relative; width: min(440px, 100%); margin: 0; padding: 34px 30px 30px; overflow: hidden; color: var(--ink); background: linear-gradient(155deg, #fffdf7 0%, #fff7df 55%, #f1f6ec 100%); border: 1px solid rgba(203, 155, 64, .32); border-radius: 28px; box-shadow: 0 30px 90px rgba(20, 34, 28, .34); text-align: center; }
@@ -599,7 +601,7 @@ button { color: inherit; }
 .project-switcher-heading strong { margin-top: 3px; font-size: 12px; }
 .project-switcher-heading > span { padding: 5px 8px; color: var(--sage); background: var(--sage-soft); border-radius: 999px; font-size: 8px; font-weight: 900; }
 .project-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
-.project-tabs { -webkit-overflow-scrolling: touch; touch-action: pan-x; overscroll-behavior-inline: contain; }
+.project-tabs { -webkit-overflow-scrolling: touch; touch-action: auto; overscroll-behavior-inline: contain; }
 .project-schedule-preview ol, .bible-book-grid, .bible-chapter-grid, .bible-verse-preview, .continuous-player-list > div, .chapter-menu-list, .verse-menu-list { -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior-block: contain; }
 .project-tabs > button { --project-accent: var(--sage); --project-tint: var(--surface-subtle); min-width: 230px; padding: 11px 13px; display: flex; align-items: center; gap: 9px; color: var(--muted); background: var(--project-tint); border: 1px solid color-mix(in srgb, var(--project-accent) 28%, var(--line)); border-radius: 12px; text-align: left; cursor: pointer; }
 .project-tabs > button.project-color-0 { --project-accent: #4f7b69; --project-tint: color-mix(in srgb, #4f7b69 11%, var(--paper)); }
@@ -1286,7 +1288,7 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
   .chapter-panel > div:first-child { display: grid; grid-template-columns: 1fr auto; align-items: end; }
   .chapter-panel h2 { grid-column: 1; }
   .chapter-panel .muted { grid-column: 1 / -1; margin-bottom: 0; }
-  .verse-list { grid-column: 1 / -1; display: flex; margin: 14px 0 0; overflow-x: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x; overscroll-behavior-inline: contain; }
+  .verse-list { grid-column: 1 / -1; display: flex; margin: 14px 0 0; overflow-x: auto; -webkit-overflow-scrolling: touch; touch-action: auto; overscroll-behavior-inline: contain; }
   .verse-item { flex: 0 0 auto; gap: 8px; }
   .family-card { display: none; }
   .friends-section { width: calc(100% - 24px); margin-top: 20px; }
@@ -1531,3 +1533,28 @@ html[data-theme='dark'] .sound-summary small { color: var(--muted); }
 .relay-detail-loading .route-target-loading {
   min-height: 320px;
 }
+
+/* On phones, reading-plan lists flow with the page instead of trapping a swipe. */
+@media (max-width: 760px) {
+  .onboarding-overlay .custom-plan-preview,
+  .onboarding-overlay .project-schedule-preview ol,
+  .onboarding-overlay .bible-book-grid,
+  .onboarding-overlay .bible-chapter-grid,
+  .onboarding-overlay .bible-verse-preview {
+    max-height: none;
+    overflow-y: visible;
+    overscroll-behavior-block: auto;
+  }
+}
+
+/* Lock only the active page while a dialog is open. Hidden routes must not
+   retain a scroll lock, and closing the last dialog restores scrolling. */
+html:has(.onboarding-overlay dialog[open]),
+html:has(.app-shell:not(.onboarding-open) dialog[open]),
+html:has(.app-shell > :is(.continuous-player-backdrop, .word-card-modal-backdrop, .completion-modal-backdrop, .gift-dialog-backdrop, .confirm-retake-backdrop, .gift-arrival-backdrop) > dialog[open]) {
+  overflow: hidden;
+  overscroll-behavior: none;
+  --route-actions-visibility: hidden;
+}
+
+.floating-route-actions { visibility: var(--route-actions-visibility, visible); }

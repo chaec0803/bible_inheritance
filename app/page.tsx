@@ -10,7 +10,7 @@ import { getBackStep, getNavigationHash, parseNavigationRoute, type NavigationRo
 import { getJourneyRecordingIds, getRequiredJourneyReferences, isJourneyCompleted, removeJourney, restoreJourney, splitOngoingJourneys } from '@/lib/journey-policy';
 import { themedProjects } from '@/lib/themed-projects';
 import { CURRENT_DATA_VERSION, getLegacyStorageKeysToClear } from '@/lib/data-version';
-import { PLAYBACK_AUTO_CLOSE_DELAY_MS, toggleAudioPlayback } from '@/lib/audio-playback';
+import { isPlaybackPauseInterruption, PLAYBACK_AUTO_CLOSE_DELAY_MS, toggleAudioPlayback } from '@/lib/audio-playback';
 import { createLatestAudioRequestGate } from '@/lib/audio-request-gate';
 import { loadArrayBufferOnce, preloadImages } from '@/lib/media-preload';
 import { recoverJourneyProjects } from '@/lib/user-state-policy';
@@ -34,7 +34,7 @@ import { createSegmentedRecordingSession, type SegmentedRecordingSession } from 
 import { trackRecordingPersistence } from '@/lib/recording-persistence';
 import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
 import { getVoiceRecordingConstraints } from '@/lib/recording-audio';
-import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
+import { createBufferBgmPlayer } from '@/lib/buffer-bgm-player';
 import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
 export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
 
@@ -747,11 +747,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   const chapterPausedRef = useRef(false);
   const chapterBgmIdRef = useRef<string | null>(null);
   const playbackAudioContextRef = useRef<AudioContext | null>(null);
-  const playbackBgmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const playbackBgmAudioRef = useRef<ReturnType<typeof createBufferBgmPlayer> | null>(null);
   const bgmArrayBufferPromisesRef = useRef(new Map<string, Promise<ArrayBuffer>>());
   const cardPreloadImagesRef = useRef<ReturnType<typeof preloadImages>>([]);
   const playbackBgmRequestGateRef = useRef(createLatestAudioRequestGate());
-  const chapterBgmGainController = useMemo(() => createBrowserBgmGainController(), []);
+  const chapterPlaybackRequestGateRef = useRef(createLatestAudioRequestGate());
   const stopChapterPlaybackRef = useRef<() => void>(() => undefined);
   const chapterPlaybackCloseTimerRef = useRef<number | null>(null);
   const libraryAudioSourceRefs = useRef(new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>());
@@ -1121,8 +1121,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, [activeProject?.id, activeProjects, collectedCardIds, pendingCardAwards, userStateReady]);
 
   useEffect(() => {
-    chapterBgmGainController.setVolume(volume);
-  }, [chapterBgmGainController, volume]);
+    playbackBgmAudioRef.current?.setVolume(volume);
+  }, [volume]);
 
   useEffect(() => {
     let active = true;
@@ -1167,12 +1167,11 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       recordingSessionRef.current = null;
       segmentedRecordingSessionRef.current?.dispose();
       segmentedRecordingSessionRef.current = null;
-      playbackBgmAudioRef.current?.pause();
+      playbackBgmAudioRef.current?.dispose();
       playbackBgmAudioRef.current = null;
-      chapterBgmGainController.dispose();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [chapterBgmGainController]);
+  }, []);
 
   const completedCount = saved.filter(Boolean).length;
   const progress = useMemo(() => Math.round((completedCount / passageVerses.length) * 100), [completedCount, passageVerses.length]);
@@ -1555,7 +1554,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     userStateReady,
   ]);
 
-  const prepareChapterAudio = async () => {
+  const prepareChapterAudio = () => {
     let context = playbackAudioContextRef.current;
     if (!context || context.state === 'closed') {
       context = new AudioContext();
@@ -1568,25 +1567,39 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       source.connect(context!.destination);
       libraryAudioSourceRefs.current.set(audio, source);
     });
-    await context.resume();
     return context;
   };
 
-  const startInternalChapterBgm = async (context: AudioContext, bgmId: string) => {
+  const startInternalChapterBgm = async (context: AudioContext, bgmId: string, bgmVolume = volume) => {
     const generation = playbackBgmRequestGateRef.current.begin();
-    playbackBgmAudioRef.current?.pause();
+    playbackBgmAudioRef.current?.dispose();
     playbackBgmAudioRef.current = null;
     const option = bgmOptions.find((item) => item.id === bgmId);
-    if (!option?.audioSrc) return true;
-    await chapterBgmGainController.activate();
-    await context.resume();
-    if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
-    const bgmAudio = new Audio(option.audioSrc);
-    bgmAudio.loop = true;
-    chapterBgmGainController.connect(bgmAudio, volume);
+    if (!option?.audioSrc || bgmVolume <= 0) return true;
+    const bgmAudio = createBufferBgmPlayer(context, () => loadArrayBufferOnce(option.audioSrc!, bgmArrayBufferPromisesRef.current), bgmVolume);
     playbackBgmAudioRef.current = bgmAudio;
-    await bgmAudio.play();
-    return true;
+    try {
+      // Invoke play during the tap, before waiting for any asynchronous work.
+      await bgmAudio.play();
+      return playbackBgmRequestGateRef.current.isCurrent(generation);
+    } catch (error) {
+      bgmAudio.dispose();
+      if (playbackBgmAudioRef.current === bgmAudio) playbackBgmAudioRef.current = null;
+      if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
+      throw error;
+    }
+  };
+
+  const updateLibraryBgmVolume = (nextVolume: number) => {
+    setVolume(nextVolume);
+    playbackBgmAudioRef.current?.setVolume(nextVolume);
+    if (!chapterPlayingRef.current || chapterPausedRef.current) return;
+    if (nextVolume > 0 && (!playbackBgmAudioRef.current || playbackBgmAudioRef.current.paused)) {
+      const context = playbackAudioContextRef.current;
+      if (context) void startInternalChapterBgm(context, bgm, nextVolume).catch(() => {
+        if (chapterPlayingRef.current) setNotice('배경음악을 재생하지 못해 목소리만 이어서 재생해요.');
+      });
+    }
   };
 
   const stopLibraryPlayback = useCallback((recordingId?: string) => {
@@ -1598,6 +1611,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   }, []);
 
   const stopChapterPlayback = () => {
+    chapterPlaybackRequestGateRef.current.cancel();
     if (chapterPlaybackCloseTimerRef.current !== null) {
       window.clearTimeout(chapterPlaybackCloseTimerRef.current);
       chapterPlaybackCloseTimerRef.current = null;
@@ -1609,8 +1623,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     setChapterPlaying(false);
     setChapterPaused(false);
     setPlaybackListOpen(false);
-    playbackBgmAudioRef.current?.pause();
-    if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.currentTime = 0;
+    playbackBgmAudioRef.current?.dispose();
     playbackBgmAudioRef.current = null;
     void playbackAudioContextRef.current?.suspend();
     libraryAudioRefs.current.forEach((audio) => {
@@ -1835,8 +1848,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
   const stopPreview = () => {
     playbackBgmRequestGateRef.current.cancel();
-    playbackBgmAudioRef.current?.pause();
-    if (playbackBgmAudioRef.current) playbackBgmAudioRef.current.currentTime = 0;
+    playbackBgmAudioRef.current?.dispose();
     playbackBgmAudioRef.current = null;
     restartBgmOnNextPlayRef.current = true;
     setActivePreview(null);
@@ -1854,7 +1866,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   };
 
   const startChapterPlayback = async () => {
-    if (playbackQueue.length === 0) return;
+    if (playbackQueue.length === 0 || chapterPlayingRef.current) return;
+    const generation = chapterPlaybackRequestGateRef.current.begin();
     libraryAudioRefs.current.forEach((audio) => {
       audio.pause();
       audio.currentTime = 0;
@@ -1875,13 +1888,19 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       return;
     }
     try {
-      const context = await prepareChapterAudio();
-      const started = await startInternalChapterBgm(context, bgm);
-      if (!started) return;
-      await firstAudio.play();
-    } catch {
+      const context = prepareChapterAudio();
+      const ready = context.resume();
+      const voice = firstAudio.play();
+      const music = startInternalChapterBgm(context, bgm).catch((error: unknown) => {
+        if (chapterPlaybackRequestGateRef.current.isCurrent(generation) && !isPlaybackPauseInterruption(error)) {
+          setNotice('배경음악을 재생하지 못해 목소리만 이어서 재생해요.');
+        }
+      });
+      await Promise.all([ready, voice, music]);
+    } catch (error) {
+      if (!chapterPlaybackRequestGateRef.current.isCurrent(generation) || isPlaybackPauseInterruption(error)) return;
       stopChapterPlayback();
-      setNotice('목소리와 BGM을 함께 재생하지 못했어요. 다시 한 번 눌러 주세요.');
+      setNotice('녹음된 목소리를 재생하지 못했어요. 잠시 후 다시 눌러 주세요.');
     }
   };
 
@@ -1942,19 +1961,25 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     }
     chapterPausedRef.current = false;
     setChapterPaused(false);
-    void playbackAudioContextRef.current
-      ?.resume()
-      .then(() => Promise.all([
-        audio.play(),
-        playbackBgmAudioRef.current?.src
-          ? playbackBgmAudioRef.current.play()
-          : Promise.resolve(),
-      ]))
-      .catch(() => {
-        chapterPausedRef.current = true;
-        setChapterPaused(true);
-        setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
-      });
+    const music = playbackBgmAudioRef.current;
+    const context = playbackAudioContextRef.current;
+    const musicPlayback = volume <= 0 ? Promise.resolve()
+      : music ? music.play()
+      : context ? startInternalChapterBgm(context, bgm) : Promise.resolve();
+    void Promise.all([
+      playbackAudioContextRef.current?.resume(),
+      audio.play(),
+      musicPlayback.catch(() => {
+        music?.dispose();
+        if (playbackBgmAudioRef.current === music) playbackBgmAudioRef.current = null;
+        if (chapterPlayingRef.current) setNotice('배경음악을 재생하지 못해 목소리만 이어서 재생해요.');
+      }),
+    ]).catch((error: unknown) => {
+      if (!chapterPlayingRef.current || isPlaybackPauseInterruption(error)) return;
+      chapterPausedRef.current = true;
+      setChapterPaused(true);
+      setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
+    });
   };
 
   const handleLibraryEnded = (recordingId: string) => {
@@ -2024,9 +2049,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
         context = new AudioContext();
         playbackAudioContextRef.current = context;
       }
-      await context.resume();
       if (activePreview === option.id && bgmPaused && playbackBgmAudioRef.current) {
-        await playbackBgmAudioRef.current.play();
+        await Promise.all([context.resume(), playbackBgmAudioRef.current.play()]);
         setBgmPaused(false);
       } else {
         const started = await startInternalChapterBgm(context, option.id);
@@ -2058,11 +2082,9 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
     const current = playbackQueue.find((item) => item.id === activeLibraryRef.current) ?? playbackQueue[0];
     if (!current) return;
     playLibraryBgm(current);
-    void prepareChapterAudio()
-      .then((context) => startInternalChapterBgm(context, option.id))
+    void startInternalChapterBgm(prepareChapterAudio(), option.id)
       .catch(() => {
-        stopChapterPlayback();
-        setNotice('선택한 BGM으로 바꾸지 못했어요. 다시 눌러 주세요.');
+        setNotice('배경음악을 바꾸지 못해 목소리만 이어서 재생해요.');
       });
   };
 
@@ -4022,7 +4044,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                           <span>
                             <Volume2 size={14} /> BGM <strong>{volume}%</strong>
                           </span>
-                          <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+                          <input aria-label="이어듣기 배경음악 음량" type="range" min="0" max="100" value={volume} onChange={(event) => updateLibraryBgmVolume(Number(event.target.value))} />
                         </label>
                         {!chapterPlaying ? (
                           <>
@@ -4154,7 +4176,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
               onTogglePlayback={chapterPaused ? resumeChapterPlayback : pauseChapterPlayback}
               onToggleList={() => setPlaybackListOpen((current) => !current)}
               onSelect={(index) => void jumpToChapterRecording(playbackQueue[index])}
-              onVolumeChange={setVolume}
+              onVolumeChange={updateLibraryBgmVolume}
             />
           )}
 

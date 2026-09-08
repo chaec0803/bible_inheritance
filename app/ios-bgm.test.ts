@@ -6,13 +6,13 @@ const playback = readFileSync(new URL('./continuous-playback-view.tsx', import.m
 const bgmTracks = ['aeternum', 'unto-thee', 'the-kings-return'];
 
 describe('아이폰 이어듣기 BGM', () => {
-  it('앱 내부 BGM을 iOS에서도 안정적인 전용 audio 요소로 재생한다', () => {
+  it('앱 내부 BGM을 iOS에서도 목소리와 같은 Web Audio 엔진으로 재생한다', () => {
     expect(page).toContain("audioSrc: '/api/bgm/aeternum?v=3'");
     expect(page).toContain('createMediaElementSource(audio)');
     expect(page).toContain('playbackBgmAudioRef');
-    expect(page).toContain('chapterBgmGainController.connect(bgmAudio, volume)');
-    expect(page).toContain('chapterBgmGainController.setVolume(volume)');
-    expect(page).toContain('await bgmAudio.play()');
+    expect(page).toContain('createBufferBgmPlayer(context,');
+    expect(page).toContain('playbackBgmAudioRef.current?.setVolume(volume)');
+    expect(page).not.toContain('new Audio(option.audioSrc)');
     const previewHandler = page.slice(page.indexOf('const playSelectedBgm'), page.indexOf('const pauseSelectedBgm'));
     expect(previewHandler).toContain('startInternalChapterBgm(context, option.id)');
     expect(previewHandler).not.toContain('youtubePlayerRef.current.loadVideoById');
