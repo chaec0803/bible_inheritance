@@ -96,11 +96,21 @@ export async function createSegmentedRecordingSession(
 
   const beginSegment = () => {
     if (closed) throw new Error('recording session is closed');
-    const segment = createSegment();
-    segment.startedAt = now();
-    segment.recorder.start(options.timeslice);
-    current = segment;
-    return segment;
+    let segment: ActiveSegment | null = null;
+    try {
+      segment = createSegment();
+      segment.startedAt = now();
+      segment.recorder.start(options.timeslice);
+      current = segment;
+      return segment;
+    } catch (error) {
+      if (segment) activeRecorders.delete(segment.recorder);
+      // A failed rotation must leave the previous segment available to stop.
+      // Initial startup failure has no active capture to wait for.
+      if (!current) closed = true;
+      cleanup();
+      throw error;
+    }
   };
 
   return {

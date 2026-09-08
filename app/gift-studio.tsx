@@ -46,6 +46,7 @@ import {
 import { createRecordingSession, type RecordingSession } from '@/lib/recording-session';
 import type { CapturedRecording } from '@/lib/recording-session';
 import { createSegmentedRecordingSession, type SegmentedRecordingSession } from '@/lib/segmented-recording-session';
+import { trackRecordingPersistence } from '@/lib/recording-persistence';
 import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
 
 export const GIFT_STUDIO_STEPS = [
@@ -397,10 +398,12 @@ export function GiftStudio({
     void queued.done.catch(() => undefined);
   };
   const trackGiftCapture = (targetDraft: Draft, position: number, capture: Promise<CapturedRecording>) => {
-    const pending = capture.then((value) => persistGiftCapture(targetDraft, position, value));
-    pendingCapturePersistsRef.current.add(pending);
-    void pending.finally(() => pendingCapturePersistsRef.current.delete(pending)).catch(() => undefined);
-    return pending;
+    const pending = capture.then((value) => persistGiftCapture(targetDraft, position, value))
+      .catch(() => {
+        const item = targetDraft.items[position];
+        throw new Error(`${item.book} ${item.chapter}장 ${item.verse}절을 기기에 저장하지 못했어요. 해당 절을 다시 녹음해 주세요.`);
+      });
+    return trackRecordingPersistence(pendingCapturePersistsRef.current, pending);
   };
   const finishContinuousGiftRecording = async (targetDraft: Draft) => {
     const session = segmentedRecordingSessionRef.current;

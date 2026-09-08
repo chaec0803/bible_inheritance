@@ -30,6 +30,53 @@ function harness() {
 }
 
 describe('segmented recording session', () => {
+  it.each(['constructor', 'start'])('%s 실패 시 dispose를 기다리지 않고 마이크와 context를 정리한다', async (failureAt) => {
+    const test = harness();
+    const failure = new Error('encoder startup failed');
+    const session = await createSegmentedRecordingSession({
+      getUserMedia: async () => test.sourceStream,
+      createGraph: () => test.graph,
+      createRecorder: () => {
+        if (failureAt === 'constructor') throw failure;
+        const recorder = test.createRecorder();
+        recorder.start = vi.fn(() => { throw failure; });
+        return recorder;
+      },
+    });
+
+    expect(() => session.start()).toThrow(failure);
+    expect(session.recording).toBe(false);
+    expect(test.track.stop).toHaveBeenCalledOnce();
+    expect(test.graph.close).toHaveBeenCalledOnce();
+    session.dispose();
+    await expect(session.stop()).resolves.toBeNull();
+    expect(test.track.stop).toHaveBeenCalledOnce();
+    expect(test.graph.close).toHaveBeenCalledOnce();
+  });
+
+  it('다음 절 시작 실패 후 이전 절을 저장하고 자원을 정리할 수 있다', async () => {
+    const test = harness();
+    const session = await createSegmentedRecordingSession({
+      getUserMedia: async () => test.sourceStream,
+      createGraph: () => test.graph,
+      createRecorder: () => {
+        const recorder = test.createRecorder();
+        if (test.recorders.length === 2) recorder.start = vi.fn(() => { throw new Error('start failed'); });
+        return recorder;
+      },
+    });
+    session.start();
+    expect(() => session.rotate()).toThrow('start failed');
+    expect(session.recording).toBe(true);
+    expect(test.track.stop).not.toHaveBeenCalled();
+    const capture = session.stop();
+    test.recorders[0].emitStop('preserved voice');
+    expect(await (await capture)?.blob.text()).toBe('preserved voice');
+    session.dispose();
+    expect(test.track.stop).toHaveBeenCalledOnce();
+    expect(test.graph.close).toHaveBeenCalledOnce();
+  });
+
   it('마이크 stream 하나를 유지하며 절마다 별도 원본 Blob을 만든다', async () => {
     const test = harness();
     const getUserMedia = vi.fn(async () => test.sourceStream);

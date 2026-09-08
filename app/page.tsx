@@ -31,6 +31,7 @@ import type { GiftDraftScope } from '@/lib/gift-draft';
 import { normalizeBibleRange, type BibleRange } from '@/lib/bible-scope';
 import { createRecordingSession, type CapturedRecording, type RecordingSession } from '@/lib/recording-session';
 import { createSegmentedRecordingSession, type SegmentedRecordingSession } from '@/lib/segmented-recording-session';
+import { trackRecordingPersistence } from '@/lib/recording-persistence';
 import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
 import { getVoiceRecordingConstraints } from '@/lib/recording-audio';
 import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
@@ -811,11 +812,10 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
   );
 
   const trackContinuousCapture = useCallback((capture: Promise<CapturedRecording>, targetVerseIndex: number) => {
-    const pending = capture.then((value) => persistContinuousCapture(value, targetVerseIndex));
-    pendingContinuousCapturesRef.current.add(pending);
-    void pending.finally(() => pendingContinuousCapturesRef.current.delete(pending)).catch(() => undefined);
-    return pending;
-  }, [persistContinuousCapture]);
+    const pending = capture.then((value) => persistContinuousCapture(value, targetVerseIndex))
+      .catch(() => { throw new Error(`${passageStartVerse + targetVerseIndex}절을 기기에 저장하지 못했어요. 해당 절을 다시 녹음해 주세요.`); });
+    return trackRecordingPersistence(pendingContinuousCapturesRef.current, pending);
+  }, [passageStartVerse, persistContinuousCapture]);
 
   const moveContinuousVerse = useCallback(
     (nextIndex: number, _source: 'manual') => {
