@@ -6,7 +6,7 @@ import { ChevronLeft, CircleStop, Download, Gift, Headphones, List, LoaderCircle
 import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
 import { THANK_YOU_TEMPLATES } from '@/lib/gift-thank-you';
 import { isPlaybackPauseInterruption, PLAYBACK_AUTO_CLOSE_DELAY_MS } from '@/lib/audio-playback';
-import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
+import { createGiftPlaybackAudio } from '@/lib/gift-playback-audio';
 
 type GiftRecording = {
   id: string;
@@ -109,9 +109,8 @@ export function GiftsPanel({
   const [letterPopupGiftId, setLetterPopupGiftId] = useState<string | null>(null);
   const [letterPopupStage, setLetterPopupStage] = useState<'notice' | 'content'>('notice');
   const voiceRef = useRef<HTMLAudioElement | null>(null);
-  const bgmRef = useRef<HTMLAudioElement | null>(null);
   const playbackCloseTimerRef = useRef<number | null>(null);
-  const bgmGainController = useMemo(() => createBrowserBgmGainController(), []);
+  const bgmGainController = useMemo(() => createGiftPlaybackAudio(), []);
   const sentGiftsRef = useRef<SentGift[]>([]);
 
   const refresh = async () => {
@@ -130,10 +129,11 @@ export function GiftsPanel({
     });
   };
 
+  useEffect(() => () => bgmGainController.dispose(), [bgmGainController]);
+
   useEffect(() => {
     let active = true;
     const voice = voiceRef.current;
-    const bgmAudio = bgmRef.current;
     void fetch('/api/gifts')
       .then(async (response) => {
         const payload = await response.json() as GiftInboxPayload;
@@ -165,8 +165,6 @@ export function GiftsPanel({
       active = false;
       if (playbackCloseTimerRef.current !== null) window.clearTimeout(playbackCloseTimerRef.current);
       voice?.pause();
-      bgmAudio?.pause();
-      bgmGainController.dispose();
     };
   }, [bgmGainController, initialReceivedGiftId, onInitialReceivedHandled]);
 
@@ -227,8 +225,8 @@ export function GiftsPanel({
     }
     voiceRef.current?.pause();
     if (voiceRef.current) voiceRef.current.currentTime = 0;
-    bgmRef.current?.pause();
-    if (bgmRef.current) bgmRef.current.currentTime = 0;
+    bgmGainController.pause();
+    bgmGainController.stop();
     setActiveGiftId(null);
     setActiveIndex(0);
     setPaused(false);
@@ -236,7 +234,6 @@ export function GiftsPanel({
 
   const playPosition = (gift: ReceivedGift, index: number, restartBgm: boolean) => {
     const voice = voiceRef.current;
-    const bgmAudio = bgmRef.current;
     const recording = gift.recordings[index];
     if (!voice || !recording) return;
     setActiveGiftId(gift.id);
@@ -247,15 +244,7 @@ export function GiftsPanel({
     const playRequests: Promise<void>[] = [voice.play()];
     const bgm = GIFT_BGM_CATALOG[gift.bgmId] ?? GIFT_BGM_CATALOG.none;
     const selectedVolume = giftVolumes[gift.id] ?? gift.bgmVolume;
-    if (bgmAudio && bgm.audioSrc) bgmGainController.connect(bgmAudio, selectedVolume);
-    if (bgmAudio && bgm.audioSrc && restartBgm) {
-      bgmAudio.src = bgm.audioSrc;
-      bgmAudio.loop = true;
-      bgmAudio.load();
-      playRequests.push(bgmAudio.play());
-    } else if (bgmAudio && bgm.audioSrc && bgmAudio.paused) {
-      playRequests.push(bgmAudio.play());
-    }
+    playRequests.push(bgmGainController.start(voice, bgm.audioSrc ?? '', selectedVolume, restartBgm));
     void Promise.all(playRequests).catch((error: unknown) => {
       if (isPlaybackPauseInterruption(error)) return;
       stopPlayback();
@@ -275,7 +264,7 @@ export function GiftsPanel({
     const nextIndex = activeIndex + 1;
     if (!activeGift.recordings[nextIndex]) {
       const title = activeGift.title;
-      bgmRef.current?.pause();
+      bgmGainController.pause();
       setPaused(true);
       setMessage(`‘${title}’ 선물을 모두 들었어요.`);
       playbackCloseTimerRef.current = window.setTimeout(() => {
@@ -289,12 +278,12 @@ export function GiftsPanel({
 
   const pausePlayback = () => {
     voiceRef.current?.pause();
-    bgmRef.current?.pause();
+    bgmGainController.pause();
     setPaused(true);
   };
 
   const resumePlayback = () => {
-    const requests = [voiceRef.current?.play(), bgmRef.current?.src ? bgmRef.current.play() : undefined].filter((request): request is Promise<void> => Boolean(request));
+    const requests = [voiceRef.current?.play(), bgmGainController.resume()].filter((request): request is Promise<void> => Boolean(request));
     void Promise.all(requests).then(() => setPaused(false)).catch(() => setMessage('재생을 계속하지 못했어요.'));
   };
 
@@ -563,7 +552,7 @@ export function GiftsPanel({
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다. */}
       <audio ref={voiceRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={handleEnded} />
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 배경음악은 음성 콘텐츠가 아닙니다. */}
-      <audio ref={bgmRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} />
+
 
       {letterPopupGift && <div className="gift-dialog-backdrop gift-letter-popup-backdrop" role="presentation"><dialog className="gift-letter-popup" open aria-labelledby="gift-letter-popup-title">
         <span className="gift-letter-popup-icon"><MessageCircle size={27} /></span>

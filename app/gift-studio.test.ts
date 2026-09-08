@@ -224,9 +224,9 @@ describe('말씀 골라 선물하기 흐름', () => {
   });
 
   it('아이폰에서도 선물 BGM 미리듣기 음량을 GainNode로 조절한다', () => {
-    expect(studio).toContain('createBrowserBgmGainController');
-    expect(studio).toContain('bgmGainController.connect(audio, draft.bgmVolume)');
-    expect(studio).toContain('bgmGainController.connect(bgmAudio, draft.bgmVolume)');
+    expect(studio).toContain('createGiftPlaybackAudio');
+    expect(studio).toContain('bgmGainController.start(null, bgmSrc(draft.bgmId), draft.bgmVolume, !bgmPaused)');
+    expect(studio).toContain('fullPreviewBgmRef.start(voice, selectedBgmSrc, draft.bgmVolume, restartBgm)');
     expect(studio).toContain('bgmGainController.setVolume(value)');
     expect(studio).not.toContain('fullPreviewBgmRef.current.volume =');
   });
@@ -263,7 +263,7 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('bgmVolume');
     expect(studio).toContain("method: 'PATCH'");
     expect(studio).toContain('GIFT_BGM_CATALOG');
-    expect(studio).toContain('bgmPreviewRef');
+    expect(studio).toContain('bgmGainController.start(null,');
     expect(studio).toContain('배경음악 재생');
     expect(studio).toContain('배경음악 일시정지');
     expect(studio).toContain('bgmPreviewError');
@@ -376,7 +376,7 @@ describe('말씀 골라 선물하기 흐름', () => {
     expect(studio).toContain('playFullGiftPreview');
     expect(studio).toContain('fullPreviewVoiceRef');
     expect(studio).toContain('fullPreviewBgmRef');
-    expect(studio).toContain('bgmGainController.connect(bgmAudio, draft.bgmVolume)');
+    expect(studio).toContain('fullPreviewBgmRef.start(voice, selectedBgmSrc, draft.bgmVolume, restartBgm)');
     expect(studio).toContain('handleFullPreviewEnded');
     expect(studio).toContain('미리 듣기 일시정지');
   });

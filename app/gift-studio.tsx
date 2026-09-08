@@ -33,7 +33,7 @@ import { FriendPickerModal, type FriendPickerPerson } from './friend-picker-moda
 import { GiftLetterComposer } from './gift-letter-composer';
 import type { BibleRange } from '@/lib/bible-scope';
 import type { GiftLetterInput } from '@/lib/gift-letter';
-import { createBrowserBgmGainController } from '@/lib/browser-bgm-gain';
+import { createGiftPlaybackAudio } from '@/lib/gift-playback-audio';
 import {
   GIFT_BGM_CATALOG,
   getGiftDraftProgress,
@@ -87,10 +87,6 @@ type ApiPayload = {
   error?: string;
 };
 type GiftVerseBoundary = { position: number; startMs: number; endMs: number };
-const configureBgmAudio = (audio: HTMLAudioElement, onEnded: () => void, onError: () => void) => {
-  audio.onended = onEnded;
-  audio.onerror = onError;
-};
 const readPayload = async (response: Response) =>
   response.json() as Promise<ApiPayload>;
 const labels: Record<GiftStudioStep, string> = {
@@ -190,10 +186,9 @@ export function GiftStudio({
   const recordingVerseStartedAtRef = useRef(0);
   const recordingBoundariesRef = useRef<GiftVerseBoundary[]>([]);
   const previewRef = useRef<HTMLAudioElement | null>(null);
-  const bgmPreviewRef = useRef<HTMLAudioElement | null>(null);
   const fullPreviewVoiceRef = useRef<HTMLAudioElement | null>(null);
-  const fullPreviewBgmRef = useRef<HTMLAudioElement | null>(null);
-  const bgmGainController = useMemo(() => createBrowserBgmGainController(), []);
+  const fullPreviewBgmRef = useMemo(() => createGiftPlaybackAudio(), []);
+  const bgmGainController = useMemo(() => createGiftPlaybackAudio(), []);
   const fullPreviewRunRef = useRef(0);
   const fullPreviewIndexRef = useRef(0);
   const musicSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -230,13 +225,14 @@ export function GiftStudio({
     recordingSessionRef.current = null;
     segmentedRecordingSessionRef.current?.dispose();
     segmentedRecordingSessionRef.current = null;
-    bgmPreviewRef.current?.pause();
+    bgmGainController.pause();
     previewRef.current?.pause();
     Object.values(localPreviewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
     fullPreviewVoiceRef.current?.pause();
-    fullPreviewBgmRef.current?.pause();
+    fullPreviewBgmRef.pause();
     bgmGainController.dispose();
-  }, [bgmGainController]);
+    fullPreviewBgmRef.dispose();
+  }, [bgmGainController, fullPreviewBgmRef]);
   const selectedBook =
     bibleBooks.find((book) => book.code === bookCode) ?? bibleBooks[0];
   const currentIndex = GIFT_STUDIO_STEPS.indexOf(step);
@@ -580,32 +576,17 @@ export function GiftStudio({
           ? '/api/bgm/the-kings-return?v=3'
           : '';
   const stopBgmPreview = () => {
-    const audio = bgmPreviewRef.current;
-    audio?.pause();
-    if (audio) audio.currentTime = 0;
-    bgmPreviewRef.current = null;
+    bgmGainController.stop();
     setBgmPlaying(false);
     setBgmPaused(false);
     setBgmLoading(false);
   };
   const playBgmPreview = async () => {
     if (!draft || draft.bgmId === 'none') return;
-    const audio = bgmPreviewRef.current ?? new Audio(bgmSrc(draft.bgmId));
-    bgmPreviewRef.current = audio;
-    bgmGainController.connect(audio, draft.bgmVolume);
-    configureBgmAudio(audio, () => {
-      setBgmPlaying(false);
-      setBgmPaused(false);
-    }, () => {
-      setBgmPlaying(false);
-      setBgmPaused(false);
-      setBgmLoading(false);
-      setBgmPreviewError(true);
-    });
     try {
       setBgmPreviewError(false);
       setBgmLoading(true);
-      await audio.play();
+      await bgmGainController.start(null, bgmSrc(draft.bgmId), draft.bgmVolume, !bgmPaused);
       setBgmPlaying(true);
       setBgmPaused(false);
     } catch {
@@ -617,7 +598,7 @@ export function GiftStudio({
     }
   };
   const pauseBgmPreview = () => {
-    bgmPreviewRef.current?.pause();
+    bgmGainController.pause();
     setBgmPlaying(false);
     setBgmPaused(true);
   };
@@ -629,9 +610,9 @@ export function GiftStudio({
   const stopFullGiftPreview = () => {
     fullPreviewRunRef.current += 1;
     fullPreviewVoiceRef.current?.pause();
-    fullPreviewBgmRef.current?.pause();
+    fullPreviewBgmRef.pause();
     if (fullPreviewVoiceRef.current) fullPreviewVoiceRef.current.currentTime = 0;
-    if (fullPreviewBgmRef.current) fullPreviewBgmRef.current.currentTime = 0;
+    fullPreviewBgmRef.stop();
     setFullPreviewPlaying(false);
     setFullPreviewIndex(0);
   };
@@ -700,7 +681,6 @@ export function GiftStudio({
     const recordedItems = draft.items.filter((item) => item.recorded);
     const item = recordedItems[index];
     const voice = fullPreviewVoiceRef.current;
-    const bgmAudio = fullPreviewBgmRef.current;
     if (!item || !voice) return stopFullGiftPreview();
     setFullPreviewIndex(index);
     fullPreviewIndexRef.current = index;
@@ -708,17 +688,10 @@ export function GiftStudio({
     voice.load();
     const requests: Promise<void>[] = [voice.play()];
     const selectedBgmSrc = bgmSrc(draft.bgmId);
-    if (bgmAudio && selectedBgmSrc) {
-      bgmGainController.connect(bgmAudio, draft.bgmVolume);
-      if (restartBgm) {
-        bgmAudio.src = selectedBgmSrc;
-        bgmAudio.loop = true;
-        bgmAudio.load();
-      }
-      requests.push(bgmAudio.play());
-    }
+    requests.push(fullPreviewBgmRef.start(voice, selectedBgmSrc, draft.bgmVolume, restartBgm));
     try {
       await Promise.all(requests);
+      if (runId !== fullPreviewRunRef.current) return;
       setFullPreviewPlaying(true);
     } catch (error) {
       if (runId !== fullPreviewRunRef.current) return;
@@ -758,6 +731,7 @@ export function GiftStudio({
   const updateGiftBgmVolume = (value: number) => {
     if (!draft) return;
     bgmGainController.setVolume(value);
+    fullPreviewBgmRef.setVolume(value);
     void saveMusic(draft.bgmId, value);
   };
   const saveTitle = async (title: string) => {
@@ -903,10 +877,10 @@ export function GiftStudio({
               <button className="gift-studio-preview" type="button" onClick={() => {
                 if (fullPreviewPlaying) {
                   fullPreviewVoiceRef.current?.pause();
-                  fullPreviewBgmRef.current?.pause();
+                  fullPreviewBgmRef.pause();
                   setFullPreviewPlaying(false);
                 } else if (fullPreviewVoiceRef.current?.src) {
-                  void Promise.all([fullPreviewVoiceRef.current.play(), fullPreviewBgmRef.current?.src ? fullPreviewBgmRef.current.play() : Promise.resolve()]).then(() => setFullPreviewPlaying(true));
+                  void Promise.all([fullPreviewVoiceRef.current.play(), fullPreviewBgmRef.resume()]).then(() => setFullPreviewPlaying(true));
                 } else void playFullGiftPreview();
               }}>{fullPreviewPlaying ? <Pause size={17} /> : <Play size={17} />}{fullPreviewPlaying ? '미리 듣기 일시정지' : '전체 미리 듣기'}</button>
             )}
@@ -923,7 +897,7 @@ export function GiftStudio({
         {isGiftDraftSendable(draft.items) && <div className="gift-recording-next-step"><button className="gift-studio-continue gift-studio-next-letter" type="button" onClick={() => setStep('letter')}><Send size={17} /> 다음 · 쪽지 덧붙이기 <ChevronRight size={17} /></button></div>}
         <audio ref={previewRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} preload="metadata" onPause={() => setPlayingDraftPosition(null)} onEnded={() => setPlayingDraftPosition(null)} />
         <audio ref={fullPreviewVoiceRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={handleFullPreviewEnded} />
-        <audio ref={fullPreviewBgmRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} />
+        {/* BGM is mixed into the voice AudioContext. */}
         {message && <output className="gift-studio-message" aria-live="polite">{message}</output>}
         {giftHeadphoneWarningOpen && (
           <div className="headphone-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setGiftHeadphoneWarningOpen(false); }}>
@@ -1528,7 +1502,7 @@ export function GiftStudio({
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 녹음 본문이 화면에 함께 표시됩니다. */}
             <audio ref={fullPreviewVoiceRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={handleFullPreviewEnded} />
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 배경음악에는 음성 자막이 필요하지 않습니다. */}
-            <audio ref={fullPreviewBgmRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} />
+            {/* BGM is mixed into the voice AudioContext. */}
             {step === 'record' && (
             <div className="gift-verse-list">
               {draft.items.map((item) => (
@@ -1596,14 +1570,12 @@ export function GiftStudio({
                 onClick={() => {
                   if (fullPreviewPlaying) {
                     fullPreviewVoiceRef.current?.pause();
-                    fullPreviewBgmRef.current?.pause();
+                    fullPreviewBgmRef.pause();
                     setFullPreviewPlaying(false);
                   } else if (fullPreviewVoiceRef.current?.src) {
                     void Promise.all([
                       fullPreviewVoiceRef.current.play(),
-                      fullPreviewBgmRef.current?.src
-                        ? fullPreviewBgmRef.current.play()
-                        : Promise.resolve(),
+                      fullPreviewBgmRef.resume(),
                     ]).then(() => setFullPreviewPlaying(true));
                   } else {
                     void playFullGiftPreview();

@@ -88,8 +88,8 @@ describe('말씀 선물 UI·데이터 회귀', () => {
   });
 
   it('아이폰에서도 받은 선물 BGM을 GainNode와 input 이벤트로 즉시 조절한다', () => {
-    expect(panel).toContain('createBrowserBgmGainController');
-    expect(panel).toContain('bgmGainController.connect(bgmAudio, selectedVolume)');
+    expect(panel).toContain('createGiftPlaybackAudio');
+    expect(panel).toContain("bgmGainController.start(voice, bgm.audioSrc ?? '', selectedVolume, restartBgm)");
     expect(panel).toContain('bgmGainController.setVolume(nextVolume)');
     expect(panel).toContain('aria-label={`${gift.title} BGM 음량`} onInput=');
     expect(panel).not.toContain('bgmRef.current.volume =');
@@ -125,7 +125,7 @@ describe('말씀 선물 UI·데이터 회귀', () => {
     expect(panel).toContain('받은 선물 BGM 음량 낮추기');
     expect(panel).toContain('받은 선물 BGM 음량 높이기');
     expect(panel).toContain('giftVolumes');
-    expect(panel).toContain('bgmGainController.connect(bgmAudio, selectedVolume)');
+    expect(panel).toContain("bgmGainController.start(voice, bgm.audioSrc ?? '', selectedVolume, restartBgm)");
     expect(panel).toContain('bgmVolume: giftVolumes[gift.id] ?? gift.bgmVolume');
     expect(panel).toContain('감사 인사 보내기');
     expect(panel).toContain('THANK_YOU_TEMPLATES');
@@ -188,7 +188,7 @@ describe('말씀 선물 UI·데이터 회귀', () => {
   it('마지막 선물 녹음이 끝나면 잠시 완료 상태를 보여준 뒤 플레이어를 닫는다', () => {
     expect(panel).toContain('PLAYBACK_AUTO_CLOSE_DELAY_MS');
     expect(panel).toContain('playbackCloseTimerRef.current = window.setTimeout');
-    expect(panel).toContain('bgmRef.current?.pause()');
+    expect(panel).toContain('bgmGainController.pause()');
   });
 
   it('선물을 열면 읽은 목록으로 갑자기 보내지 않고 그 자리에서 상세와 녹음 목록을 연다', () => {
