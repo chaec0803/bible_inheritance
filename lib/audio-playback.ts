@@ -1,3 +1,4 @@
+import { reportRecordingFailure } from './recording-diagnostics';
 export type PlayableAudio = Pick<HTMLAudioElement, 'paused' | 'pause' | 'play'>;
 
 export const PLAYBACK_AUTO_CLOSE_DELAY_MS = 1_500;
@@ -11,6 +12,9 @@ export async function toggleAudioPlayback(audio: PlayableAudio, isActive: boolea
     audio.pause();
     return 'paused' as const;
   }
-  await audio.play();
+  try { await audio.play(); } catch (error) {
+    reportRecordingFailure('audio-play', error);
+    throw error;
+  }
   return 'playing' as const;
 }

@@ -1,3 +1,4 @@
+import { reportRecordingFailure } from './recording-diagnostics';
 import { createRecordingAudioGraph, getSupportedMimeType } from './recording-audio';
 import {
   initialRecordingMachineState,
@@ -39,7 +40,10 @@ export async function createRecordingSession(options: RecordingSessionOptions = 
   const createGraph = options.createGraph ?? createRecordingAudioGraph;
   const createRecorder = options.createRecorder ?? ((stream, recorderOptions) => new MediaRecorder(stream, recorderOptions));
   const now = options.now ?? Date.now;
-  const sourceStream = await getUserMedia(options.constraints ?? { audio: true });
+  const sourceStream = await getUserMedia(options.constraints ?? { audio: true }).catch(error => {
+    reportRecordingFailure('microphone', error);
+    throw error;
+  });
   let graph: RecordingGraph | null = null;
   let recorder: MediaRecorder;
 
@@ -51,6 +55,7 @@ export async function createRecordingSession(options: RecordingSessionOptions = 
       ...(options.audioBitsPerSecond ? { audioBitsPerSecond: options.audioBitsPerSecond } : {}),
     });
   } catch (error) {
+    reportRecordingFailure(graph ? 'recorder-create' : 'audio-graph', error);
     graph?.close();
     sourceStream.getTracks().forEach((track) => track.stop());
     throw error;
@@ -88,6 +93,7 @@ export async function createRecordingSession(options: RecordingSessionOptions = 
     void options.onCaptured?.(result);
   };
   recorder.onerror = (event) => {
+    reportRecordingFailure('recorder-runtime', event);
     discardResult = true;
     disposed = true;
     machine = transitionRecordingState(machine, { type: 'REQUEST_STOP' });
@@ -110,6 +116,7 @@ export async function createRecordingSession(options: RecordingSessionOptions = 
       try {
         recorder.start(options.timeslice);
       } catch (error) {
+        reportRecordingFailure('recorder-start', error);
         disposed = true;
         discardResult = true;
         machine = transitionRecordingState(machine, { type: 'REQUEST_STOP' });

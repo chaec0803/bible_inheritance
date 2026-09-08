@@ -107,7 +107,7 @@ describe('녹음 저장 API 통합 회귀', () => {
   it('D1 저장이 실패하면 방금 업로드한 R2 파일을 정리하고 이전 파일은 유지한다', async () => {
     mocks.existing = [{ id: 'old-id', objectKey: 'user-1/old-id' }];
     mocks.insertError = new Error('db unavailable');
-    await expect(POST(validRequest())).rejects.toThrow('db unavailable');
+    expect((await POST(validRequest())).status).toBe(500);
     const newObjectKey = mocks.r2Put.mock.calls[0][0] as string;
     expect(mocks.r2Delete).toHaveBeenCalledWith(newObjectKey);
     expect(mocks.r2Delete).not.toHaveBeenCalledWith('user-1/old-id');

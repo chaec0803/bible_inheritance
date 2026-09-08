@@ -34,6 +34,9 @@ export function createIndexedRecordingUploadStore(factory: IDBFactory = indexedD
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+    }).catch(error => {
+      databasePromise = null;
+      throw error;
     });
     return databasePromise;
   };

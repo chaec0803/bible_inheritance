@@ -34,6 +34,7 @@ import { createSegmentedRecordingSession, type SegmentedRecordingSession } from 
 import { trackRecordingPersistence } from '@/lib/recording-persistence';
 import { getBrowserRecordingUploadQueue } from '@/lib/browser-recording-upload-queue';
 import { getVoiceRecordingConstraints } from '@/lib/recording-audio';
+import { reportRecordingFailure, reportAudioElementFailure } from '@/lib/recording-diagnostics';
 import { createBufferBgmPlayer } from '@/lib/buffer-bgm-player';
 import { canShowGiftArrival, mergeGiftArrivals, type GiftArrival } from '@/lib/gift-arrival';
 export { createRecordingAudioGraph, getSupportedMimeType, encodeAudioBufferAsWav } from '@/lib/recording-audio';
@@ -602,9 +603,12 @@ function recordingBelongsToJourney(recording: SavedRecording, project: ActivePro
 }
 
 async function fetchLibrary() {
-  const response = await fetch('/api/recordings');
-  if (!response.ok) throw new Error('보관함을 불러오지 못했어요.');
-  const payload = (await response.json()) as { recordings: SavedRecording[] };
+  const response = await fetch('/api/recordings').catch(error => { reportRecordingFailure('library-load', error); throw error; });
+  if (!response.ok) {
+    reportRecordingFailure('library-load', undefined, { status: response.status, requestId: response.headers.get('X-Recording-Request-Id') ?? undefined });
+    throw new Error('보관함을 불러오지 못했어요.');
+  }
+  const payload = (await response.json().catch(error => { reportRecordingFailure('library-load', error, { status: response.status }); throw error; })) as { recordings: SavedRecording[] };
   return payload.recordings;
 }
 
@@ -1583,6 +1587,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       await bgmAudio.play();
       return playbackBgmRequestGateRef.current.isCurrent(generation);
     } catch (error) {
+      reportRecordingFailure('bgm-play', error);
       bgmAudio.dispose();
       if (playbackBgmAudioRef.current === bgmAudio) playbackBgmAudioRef.current = null;
       if (!playbackBgmRequestGateRef.current.isCurrent(generation)) return false;
@@ -1899,6 +1904,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       await Promise.all([ready, voice, music]);
     } catch (error) {
       if (!chapterPlaybackRequestGateRef.current.isCurrent(generation) || isPlaybackPauseInterruption(error)) return;
+      reportRecordingFailure('audio-play', error);
       stopChapterPlayback();
       setNotice('녹음된 목소리를 재생하지 못했어요. 잠시 후 다시 눌러 주세요.');
     }
@@ -1978,6 +1984,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       if (!chapterPlayingRef.current || isPlaybackPauseInterruption(error)) return;
       chapterPausedRef.current = true;
       setChapterPaused(true);
+      reportRecordingFailure('audio-play', error);
       setNotice('재생을 계속하지 못했어요. 다시 눌러 주세요.');
     });
   };
@@ -2008,7 +2015,8 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
       return;
     }
     nextAudio.currentTime = 0;
-    void nextAudio.play().catch(() => {
+    void nextAudio.play().catch((error: unknown) => {
+      reportRecordingFailure('audio-play', error);
       stopChapterPlayback();
       setNotice('다음 절을 자동 재생하지 못했어요. 이어듣기를 다시 눌러 주세요.');
     });
@@ -2296,6 +2304,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
           if (recordingSessionRef.current === session) recordingSessionRef.current = null;
           setRecording(false);
           if (!capture || capture.blob.size === 0) {
+            if (capture) reportRecordingFailure('capture-empty', undefined, { sizeBytes: 0 });
             setSavingLibrary(false);
             return;
           }
@@ -3713,7 +3722,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
 
             {playbackRecording && (
               // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
-              <audio ref={savedRecordingAudioRef} preload="auto" src={`/api/recordings/${playbackRecording.id}/audio`} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
+              <audio ref={savedRecordingAudioRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} preload="auto" src={`/api/recordings/${playbackRecording.id}/audio`} onPlay={() => setSavedRecordingPlaying(true)} onPause={() => setSavedRecordingPlaying(false)} onEnded={handleSavedRecordingEnded} />
             )}
 
             {currentTake && !recording && (
@@ -3728,7 +3737,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                   </p>
                 </div>
                 {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 만든 음성 녹음에는 별도 자막 파일이 없습니다. */}
-                <audio className="recording-preview" controls preload="metadata" src={currentTake.url}>
+                <audio onError={(event) => reportAudioElementFailure(event.currentTarget)} className="recording-preview" controls preload="metadata" src={currentTake.url}>
                   녹음 재생을 지원하지 않는 브라우저입니다.
                 </audio>
               </div>
@@ -4077,6 +4086,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
                     {playbackQueue.map((item) => (
                       // oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다.
                       <audio
+                        onError={(event) => reportAudioElementFailure(event.currentTarget)}
                         preload="auto"
                         src={`/api/recordings/${item.id}/audio`}
                         ref={(element) => {
@@ -4287,7 +4297,7 @@ function VerseApp({ userId, userEmail, onSignOut }: { userId: string; userEmail?
             </div>
             {completedPlaybackListOpen && <div className="continuous-player-list"><strong>완료된 말씀 목록</strong><div>{completedModalRecordings.map((recording, index) => <button className={index === completedPlaybackIndex ? 'playing' : ''} type="button" onClick={() => playCompletedRecording(index)} key={recording.id}><span>{recording.book} {recording.chapter}{recording.book === '시편' ? '편' : '장'} {recording.verse}절</span><small>{index === completedPlaybackIndex ? '현재 위치' : '여기부터 듣기'}</small></button>)}</div></div>}
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성입니다. */}
-            <audio ref={completedPlaybackRef} onEnded={() => { const next = completedPlaybackIndex + 1; if (next < completedModalRecordings.length) playCompletedRecording(next); else setCompletedPlaybackPaused(true); }} />
+            <audio ref={completedPlaybackRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={() => { const next = completedPlaybackIndex + 1; if (next < completedModalRecordings.length) playCompletedRecording(next); else setCompletedPlaybackPaused(true); }} />
             <button className="completed-journey-delete" type="button" onClick={() => setConfirmQuitJourneyOpen(completedJourneyModal)}><Trash2 size={16} /> 완료된 말씀 삭제</button>
           </dialog>
         </div>

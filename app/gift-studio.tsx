@@ -1,5 +1,6 @@
 'use client';
 /* oxlint-disable jsx-a11y/media-has-caption -- verse text is displayed beside each spoken recording */
+import { reportAudioElementFailure } from '@/lib/recording-diagnostics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
@@ -920,9 +921,9 @@ export function GiftStudio({
           </aside>
         </section>
         {isGiftDraftSendable(draft.items) && <div className="gift-recording-next-step"><button className="gift-studio-continue gift-studio-next-letter" type="button" onClick={() => setStep('letter')}><Send size={17} /> 다음 · 쪽지 덧붙이기 <ChevronRight size={17} /></button></div>}
-        <audio ref={previewRef} preload="metadata" onPause={() => setPlayingDraftPosition(null)} onEnded={() => setPlayingDraftPosition(null)} />
-        <audio ref={fullPreviewVoiceRef} onEnded={handleFullPreviewEnded} />
-        <audio ref={fullPreviewBgmRef} />
+        <audio ref={previewRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} preload="metadata" onPause={() => setPlayingDraftPosition(null)} onEnded={() => setPlayingDraftPosition(null)} />
+        <audio ref={fullPreviewVoiceRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={handleFullPreviewEnded} />
+        <audio ref={fullPreviewBgmRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} />
         {message && <output className="gift-studio-message" aria-live="polite">{message}</output>}
         {giftHeadphoneWarningOpen && (
           <div className="headphone-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setGiftHeadphoneWarningOpen(false); }}>
@@ -1525,9 +1526,9 @@ export function GiftStudio({
               <div className="sound-summary"><Sparkles size={18} /><p><strong>절마다 목소리 크기를 자동으로 맞춰요</strong><small>선택한 음악은 선물 전체에 함께 재생돼요.</small></p></div>
             </aside>
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 녹음 본문이 화면에 함께 표시됩니다. */}
-            <audio ref={fullPreviewVoiceRef} onEnded={handleFullPreviewEnded} />
+            <audio ref={fullPreviewVoiceRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={handleFullPreviewEnded} />
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 배경음악에는 음성 자막이 필요하지 않습니다. */}
-            <audio ref={fullPreviewBgmRef} />
+            <audio ref={fullPreviewBgmRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} />
             {step === 'record' && (
             <div className="gift-verse-list">
               {draft.items.map((item) => (
@@ -1572,6 +1573,7 @@ export function GiftStudio({
             )}
             {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 녹음 본문이 화면에 함께 표시됩니다. */}
             <audio
+              onError={(event) => reportAudioElementFailure(event.currentTarget)}
               ref={previewRef}
               preload="metadata"
               onPlay={() => undefined}

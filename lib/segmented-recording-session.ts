@@ -1,3 +1,4 @@
+import { reportRecordingFailure } from './recording-diagnostics';
 import { createRecordingAudioGraph, getSupportedMimeType } from './recording-audio';
 import type { CapturedRecording } from './recording-session';
 
@@ -38,11 +39,15 @@ export async function createSegmentedRecordingSession(
   const createGraph = options.createGraph ?? createRecordingAudioGraph;
   const createRecorder = options.createRecorder ?? ((stream, recorderOptions) => new MediaRecorder(stream, recorderOptions));
   const now = options.now ?? Date.now;
-  const sourceStream = await getUserMedia(options.constraints ?? { audio: true });
+  const sourceStream = await getUserMedia(options.constraints ?? { audio: true }).catch(error => {
+    reportRecordingFailure('microphone', error);
+    throw error;
+  });
   let graph: RecordingGraph;
   try {
     graph = createGraph(sourceStream);
   } catch (error) {
+    reportRecordingFailure('audio-graph', error);
     sourceStream.getTracks().forEach((track) => track.stop());
     throw error;
   }
@@ -64,13 +69,17 @@ export async function createSegmentedRecordingSession(
   };
 
   const createSegment = () => {
-    const recorder = createRecorder(graph.stream, recorderOptions);
+    let recorder: MediaRecorder;
+    try { recorder = createRecorder(graph.stream, recorderOptions); }
+    catch (error) { reportRecordingFailure('recorder-create', error); throw error; }
     let resolve!: (capture: CapturedRecording) => void;
     let reject!: (error: unknown) => void;
     const result = new Promise<CapturedRecording>((resolveResult, rejectResult) => {
       resolve = resolveResult;
       reject = rejectResult;
     });
+    // Observe an encoder failure immediately; rotate/stop still receive its rejection.
+    void result.catch(() => undefined);
     const segment: ActiveSegment = { recorder, startedAt: now(), chunks: [], result, resolve, reject };
     activeRecorders.add(recorder);
     recorder.ondataavailable = (event) => {
@@ -87,6 +96,7 @@ export async function createSegmentedRecordingSession(
       cleanup();
     };
     recorder.onerror = (event) => {
+      reportRecordingFailure('recorder-runtime', event);
       activeRecorders.delete(recorder);
       segment.reject(event);
       cleanup();
@@ -104,6 +114,7 @@ export async function createSegmentedRecordingSession(
       current = segment;
       return segment;
     } catch (error) {
+      reportRecordingFailure('recorder-start', error);
       if (segment) activeRecorders.delete(segment.recorder);
       // A failed rotation must leave the previous segment available to stop.
       // Initial startup failure has no active capture to wait for.

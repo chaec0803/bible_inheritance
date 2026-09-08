@@ -1,5 +1,6 @@
 'use client';
 
+import { reportAudioElementFailure } from '@/lib/recording-diagnostics';
 import { useEffect, useRef, useState } from 'react';
 import { FileText, Mic, Pause, Play, RotateCcw } from 'lucide-react';
 import { GIFT_LETTER_AUDIO_MAX_SECONDS, GIFT_LETTER_TEXT_MAX_LENGTH, type GiftLetterInput } from '@/lib/gift-letter';
@@ -105,7 +106,7 @@ export function GiftLetterComposer({ value, disabled, onChange }: { value: GiftL
     {value.type === 'text' && <label className="gift-letter-text"><span>짧은 편지</span><textarea rows={4} maxLength={GIFT_LETTER_TEXT_MAX_LENGTH} disabled={disabled} value={value.text} placeholder="말씀을 선물하는 마음을 적어 주세요." onChange={(event) => onChange({ type: 'text', text: event.currentTarget.value })} /><small>{value.text.length}/{GIFT_LETTER_TEXT_MAX_LENGTH}</small></label>}
     {recording && <div className="gift-letter-recording"><span><Mic size={18} /> 녹음 중 · {seconds}초 / {GIFT_LETTER_AUDIO_MAX_SECONDS}초</span><button type="button" onClick={() => void recordingSessionRef.current?.stop()}><Pause size={16} /> 녹음 마치기</button></div>}
     {mode === 'voice' && !recording && !previewUrl && <div className="gift-letter-voice-ready"><div><Mic size={19} /><span><strong>짧은 음성 편지를 남겨 보세요</strong><small>최대 {GIFT_LETTER_AUDIO_MAX_SECONDS}초까지 녹음할 수 있어요.</small></span></div><button type="button" disabled={disabled} onClick={() => void startVoice()}><Mic size={16} /> 녹음 시작</button></div>}
-    {mode === 'voice' && previewUrl && <div className="gift-letter-preview"><strong>{value.type === 'voice' ? '음성 편지를 확정했어요' : '음성 편지가 준비됐어요'}</strong>{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls src={previewUrl} /><div><button type="button" disabled={disabled} onClick={() => void startVoice()}><RotateCcw size={15} /> 재녹음</button>{voiceCandidate && value.type !== 'voice' && <button type="button" disabled={disabled} onClick={() => onChange(voiceCandidate)}><Play size={15} /> 음성 편지 확정</button>}</div><span><Play size={14} /> 재생해 본 뒤 확정해 주세요.</span></div>}
+    {mode === 'voice' && previewUrl && <div className="gift-letter-preview"><strong>{value.type === 'voice' ? '음성 편지를 확정했어요' : '음성 편지가 준비됐어요'}</strong>{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 방금 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls onError={(event) => reportAudioElementFailure(event.currentTarget)} src={previewUrl} /><div><button type="button" disabled={disabled} onClick={() => void startVoice()}><RotateCcw size={15} /> 재녹음</button>{voiceCandidate && value.type !== 'voice' && <button type="button" disabled={disabled} onClick={() => onChange(voiceCandidate)}><Play size={15} /> 음성 편지 확정</button>}</div><span><Play size={14} /> 재생해 본 뒤 확정해 주세요.</span></div>}
     {error && <small className="gift-letter-error" role="alert">{error}</small>}
   </section>;
 }

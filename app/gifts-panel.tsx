@@ -1,5 +1,6 @@
 'use client';
 
+import { reportAudioElementFailure } from '@/lib/recording-diagnostics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, CircleStop, Download, Gift, Headphones, List, LoaderCircle, MessageCircle, Music2, Pause, Play, Send, Trash2, Volume2, X } from 'lucide-react';
 import { GIFT_BGM_CATALOG, type GiftBgmId } from '@/lib/gift-policy';
@@ -560,9 +561,9 @@ export function GiftsPanel({
       </dialog></div>}
 
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 직접 녹음한 음성에는 별도 자막 파일이 없습니다. */}
-      <audio ref={voiceRef} onEnded={handleEnded} />
+      <audio ref={voiceRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} onEnded={handleEnded} />
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 배경음악은 음성 콘텐츠가 아닙니다. */}
-      <audio ref={bgmRef} />
+      <audio ref={bgmRef} onError={(event) => reportAudioElementFailure(event.currentTarget)} />
 
       {letterPopupGift && <div className="gift-dialog-backdrop gift-letter-popup-backdrop" role="presentation"><dialog className="gift-letter-popup" open aria-labelledby="gift-letter-popup-title">
         <span className="gift-letter-popup-icon"><MessageCircle size={27} /></span>
@@ -574,7 +575,7 @@ export function GiftsPanel({
         </> : <>
           <p className="eyebrow">함께 온 마음</p>
           <h2 id="gift-letter-popup-title">{letterPopupGift.letterType === 'voice' ? '목소리로 전한 쪽지' : '글로 전한 쪽지'}</h2>
-          {letterPopupGift.letterType === 'text' ? <blockquote>{letterPopupGift.letterText}</blockquote> : <div className="gift-voice-letter">{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls src={`/api/gifts/${letterPopupGift.id}/letter/audio`} /><small>{letterPopupGift.letterDurationSeconds ? `${letterPopupGift.letterDurationSeconds}초 음성 편지` : '음성 편지'}</small></div>}
+          {letterPopupGift.letterType === 'text' ? <blockquote>{letterPopupGift.letterText}</blockquote> : <div className="gift-voice-letter">{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 사용자가 녹음한 음성 편지에는 별도 자막 파일이 없습니다. */}<audio controls onError={(event) => reportAudioElementFailure(event.currentTarget)} src={`/api/gifts/${letterPopupGift.id}/letter/audio`} /><small>{letterPopupGift.letterDurationSeconds ? `${letterPopupGift.letterDurationSeconds}초 음성 편지` : '음성 편지'}</small></div>}
           <button className="gift-letter-popup-primary" type="button" onClick={closeLetterPopup}>확인</button>
         </>}
       </dialog></div>}

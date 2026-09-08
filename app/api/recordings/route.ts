@@ -1,3 +1,4 @@
+import { withRecordingDiagnostics } from '@/lib/recording-server-diagnostics';
 import { env } from 'cloudflare:workers';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
@@ -13,11 +14,13 @@ function formText(formData: FormData, key: string, maxLength: number) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request, context: unknown, phase: (name: string) => void) {
   const user = await authenticateRequest(request);
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   const ownerKey = user.id;
+  phase('schema');
   await ensureDbSchema();
+  phase('metadata-read');
 
   const rows = await getDb()
     .select({
@@ -44,12 +47,15 @@ export async function GET(request: Request) {
   return Response.json({ recordings: rows });
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request, context: unknown, phase: (name: string) => void) {
   const user = await authenticateRequest(request);
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   const ownerKey = user.id;
+  phase('schema');
   await ensureDbSchema();
+  phase('metadata-read');
 
+  phase('upload-body');
   const formData = await request.formData();
   const audio = formData.get('audio');
   if (!(audio instanceof File) || audio.size === 0) {
@@ -83,6 +89,7 @@ export async function POST(request: Request) {
   const objectKey = `${ownerKey}/${id}`;
   const mimeType = audio.type || 'audio/webm';
   const createdAt = Date.now();
+  phase('metadata-read');
   const existing = await getDb()
     .select({ id: recordings.id, objectKey: recordings.objectKey })
     .from(recordings)
@@ -96,12 +103,14 @@ export async function POST(request: Request) {
     return Response.json({ error: '완료된 말씀은 더 이상 수정할 수 없어요.' }, { status: 409 });
   }
 
+  phase('object-write');
   await env.FILES.put(objectKey, audio.stream(), {
     httpMetadata: { contentType: mimeType },
     customMetadata: { recordingId: id },
   });
 
   try {
+    phase('metadata-write');
     await getDb().insert(recordings).values({
       id,
       ownerKey,
@@ -128,9 +137,14 @@ export async function POST(request: Request) {
   }
 
   if (existing.length) {
+    phase('metadata-write');
     await getDb().delete(recordings).where(inArray(recordings.id, existing.map((item) => item.id)));
     await Promise.all(existing.map((item) => env.FILES.delete(item.objectKey)));
   }
 
   return Response.json({ id, createdAt }, { status: 201 });
 }
+
+export const GET = withRecordingDiagnostics("library-get", handleGET);
+
+export const POST = withRecordingDiagnostics("library-post", handlePOST);

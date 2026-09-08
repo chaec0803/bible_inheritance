@@ -1,3 +1,4 @@
+import { withRecordingDiagnostics } from '@/lib/recording-server-diagnostics';
 import { env } from 'cloudflare:workers';
 import { and, eq } from 'drizzle-orm';
 import { ensureDbSchema, getDb } from '@/db';
@@ -12,11 +13,13 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(request: Request, context: RouteContext) {
+async function handleGET(request: Request, context: RouteContext, phase: (name: string) => void) {
   const user = await authenticateRequest(request);
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   const ownerKey = user.id;
+  phase('schema');
   await ensureDbSchema();
+  phase('metadata-read');
 
   const { id } = await context.params;
   const [recording] = await getDb()
@@ -26,14 +29,16 @@ export async function GET(request: Request, context: RouteContext) {
     .limit(1);
 
   if (!recording || (recording.ownerKey !== ownerKey && !await canAccessRelayRecording(ownerKey, recording.projectId))) {
-    return Response.json({ error: '녹음을 찾을 수 없습니다.' }, { status: 404 });
+    return Response.json({ error: '녹음을 찾을 수 없습니다.' }, { status: 404, headers: { 'X-Recording-Error': 'metadata-missing-or-inaccessible' } });
   }
 
+  phase('object-head');
   const metadata = await env.FILES.head(recording.objectKey);
-  if (!metadata) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404 });
+  if (!metadata) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404, headers: { 'X-Recording-Error': 'object-missing' } });
   const range = parseByteRange(request.headers.get('range'), metadata.size);
+  phase('object-read');
   const object = await env.FILES.get(recording.objectKey, range ? { range: { offset: range.start, length: range.end - range.start + 1 } } : undefined);
-  if (!object) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404 });
+  if (!object) return Response.json({ error: '음성 파일을 찾을 수 없습니다.' }, { status: 404, headers: { 'X-Recording-Error': 'object-missing' } });
 
   const headers = new Headers({
     'Accept-Ranges': 'bytes',
@@ -49,11 +54,13 @@ export async function GET(request: Request, context: RouteContext) {
   return new Response(object.body, { headers, status: range ? 206 : 200 });
 }
 
-export async function PUT(request: Request, context: RouteContext) {
+async function handlePUT(request: Request, context: RouteContext, phase: (name: string) => void) {
   const user = await authenticateRequest(request);
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   const ownerKey = user.id;
+  phase('schema');
   await ensureDbSchema();
+  phase('metadata-read');
 
   const { id } = await context.params;
   const [existing] = await getDb()
@@ -67,6 +74,7 @@ export async function PUT(request: Request, context: RouteContext) {
     return Response.json({ error: '완료된 말씀은 더 이상 수정할 수 없어요.' }, { status: 409 });
   }
 
+  phase('upload-body');
   const formData = await request.formData();
   const audio = formData.get('audio');
   if (!(audio instanceof File) || audio.size === 0) {
@@ -107,12 +115,14 @@ export async function PUT(request: Request, context: RouteContext) {
   const mimeType = audio.type || 'audio/webm';
   const createdAt = Date.now();
 
+  phase('object-write');
   await env.FILES.put(replacementObjectKey, audio.stream(), {
     httpMetadata: { contentType: mimeType },
     customMetadata: { recordingId: id },
   });
 
   try {
+    phase('metadata-write');
     await getDb()
       .update(recordings)
       .set({
@@ -143,11 +153,13 @@ export async function PUT(request: Request, context: RouteContext) {
   return Response.json({ id, createdAt });
 }
 
-export async function DELETE(request: Request, context: RouteContext) {
+async function handleDELETE(request: Request, context: RouteContext, phase: (name: string) => void) {
   const user = await authenticateRequest(request);
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   const ownerKey = user.id;
+  phase('schema');
   await ensureDbSchema();
+  phase('metadata-read');
 
   const { id } = await context.params;
   const [existing] = await getDb()
@@ -165,3 +177,9 @@ export async function DELETE(request: Request, context: RouteContext) {
   await env.FILES.delete(existing.objectKey);
   return Response.json({ id });
 }
+
+export const GET = withRecordingDiagnostics("audio-get", handleGET);
+
+export const PUT = withRecordingDiagnostics("audio-put", handlePUT);
+
+export const DELETE = withRecordingDiagnostics("audio-delete", handleDELETE);
